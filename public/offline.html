@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Luna — Offline</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background-color: #09090b;
+      color: #fafafa;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      text-align: center;
+      user-select: none;
+    }
+    .container {
+      max-width: 360px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .icon {
+      width: 72px;
+      height: 72px;
+      border-radius: 20px;
+      background: #18181b;
+      border: 1px solid #27272a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 24px;
+      box-shadow: 0 0 40px rgba(99, 102, 241, 0.15);
+    }
+    .icon svg {
+      width: 36px;
+      height: 36px;
+      fill: none;
+      stroke: #a1a1aa;
+      stroke-width: 1.5;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin-bottom: 8px;
+      color: #f4f4f5;
+    }
+    p {
+      font-size: 13px;
+      line-height: 1.5;
+      color: #a1a1aa;
+      margin-bottom: 28px;
+    }
+    button {
+      background-color: #fafafa;
+      color: #09090b;
+      border: none;
+      border-radius: 9999px;
+      padding: 10px 24px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+    }
+    button:active {
+      transform: scale(0.97);
+      background-color: #e4e4e7;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      background: rgba(24, 24, 27, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 11px;
+      color: #71717a;
+      margin-bottom: 16px;
+      font-family: monospace;
+    }
+    .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #f43f5e;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="badge">
+      <span class="dot"></span>
+      <span>radio frequency quiet</span>
+    </div>
+    <div class="icon">
+      <svg viewBox="0 0 24 24">
+        <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z" />
+        <path d="M4.93 4.93l14.14 14.14" />
+      </svg>
+    </div>
+    <h1>Orbit Out of Range</h1>
+    <p>Luna needs an active internet connection to transmit encrypted signals through the void. Connect to Wi-Fi or data to resume.</p>
+    <button onclick="window.location.reload()">Retry Connection</button>
+  </div>
+</body>
+</html>
