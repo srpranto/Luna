@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { formatClock, formatRemaining } from "@/lib/luna/identity";
 import type { ChatMessage } from "@/lib/luna/types";
 import { cn } from "@/lib/utils";
-import { Check, CheckCheck, ArrowRight } from "lucide-react";
+import { Check, CheckCheck, ArrowRight, Pencil, Trash2, Copy, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 function renderFormattedBody(body: string, isMine: boolean) {
@@ -43,7 +43,7 @@ function renderFormattedBody(body: string, isMine: boolean) {
             className={cn(
               "px-1.5 py-0.5 rounded text-[11px] font-mono",
               isMine
-                ? "bg-zinc-200 text-zinc-900"
+                ? "bg-zinc-200 text-zinc-900 border border-zinc-300"
                 : "bg-zinc-800 text-zinc-200 border border-white/10",
             )}
           >
@@ -66,12 +66,16 @@ function renderFormattedBody(body: string, isMine: boolean) {
           key={lineIdx}
           className={cn(
             "border-l-2 pl-2 my-1 italic text-xs",
-            isMine ? "border-zinc-400 text-zinc-700" : "border-zinc-500 text-zinc-400",
+            isMine ? "border-zinc-400 text-zinc-700" : "border-zinc-600 text-zinc-400",
           )}
         >
           {parts}
         </blockquote>
       );
+    }
+
+    if (lines.length === 1) {
+      return <React.Fragment key={lineIdx}>{parts.length > 0 ? parts : " "}</React.Fragment>;
     }
 
     return (
@@ -88,77 +92,121 @@ export function Transcript({
   peerCallsign,
   interests = [],
   peerTyping,
-  flutter,
-  drifting,
-  reconnectRemainingSeconds,
   closed,
   onNext,
   onLeave,
+  onEditMessage,
+  onDeleteMessage,
 }: {
   messages: ChatMessage[];
-  now: Date | null;
+  now?: Date | null;
   peerCallsign?: string;
   interests?: string[];
   peerTyping?: boolean;
-  flutter?: boolean;
-  drifting?: boolean;
-  reconnectRemainingSeconds?: number;
   closed?: boolean;
   onNext?: () => void;
   onLeave?: () => void;
+  onEditMessage?: (messageId: string, newBody: string) => Promise<void>;
+  onDeleteMessage?: (messageId: string) => Promise<void>;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [showInterests, setShowInterests] = useState(true);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setShowInterests(false);
+    }, 20000);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages.length, peerTyping]);
 
-  const stamp = now ? now.getTime() : 0;
+  const [mountStamp] = useState(() => (now ? now.getTime() : Date.now()));
+  const stamp = now ? now.getTime() : mountStamp;
+  const lastMineMsgId = [...messages].reverse().find((m) => m.mine && !m.system)?.id;
+
+  function handleStartEditing(id: string, currentText: string) {
+    setEditingId(id);
+    setEditDraft(currentText);
+  }
+
+  function handleCancelEditing() {
+    setEditingId(null);
+    setEditDraft("");
+  }
+
+  async function handleSubmitEdit(id: string) {
+    if (!editDraft.trim() || savingEdit || !onEditMessage) return;
+    setSavingEdit(true);
+    try {
+      await onEditMessage(id, editDraft.trim());
+      setEditingId(null);
+      setEditDraft("");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  function handleCopy(id: string, body: string) {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      void navigator.clipboard.writeText(body);
+      setCopiedId(id);
+      window.setTimeout(() => setCopiedId(null), 1500);
+    }
+  }
 
   return (
-    <div className="flex flex-1 flex-col justify-end p-3 sm:p-6 space-y-3 sm:space-y-4">
-      <div className="animate-fade-up mx-auto my-1 w-full max-w-xs sm:max-w-sm rounded-lg border border-white/5 bg-zinc-950/50 p-2 sm:p-2.5 text-center backdrop-blur-md">
-        <p className="text-[10px] sm:text-[11px] text-zinc-500">
-          Messages disappear when either of you leaves.
-        </p>
-        {interests.length > 0 && (
-          <div className="animate-fade-up stagger-1 mt-1.5 flex flex-wrap items-center justify-center gap-1">
-            {interests.map((tag) => (
-              <span
-                key={tag}
-                className="rounded-md bg-zinc-900 border border-white/10 px-1.5 py-0.5 text-[10px] font-mono text-zinc-400"
-              >
-                #{tag}
-              </span>
-            ))}
+    <div className="flex flex-1 flex-col justify-end p-3 sm:p-6 space-y-3 sm:space-y-4 select-none">
+      <div className="animate-fade-up mx-auto my-1 w-full max-w-xs sm:max-w-sm rounded-xl border border-white/5 bg-zinc-950/60 p-2 sm:p-2.5 text-center backdrop-blur-md shadow-sm transition-all duration-500">
+        <div className="flex items-center justify-center gap-1.5 text-[11px] text-zinc-400 font-mono">
+          <Lock className="h-3 w-3 text-emerald-400 shrink-0" />
+          <span className="font-semibold text-zinc-300">End-to-End Encrypted</span>
+          {!showInterests && (
+            <>
+              <span className="text-zinc-600">•</span>
+              <span className="text-zinc-500">Expires in 24h</span>
+            </>
+          )}
+        </div>
+        {showInterests && (
+          <p className="mt-0.5 text-[10px] sm:text-[11px] text-zinc-500 transition-opacity">
+            Chat is private and automatically expires after 24 hours.
+          </p>
+        )}
+        {showInterests && interests.length > 0 && (
+          <div className="mt-2 pt-2 border-t border-white/5 flex flex-col items-center gap-1.5 transition-all">
+            <span className="text-[11px] text-zinc-400 font-medium">
+              You both like
+            </span>
+            <div className="flex flex-wrap items-center justify-center gap-1.5">
+              {interests.map((tag) => (
+                <span
+                  key={tag}
+                  className="rounded-full bg-zinc-900 border border-white/10 px-2.5 py-0.5 text-[10px] font-mono text-zinc-300 shadow-sm"
+                >
+                  #{tag}
+                </span>
+              ))}
+            </div>
           </div>
         )}
       </div>
 
-      <div className="animate-fade-up stagger-2 mx-auto my-0.5 flex items-center justify-center gap-1.5 text-[11px] font-mono text-zinc-400">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-        <span>Connected with {peerCallsign ?? "Stranger"} • Say hello</span>
-      </div>
-
-      {drifting ? (
-        <div className="animate-fade-up rounded-xl bg-amber-950/40 border border-amber-500/30 text-amber-300 text-xs text-center py-2.5 px-4 mx-auto font-mono flex items-center justify-center gap-2.5 shadow-lg backdrop-blur-md max-w-sm">
-          <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping shrink-0" />
-          <span>
-            Signal drifting into the void… waiting for reconnect ({reconnectRemainingSeconds ?? 30}
-            s)
-          </span>
-        </div>
-      ) : flutter ? (
-        <div className="rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs text-center py-1.5 px-3 mx-auto font-mono">
-          Connection is flickering…
-        </div>
-      ) : null}
-
-      <div className="flex flex-col space-y-2.5 sm:space-y-3 pt-1">
-        {messages.map((msg) => {
+      <div className="flex flex-col space-y-2 sm:space-y-2.5 pt-1">
+        {messages.map((msg, idx) => {
           const isMine = msg.mine;
           const isSystem = msg.system;
           const remaining = stamp > 0 ? formatRemaining(msg.expiresAt, stamp) : null;
+          const showPeerHeader =
+            !isMine &&
+            !isSystem &&
+            (idx === 0 || messages[idx - 1]?.mine || messages[idx - 1]?.system);
 
           if (isSystem) {
             return (
@@ -178,51 +226,169 @@ export function Transcript({
                 isMine ? "items-end animate-bubble-mine" : "items-start animate-bubble-peer",
               )}
             >
-              <div
-                className={cn(
-                  "flex items-center gap-1.5 px-1 pb-1 text-[10px] sm:text-[11px] text-zinc-500 font-mono",
-                  isMine ? "flex-row-reverse" : "flex-row",
-                )}
-              >
-                <span className={cn("font-medium", isMine ? "text-zinc-300" : "text-zinc-400")}>
-                  {isMine ? "You" : peerCallsign ? peerCallsign : "Stranger"}
+              {showPeerHeader && (
+                <span className="text-[10px] font-mono font-medium text-zinc-400 px-1 pb-0.5 select-none">
+                  {peerCallsign ?? "Stranger"}
                 </span>
-                <span>•</span>
-                <span>{formatClock(new Date(msg.createdAt))}</span>
-                {remaining && (
-                  <span className="text-[10px] text-zinc-500 hidden group-hover:inline">
-                    (fades in {remaining})
-                  </span>
-                )}
-              </div>
+              )}
 
               <div
                 className={cn(
-                  "relative max-w-[88%] sm:max-w-[75%] rounded-2xl px-3.5 py-2 sm:px-4 sm:py-2.5 text-xs sm:text-sm leading-relaxed break-words shadow-sm",
-                  isMine
-                    ? "bg-zinc-100 text-zinc-950 rounded-tr-xs font-normal"
-                    : "bg-zinc-900/90 border border-white/10 text-zinc-100 rounded-tl-xs",
+                  "flex items-center gap-1.5 max-w-full",
+                  isMine ? "justify-end" : "justify-start flex-row-reverse",
                 )}
               >
-                <div className="whitespace-pre-wrap leading-relaxed">
-                  {renderFormattedBody(msg.body, isMine)}
-                </div>
-                {isMine && (
-                  <div className="mt-1 flex items-center justify-end gap-1 text-[10px] text-zinc-600">
-                    {msg.copied ? (
-                      <CheckCheck className="h-3 w-3" />
+                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(msg.id, msg.body)}
+                    aria-label="Copy message"
+                    title={copiedId === msg.id ? "Copied!" : "Copy message"}
+                    className="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer"
+                  >
+                    {copiedId === msg.id ? (
+                      <Check className="h-3 w-3 text-emerald-400" />
                     ) : (
-                      <Check className="h-3 w-3" />
+                      <Copy className="h-3 w-3" />
                     )}
+                  </button>
+
+                  {isMine && !closed && editingId !== msg.id && onEditMessage && (
+                    <button
+                      type="button"
+                      onClick={() => handleStartEditing(msg.id, msg.body)}
+                      aria-label="Edit message"
+                      title="Edit message"
+                      className="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                  )}
+
+                  {isMine && !closed && editingId !== msg.id && onDeleteMessage && (
+                    <button
+                      type="button"
+                      onClick={() => void onDeleteMessage(msg.id)}
+                      aria-label="Delete message"
+                      title="Delete message"
+                      className="p-1 rounded text-zinc-500 hover:text-red-400 hover:bg-red-950/40 transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+
+                {editingId === msg.id ? (
+                  <div className="flex flex-col gap-2 min-w-[220px] sm:min-w-[300px] p-2.5 rounded-xl border border-zinc-800 bg-zinc-950/95 shadow-xl backdrop-blur-xl">
+                    <div className="flex items-center justify-between px-0.5">
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 font-semibold flex items-center gap-1">
+                        <Pencil className="h-2.5 w-2.5" />
+                        <span>Edit Message</span>
+                      </span>
+                      <span className="text-[10px] font-mono text-zinc-500">Esc to cancel</span>
+                    </div>
+                    <textarea
+                      value={editDraft}
+                      onChange={(e) => setEditDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          void handleSubmitEdit(msg.id);
+                        } else if (e.key === "Escape") {
+                          e.preventDefault();
+                          handleCancelEditing();
+                        }
+                      }}
+                      rows={2}
+                      className="w-full rounded-lg border border-white/10 bg-zinc-900/90 p-2 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-white/20 focus:border-white/20 font-sans resize-none transition-all"
+                      autoFocus
+                    />
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={handleCancelEditing}
+                        disabled={savingEdit}
+                        className="rounded-lg px-2.5 py-1 text-[11px] font-medium text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleSubmitEdit(msg.id)}
+                        disabled={savingEdit || !editDraft.trim()}
+                        className="rounded-lg bg-zinc-100 hover:bg-zinc-200 px-3 py-1 text-[11px] font-semibold text-zinc-950 shadow-sm disabled:opacity-50 transition-colors cursor-pointer flex items-center gap-1"
+                      >
+                        <span>Save</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    className={cn(
+                      "relative inline-block w-fit max-w-[85%] sm:max-w-[70%] rounded-2xl px-3.5 py-2 text-xs sm:text-sm leading-relaxed break-words shadow-sm",
+                      isMine
+                        ? "bg-zinc-100 text-zinc-950 rounded-br-xs font-normal"
+                        : "bg-zinc-900 border border-white/10 text-zinc-100 rounded-bl-xs",
+                    )}
+                    title={formatClock(new Date(msg.createdAt))}
+                  >
+                    <div className="inline">{renderFormattedBody(msg.body, isMine)}</div>
+                    <span className="inline-flex items-center gap-1 float-right mt-1.5 ml-2.5 text-[10px] font-mono select-none">
+                      <span className="hidden group-hover:inline text-[10px] text-zinc-500 transition-opacity">
+                        {formatClock(new Date(msg.createdAt))}
+                      </span>
+                      {msg.editedAt && (
+                        <span className="text-[9px] italic text-zinc-500">
+                          edited
+                        </span>
+                      )}
+                      {remaining && (
+                        <span className="text-[9px] hidden group-hover:inline text-zinc-500">
+                          ({remaining})
+                        </span>
+                      )}
+                      {isMine && (
+                        <span className="inline-flex items-center">
+                          {msg.seenAt ? (
+                            <CheckCheck className="h-3 w-3 text-sky-500" />
+                          ) : msg.copied ? (
+                            <CheckCheck className="h-3 w-3 text-zinc-400" />
+                          ) : (
+                            <Check className="h-3 w-3 text-zinc-400" />
+                          )}
+                        </span>
+                      )}
+                    </span>
                   </div>
                 )}
               </div>
+
+              {msg.id === lastMineMsgId && !closed && (
+                <div className="flex items-center justify-end gap-1 px-1 pt-0.5 text-[10px] font-mono select-none animate-fade-up">
+                  {msg.seenAt ? (
+                    <span className="flex items-center gap-1 text-sky-400 font-medium">
+                      <span>Seen</span>
+                      <CheckCheck className="h-3 w-3 text-sky-400" />
+                    </span>
+                  ) : msg.copied ? (
+                    <span className="flex items-center gap-1 text-zinc-400 font-medium">
+                      <span>Delivered</span>
+                      <CheckCheck className="h-3 w-3 text-zinc-400" />
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-zinc-500">
+                      <span>Sent</span>
+                      <Check className="h-3 w-3 text-zinc-500" />
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}
 
         {peerTyping && (
-          <div className="animate-message-glide flex flex-col items-start space-y-1">
+          <div className="animate-in fade-in slide-in-from-bottom-2 duration-200 flex flex-col items-start space-y-1">
             <span className="text-[10px] sm:text-[11px] text-zinc-500 px-1 font-mono">
               {peerCallsign ?? "Stranger"} is typing…
             </span>
@@ -237,7 +403,10 @@ export function Transcript({
         {closed && (
           <div className="animate-fade-up mx-auto my-3 w-full max-w-sm rounded-xl border border-white/10 bg-zinc-950/90 p-4 text-center shadow-xl backdrop-blur-md space-y-3">
             <p className="text-xs sm:text-sm font-medium text-zinc-300">
-              The stranger has left the chat
+              User is no longer available right now
+            </p>
+            <p className="text-[11px] text-zinc-500">
+              The stranger disconnected or left the conversation.
             </p>
             <div className="flex items-center justify-center gap-2 pt-0.5">
               {onNext && (

@@ -85,6 +85,31 @@ export function sendMessage(data: {
   return request<MessagesPack>("sendMessage", data);
 }
 
+export function editMessage(data: {
+  deviceId: string;
+  sessionId: string;
+  messageId: string;
+  body: string;
+}): Promise<MessagesPack> {
+  return request<MessagesPack>("editMessage", data);
+}
+
+export function deleteMessage(data: {
+  deviceId: string;
+  sessionId: string;
+  messageId: string;
+}): Promise<{ ok: boolean; messageId: string }> {
+  return request<{ ok: boolean; messageId: string }>("deleteMessage", data);
+}
+
+export function reportPresence(data: {
+  deviceId: string;
+  sessionId?: string;
+  isAway: boolean;
+}): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>("reportPresence", data);
+}
+
 export function offerQsl(data: { deviceId: string; sessionId: string }): Promise<MessagesPack> {
   return request<MessagesPack>("offerQsl", data);
 }

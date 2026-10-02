@@ -11,7 +11,6 @@ import {
   Download,
   Smartphone,
   CheckCircle2,
-  Share,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +33,7 @@ export function SettingsPanel({
   onCallsignUpdated,
   onStationReset,
 }: SettingsPanelProps) {
-  const { isInstallable, isStandalone, isIos, installApp } = usePwa();
+  const { isStandalone, installApp } = usePwa();
   const [handle, setHandle] = useState(desk.station.callsign);
   const [prevCallsign, setPrevCallsign] = useState(desk.station.callsign);
   const [saving, setSaving] = useState(false);
@@ -193,35 +192,16 @@ export function SettingsPanel({
 
           {!isStandalone && (
             <div className="flex flex-col gap-2 pt-1">
-              {isInstallable ? (
-                <Button
-                  type="button"
-                  onClick={async () => {
-                    await installApp();
-                  }}
-                  className="h-8.5 text-xs bg-white text-zinc-950 hover:bg-zinc-200 gap-2 font-medium cursor-pointer"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  <span>Install Luna App</span>
-                </Button>
-              ) : isIos ? (
-                <div className="rounded-lg bg-zinc-950/60 border border-white/5 p-2.5 text-[11px] text-zinc-400 flex items-start gap-2">
-                  <Share className="h-3.5 w-3.5 text-indigo-400 shrink-0 mt-0.5" />
-                  <span>
-                    To install on iOS: tap the <strong className="text-zinc-200">Share</strong>{" "}
-                    button in Safari, then tap{" "}
-                    <strong className="text-zinc-200">Add to Home Screen</strong>.
-                  </span>
-                </div>
-              ) : (
-                <div className="rounded-lg bg-zinc-950/60 border border-white/5 p-2.5 text-[11px] text-zinc-400">
-                  <span>
-                    To install: click the <strong className="text-zinc-200">Install icon</strong> in
-                    your browser&apos;s address bar, or use browser menu &rarr;{" "}
-                    <strong className="text-zinc-200">Install Luna</strong>.
-                  </span>
-                </div>
-              )}
+              <Button
+                type="button"
+                onClick={async () => {
+                  await installApp();
+                }}
+                className="h-9 text-xs bg-white text-zinc-950 hover:bg-zinc-200 gap-2 font-medium cursor-pointer shadow-[0_0_20px_rgba(255,255,255,0.18)]"
+              >
+                <Download className="h-4 w-4" />
+                <span>Install Luna App</span>
+              </Button>
             </div>
           )}
         </div>

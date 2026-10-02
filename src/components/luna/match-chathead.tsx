@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Moon, Sparkles, X, Compass } from "lucide-react";
+import { Sparkles, X, Compass } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { LunaMoon } from "@/components/luna/luna-moon";
 
 export function MatchChathead({
   onAddPopular,
@@ -91,7 +92,7 @@ export function MatchChathead({
         className="group relative flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-full border border-white/20 bg-zinc-900/90 shadow-[0_8px_25px_rgba(0,0,0,0.6),inset_0_1px_0_0_rgba(255,255,255,0.15)] backdrop-blur-md transition-all hover:scale-105 active:scale-95 cursor-pointer"
         title="Matchmaking suggestions"
       >
-        <Moon className="h-5 w-5 text-zinc-100 group-hover:text-white transition-colors" />
+        <LunaMoon className="h-5 w-5 text-zinc-100 group-hover:text-white transition-colors" />
 
         <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-indigo-500 text-[9px] font-bold text-white shadow-sm ring-2 ring-zinc-950 animate-pulse">
           !

@@ -185,35 +185,18 @@
   }
 }
 
-@keyframes message-glide {
-  0% {
-    opacity: 0;
-    transform: translate3d(0, 12px, 0) scale(0.97);
-  }
-  100% {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-}
-
 .animate-fade-up {
-  animation: smooth-fade-up 0.62s cubic-bezier(0.16, 1, 0.3, 1) both;
-  will-change: transform, opacity;
-}
-
-.animate-message-glide {
-  animation: message-glide 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
-  will-change: transform, opacity;
+  animation: smooth-fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes imessage-bubble-mine {
   0% {
     opacity: 0;
-    transform: translate3d(6px, 18px, 0) scale(0.84);
+    transform: translate3d(6px, 14px, 0) scale(0.88);
   }
   65% {
     opacity: 1;
-    transform: translate3d(0, -2px, 0) scale(1.025);
+    transform: translate3d(0, -1px, 0) scale(1.015);
   }
   100% {
     opacity: 1;
@@ -224,11 +207,11 @@
 @keyframes imessage-bubble-peer {
   0% {
     opacity: 0;
-    transform: translate3d(-6px, 18px, 0) scale(0.84);
+    transform: translate3d(-6px, 14px, 0) scale(0.88);
   }
   65% {
     opacity: 1;
-    transform: translate3d(0, -2px, 0) scale(1.025);
+    transform: translate3d(0, -1px, 0) scale(1.015);
   }
   100% {
     opacity: 1;
@@ -238,28 +221,32 @@
 
 .animate-bubble-mine {
   transform-origin: bottom right;
-  animation: imessage-bubble-mine 0.38s cubic-bezier(0.2, 0.95, 0.32, 1.18) both;
-  will-change: transform, opacity;
+  animation: imessage-bubble-mine 0.32s cubic-bezier(0.2, 0.95, 0.32, 1.15) both;
 }
 
 .animate-bubble-peer {
   transform-origin: bottom left;
-  animation: imessage-bubble-peer 0.38s cubic-bezier(0.2, 0.95, 0.32, 1.18) both;
-  will-change: transform, opacity;
+  animation: imessage-bubble-peer 0.32s cubic-bezier(0.2, 0.95, 0.32, 1.15) both;
 }
 
 .stagger-1 {
-  animation-delay: 110ms;
+  animation-delay: 80ms;
 }
 .stagger-2 {
-  animation-delay: 220ms;
+  animation-delay: 160ms;
 }
 .stagger-3 {
-  animation-delay: 350ms;
+  animation-delay: 240ms;
 }
 .stagger-4 {
-  animation-delay: 490ms;
+  animation-delay: 320ms;
 }
 .stagger-5 {
-  animation-delay: 640ms;
+  animation-delay: 400ms;
+}
+
+@media print {
+  body {
+    display: none !important;
+  }
 }

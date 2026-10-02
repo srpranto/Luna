@@ -1,6 +1,9 @@
 export type LunaEventType =
   | "desk_update"
   | "message"
+  | "message_edited"
+  | "message_deleted"
+  | "presence_update"
   | "typing"
   | "session_started"
   | "session_ended"

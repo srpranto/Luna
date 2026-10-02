@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Star, Send, X, Moon, Clock } from "lucide-react";
+import { Star, Send, X, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BlackHoleIcon } from "@/components/luna/black-hole-icon";
+import { LunaMoon } from "@/components/luna/luna-moon";
 import type { VoidLetter } from "@/lib/luna/types";
 import { castVoidLetter, listVoidLetters, starVoidLetter } from "@/lib/luna/client";
 import { cn } from "@/lib/utils";
@@ -160,7 +161,7 @@ export function VoidLetters({ deviceId, onClose }: { deviceId: string; onClose: 
             </div>
           ) : letters.length === 0 ? (
             <div className="py-12 text-center text-xs text-zinc-500">
-              <Moon className="h-6 w-6 mx-auto mb-2 text-zinc-600 opacity-60" />
+              <LunaMoon className="h-6 w-6 mx-auto mb-2 text-zinc-600 opacity-60" />
               <span>The void is quiet tonight. Be the first to leave a message.</span>
             </div>
           ) : (

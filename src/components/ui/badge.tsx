@@ -12,9 +12,7 @@ const badgeVariants = cva(
           "border-white/10 bg-zinc-900 text-zinc-300 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]",
         destructive: "border-red-500/20 bg-red-500/10 text-red-400",
         outline: "border-zinc-800 text-zinc-300 bg-zinc-950/50",
-        discord: "border-white/10 bg-zinc-800 text-zinc-200",
         success: "border-emerald-500/20 bg-emerald-500/10 text-emerald-400",
-        bot: "border-white/10 bg-zinc-800 text-zinc-200 text-[10px] px-1.5 py-0.5 rounded font-mono uppercase",
       },
     },
     defaultVariants: {

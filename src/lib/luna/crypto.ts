@@ -1,12 +1,32 @@
-import type { ChatMessage } from "./types";
+import type { ChatMessage, HistorySession } from "./types";
 
 const CHAT_CACHE_PREFIX = "luna.chat";
+const HISTORY_INDEX_KEY = "luna.history.sessions";
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+interface CachedEnvelope {
+  messages: ChatMessage[];
+  savedAt: number;
+}
 
 export function loadCachedMessages(sessionId: string): ChatMessage[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = sessionStorage.getItem(`${CHAT_CACHE_PREFIX}.${sessionId}`);
-    return raw ? (JSON.parse(raw) as ChatMessage[]) : [];
+    const raw = localStorage.getItem(`${CHAT_CACHE_PREFIX}.${sessionId}`);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === "object" && "messages" in parsed && "savedAt" in parsed) {
+      const env = parsed as CachedEnvelope;
+      if (Date.now() - env.savedAt > CACHE_TTL_MS) {
+        localStorage.removeItem(`${CHAT_CACHE_PREFIX}.${sessionId}`);
+        return [];
+      }
+      return env.messages;
+    }
+    if (Array.isArray(parsed)) {
+      return parsed as ChatMessage[];
+    }
+    return [];
   } catch {
     return [];
   }
@@ -15,16 +35,114 @@ export function loadCachedMessages(sessionId: string): ChatMessage[] {
 export function saveCachedMessages(sessionId: string, msgs: ChatMessage[]): void {
   if (typeof window === "undefined") return;
   try {
-    sessionStorage.setItem(`${CHAT_CACHE_PREFIX}.${sessionId}`, JSON.stringify(msgs));
+    const envelope: CachedEnvelope = {
+      messages: msgs,
+      savedAt: Date.now(),
+    };
+    localStorage.setItem(`${CHAT_CACHE_PREFIX}.${sessionId}`, JSON.stringify(envelope));
   } catch {}
 }
 
-export function clearCachedMessages(sessionId: string): void {
+export function updateCachedMessage(sessionId: string, messageId: string, newBody: string): void {
+  const msgs = loadCachedMessages(sessionId);
+  const updated = msgs.map((m) =>
+    m.id === messageId ? { ...m, body: newBody, editedAt: new Date().toISOString() } : m,
+  );
+  saveCachedMessages(sessionId, updated);
+}
+
+export function deleteCachedMessage(sessionId: string, messageId: string): void {
+  const msgs = loadCachedMessages(sessionId);
+  const filtered = msgs.filter((m) => m.id !== messageId);
+  saveCachedMessages(sessionId, filtered);
+}
+
+
+export function saveHistorySession(session: HistorySession): void {
   if (typeof window === "undefined") return;
   try {
-    sessionStorage.removeItem(`${CHAT_CACHE_PREFIX}.${sessionId}`);
+    const existing = loadChatHistory();
+    const updated = [session, ...existing.filter((s) => s.sessionId !== session.sessionId)].slice(
+      0,
+      50,
+    );
+    localStorage.setItem(HISTORY_INDEX_KEY, JSON.stringify(updated));
   } catch {}
-  destroySessionKey(sessionId);
+}
+
+export function loadChatHistory(): HistorySession[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(HISTORY_INDEX_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const now = Date.now();
+    const valid: HistorySession[] = [];
+    for (const item of parsed) {
+      if (item && typeof item === "object" && "sessionId" in item && "savedAt" in item) {
+        const h = item as HistorySession;
+        if (now - h.savedAt <= CACHE_TTL_MS) {
+          valid.push(h);
+        } else {
+          localStorage.removeItem(`${CHAT_CACHE_PREFIX}.${h.sessionId}`);
+        }
+      }
+    }
+    if (valid.length !== parsed.length) {
+      localStorage.setItem(HISTORY_INDEX_KEY, JSON.stringify(valid));
+    }
+    return valid;
+  } catch {
+    return [];
+  }
+}
+
+export function deleteHistorySession(sessionId: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    const existing = loadChatHistory();
+    const filtered = existing.filter((s) => s.sessionId !== sessionId);
+    localStorage.setItem(HISTORY_INDEX_KEY, JSON.stringify(filtered));
+    localStorage.removeItem(`${CHAT_CACHE_PREFIX}.${sessionId}`);
+  } catch {}
+}
+
+export function clearAllChatHistory(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const existing = loadChatHistory();
+    for (const s of existing) {
+      localStorage.removeItem(`${CHAT_CACHE_PREFIX}.${s.sessionId}`);
+    }
+    localStorage.removeItem(HISTORY_INDEX_KEY);
+  } catch {}
+}
+
+export function sweepExpiredCaches(): void {
+  if (typeof window === "undefined") return;
+  try {
+    loadChatHistory();
+    const now = Date.now();
+    const toRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(`${CHAT_CACHE_PREFIX}.`)) {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw) as CachedEnvelope;
+            if (parsed.savedAt && now - parsed.savedAt > CACHE_TTL_MS) {
+              toRemove.push(key);
+            }
+          } catch {}
+        }
+      }
+    }
+    for (const k of toRemove) {
+      localStorage.removeItem(k);
+    }
+  } catch {}
 }
 
 const ecdhStore = new Map<

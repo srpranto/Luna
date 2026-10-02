@@ -8,7 +8,6 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-zinc-50 text-zinc-950 hover:bg-zinc-200 shadow-sm active:scale-[0.98]",
-        solid: "bg-zinc-50 text-zinc-950 hover:bg-zinc-200 shadow-sm active:scale-[0.98]",
         destructive:
           "bg-red-500/15 text-red-400 border border-red-500/20 hover:bg-red-500/25 active:scale-[0.98]",
         outline:
@@ -16,8 +15,6 @@ const buttonVariants = cva(
         secondary:
           "bg-zinc-900 text-zinc-200 border border-white/10 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] hover:bg-zinc-800 hover:text-white active:scale-[0.98]",
         ghost: "bg-transparent text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-100",
-        line: "border border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 active:scale-[0.98]",
-        link: "text-zinc-400 underline-offset-4 hover:underline hover:text-zinc-100",
         success:
           "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/25 active:scale-[0.98]",
       },

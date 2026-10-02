@@ -1,10 +1,11 @@
 "use client";
 
-import { HeartHandshake, Check, X, MessageSquare, Moon } from "lucide-react";
+import { HeartHandshake, Check, X, MessageSquare } from "lucide-react";
 import type { DeskView } from "@/lib/luna/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { LunaMoon } from "@/components/luna/luna-moon";
 
 export function LogPanel({
   desk,
@@ -98,7 +99,7 @@ export function LogPanel({
         </h3>
         {empty ? (
           <div className="rounded-xl border border-dashed border-zinc-800 p-8 text-center bg-zinc-900/20">
-            <Moon className="mx-auto h-8 w-8 text-zinc-600 mb-2" />
+            <LunaMoon className="mx-auto h-8 w-8 text-zinc-600 mb-2" />
             <p className="text-sm font-medium text-zinc-200">No connections yet</p>
             <p className="mt-1 text-xs text-zinc-500 max-w-sm mx-auto">
               While chatting, tap &ldquo;Add contact&rdquo; on someone you&apos;d like to talk to

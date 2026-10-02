@@ -1,10 +1,10 @@
 export const MAX_LINE_CHARS = 280;
 export const SEND_COOLDOWN_MS = 800;
 export const QUEUE_STALE_SECONDS = 12;
-export const STRANGER_TTL_MINUTES = 30;
+export const STRANGER_TTL_MINUTES = 1440;
+export const IDLE_AWAY_THRESHOLD_MS = 60000;
+export const INACTIVITY_DISCONNECT_MS = 300000;
 export const FRIEND_TTL_DAYS = 7;
-
-export type Interest = string;
 
 export function sanitizeInterests(input: unknown): string[] {
   if (!input) return [];

@@ -17,6 +17,7 @@ export function Composer({
   disabled,
   placeholder,
   autoFocus,
+  onActivity,
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -26,9 +27,24 @@ export function Composer({
   disabled?: boolean;
   placeholder: string;
   autoFocus?: boolean;
+  onActivity?: () => void;
 }) {
   const [showReactions, setShowReactions] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function clearTypingTimer() {
+    if (typingTimerRef.current) {
+      clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = null;
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      clearTypingTimer();
+    };
+  }, []);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -41,6 +57,7 @@ export function Composer({
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!disabled && value.trim()) {
+      clearTypingTimer();
       onTyping?.(false);
       onSend();
       if (textareaRef.current) {
@@ -53,6 +70,7 @@ export function Composer({
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       if (!disabled && value.trim()) {
+        clearTypingTimer();
         onTyping?.(false);
         onSend();
         if (textareaRef.current) {
@@ -63,10 +81,15 @@ export function Composer({
   }
 
   function handleChange(text: string) {
+    onActivity?.();
     const next = text.slice(0, MAX_LINE_CHARS);
     onChange(next);
+    clearTypingTimer();
     if (next.trim().length > 0) {
       onTyping?.(true);
+      typingTimerRef.current = setTimeout(() => {
+        onTyping?.(false);
+      }, 2000);
     } else {
       onTyping?.(false);
     }
@@ -127,6 +150,16 @@ export function Composer({
             autoFocus={autoFocus}
             autoComplete="off"
             autoCorrect="off"
+            onFocus={() => {
+              onActivity?.();
+            }}
+            onClick={() => {
+              onActivity?.();
+            }}
+            onBlur={() => {
+              clearTypingTimer();
+              onTyping?.(false);
+            }}
             className="min-h-[40px] max-h-[130px] w-full resize-none rounded-xl border border-zinc-800 bg-zinc-900/60 pl-3.5 pr-14 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 shadow-inner transition-colors focus:border-zinc-500 focus:outline-none disabled:opacity-40 leading-relaxed overflow-y-auto"
           />
           {value.length > 0 && (

@@ -61,10 +61,15 @@ export function StarfieldCanvas({
 
     const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let currentSpeed = speed;
+    let lastTime = performance.now();
 
-    const render = () => {
+    const render = (time: number) => {
+      const delta = time - lastTime;
+      lastTime = time;
+      const dt = Math.min(Math.max(delta / (1000 / 60), 0.1), 3);
+
       const targetSpeed = hyperspace ? 24 : speed;
-      currentSpeed += (targetSpeed - currentSpeed) * 0.05;
+      currentSpeed += (targetSpeed - currentSpeed) * Math.min(0.05 * dt, 1);
 
       ctx.fillStyle = hyperspace ? "rgba(9, 9, 11, 0.25)" : "rgba(9, 9, 11, 0.4)";
       ctx.fillRect(0, 0, width, height);
@@ -77,7 +82,7 @@ export function StarfieldCanvas({
 
         if (!prefersReducedMotion) {
           star.pz = star.z;
-          star.z -= currentSpeed;
+          star.z -= currentSpeed * dt;
 
           if (star.z <= 0) {
             star.z = maxDepth;
@@ -129,7 +134,7 @@ export function StarfieldCanvas({
       animationId = requestAnimationFrame(render);
     };
 
-    render();
+    animationId = requestAnimationFrame(render);
 
     return () => {
       cancelAnimationFrame(animationId);

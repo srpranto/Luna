@@ -14,7 +14,7 @@ type GlobalRef = typeof globalThis & {
   __lunaMigratedVersion__?: number;
 };
 
-const CURRENT_SCHEMA_VERSION = 5;
+const CURRENT_SCHEMA_VERSION = 8;
 const globalRef = globalThis as GlobalRef;
 
 const LUNA_SCHEMA = `
@@ -35,6 +35,7 @@ alter table stations add column if not exists typing_until timestamptz;
 alter table stations add column if not exists ip text;
 alter table stations add column if not exists is_custom boolean default false;
 alter table stations add column if not exists public_key text;
+alter table stations add column if not exists is_away boolean default false;
 
 create table if not exists bans (
   device_id    text primary key,
@@ -89,6 +90,8 @@ create table if not exists messages (
 );
 
 alter table messages add column if not exists copied_at timestamptz;
+alter table messages add column if not exists edited_at timestamptz;
+alter table messages add column if not exists seen_at timestamptz;
 
 create index if not exists messages_session_idx on messages (session_id, created_at);
 
@@ -168,6 +171,9 @@ async function initNeon(databaseUrl: string): Promise<Sql> {
 
   if (!globalRef.__lunaMigrated__) {
     await pool.query(LUNA_SCHEMA);
+    try {
+      await pool.query("alter table messages add column if not exists seen_at timestamptz;");
+    } catch {}
     globalRef.__lunaMigrated__ = true;
   }
 
@@ -216,65 +222,58 @@ export async function getSql(): Promise<Sql> {
   const sql = await globalRef.__lunaSqlPromise__;
 
   if (globalRef.__lunaMigratedVersion__ !== CURRENT_SCHEMA_VERSION) {
-    try {
-      await sql.query("alter table stations add column if not exists public_key text;");
-      await sql.query("alter table stations add column if not exists typing_until timestamptz;");
-      await sql.query("alter table stations add column if not exists ip text;");
-      await sql.query(
-        "alter table stations add column if not exists is_custom boolean default false;",
-      );
-      await sql.query("alter table messages add column if not exists copied_at timestamptz;");
-      await sql.query(`
-        create table if not exists bans (
-          device_id    text primary key,
-          ip           text,
-          reason       text not null,
-          violation    text not null,
-          banned_at    timestamptz not null default now()
-        );
-      `);
-      await sql.query("create index if not exists bans_ip_idx on bans (ip);");
-      await sql.query(`
-        create table if not exists violation_logs (
-          id           text primary key,
-          device_id    text not null,
-          ip           text,
-          violation    text not null,
-          session_id   text,
-          created_at   timestamptz not null default now()
-        );
-      `);
-      await sql.query(
-        "create index if not exists violation_logs_device_idx on violation_logs (device_id, violation);",
-      );
-      await sql.query(
-        "create index if not exists violation_logs_ip_idx on violation_logs (ip, violation);",
-      );
-      await sql.query(`
-        create table if not exists void_letters (
-          id           text primary key,
-          device_id    text not null,
-          callsign     text not null,
-          text         text not null,
-          stars        integer not null default 0,
-          created_at   timestamptz not null default now()
-        );
-      `);
-      await sql.query(
-        "create index if not exists void_letters_created_idx on void_letters (created_at desc);",
-      );
-      await sql.query(`
-        create table if not exists void_stars (
-          letter_id    text not null,
-          device_id    text not null,
-          created_at   timestamptz not null default now(),
-          primary key (letter_id, device_id)
-        );
-      `);
-      globalRef.__lunaMigratedVersion__ = CURRENT_SCHEMA_VERSION;
-    } catch {
-      return sql;
+    const migrationStatements = [
+      "alter table stations drop constraint if exists stations_callsign_key;",
+      "alter table stations drop constraint if exists stations_callsign_unique;",
+      "alter table stations add column if not exists typing_until timestamptz;",
+      "alter table stations add column if not exists ip text;",
+      "alter table stations add column if not exists is_custom boolean default false;",
+      "alter table stations add column if not exists public_key text;",
+      "alter table stations add column if not exists is_away boolean default false;",
+      "alter table messages add column if not exists copied_at timestamptz;",
+      "alter table messages add column if not exists edited_at timestamptz;",
+      "alter table messages add column if not exists seen_at timestamptz;",
+      `create table if not exists bans (
+        device_id    text primary key,
+        ip           text,
+        reason       text not null,
+        violation    text not null,
+        banned_at    timestamptz not null default now()
+      );`,
+      "create index if not exists bans_ip_idx on bans (ip);",
+      `create table if not exists violation_logs (
+        id           text primary key,
+        device_id    text not null,
+        ip           text,
+        violation    text not null,
+        session_id   text,
+        created_at   timestamptz not null default now()
+      );`,
+      "create index if not exists violation_logs_device_idx on violation_logs (device_id, violation);",
+      "create index if not exists violation_logs_ip_idx on violation_logs (ip, violation);",
+      `create table if not exists void_letters (
+        id           text primary key,
+        device_id    text not null,
+        callsign     text not null,
+        text         text not null,
+        stars        integer not null default 0,
+        created_at   timestamptz not null default now()
+      );`,
+      "create index if not exists void_letters_created_idx on void_letters (created_at desc);",
+      `create table if not exists void_stars (
+        letter_id    text not null,
+        device_id    text not null,
+        created_at   timestamptz not null default now(),
+        primary key (letter_id, device_id)
+      );`,
+    ];
+
+    for (const stmt of migrationStatements) {
+      try {
+        await sql.query(stmt);
+      } catch {}
     }
+    globalRef.__lunaMigratedVersion__ = CURRENT_SCHEMA_VERSION;
   }
 
   return sql;

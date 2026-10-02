@@ -1,13 +1,42 @@
 "use client";
 
-import { Moon, HeartHandshake, Settings, X, Lock, Download } from "lucide-react";
+import { HeartHandshake, Settings, X, Download, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SoundscapePopover } from "@/components/luna/soundscape-popover";
 import { usePwa } from "@/components/luna/pwa-provider";
 import { BlackHoleIcon } from "@/components/luna/black-hole-icon";
+import { LunaMoon } from "@/components/luna/luna-moon";
 import { formatElapsed } from "@/lib/luna/identity";
 import { cn } from "@/lib/utils";
+import { useEffect, useState } from "react";
+
+function SessionElapsedBadge({
+  createdAt,
+  fallbackAgeMs = 0,
+}: {
+  createdAt?: string;
+  fallbackAgeMs?: number;
+}) {
+  const [elapsed, setElapsed] = useState(() => {
+    if (!createdAt) return fallbackAgeMs;
+    return Math.max(0, Date.now() - new Date(createdAt).getTime());
+  });
+
+  useEffect(() => {
+    if (!createdAt) return;
+    const interval = window.setInterval(() => {
+      setElapsed(Math.max(0, Date.now() - new Date(createdAt).getTime()));
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [createdAt]);
+
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-zinc-900/90 px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-[11px] text-zinc-300 font-mono shrink-0 shadow-sm">
+      <span>{formatElapsed(elapsed)}</span>
+    </span>
+  );
+}
 
 const STELLAR_STARS = [
   { top: "22%", left: "3%", size: 1, duration: "3.8s", delay: "0.2s" },
@@ -42,6 +71,9 @@ export function StatusHeader({
   settingsOpen = false,
   onToggleSettings,
   onToggleVoid,
+  hasHistory = false,
+  historyOpen = false,
+  onToggleHistory,
   activeChat,
 }: {
   callsign?: string;
@@ -53,10 +85,16 @@ export function StatusHeader({
   settingsOpen?: boolean;
   onToggleSettings?: () => void;
   onToggleVoid?: () => void;
+  hasHistory?: boolean;
+  historyOpen?: boolean;
+  onToggleHistory?: () => void;
   activeChat?: {
     peerCallsign: string;
-    sessionAgeMs: number;
+    sessionAgeMs?: number;
+    sessionCreatedAt?: string;
     sessionKind?: "stranger" | "friend";
+    peerPresence?: "active" | "away" | "disconnected";
+    peerTyping?: boolean;
   };
 }) {
   const { showInstallButton, installApp } = usePwa();
@@ -84,7 +122,7 @@ export function StatusHeader({
 
       <div className="relative z-10 flex items-center gap-2 sm:gap-3 min-w-0 shrink-0">
         <div className="flex h-7.5 w-7.5 sm:h-8 sm:w-8 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]">
-          <Moon className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-zinc-100" />
+          <LunaMoon className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-zinc-100" glow />
         </div>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -112,23 +150,45 @@ export function StatusHeader({
       </div>
 
       {activeChat ? (
-        <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 sm:gap-2.5 z-30 max-w-[50%] sm:max-w-none justify-center">
-          <span className="text-xs sm:text-sm font-semibold font-mono text-zinc-100 truncate">
-            {activeChat.peerCallsign}
-          </span>
-          <span className="inline-flex items-center gap-1 sm:gap-1.5 rounded-full border border-white/10 bg-zinc-900/90 px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-[11px] text-zinc-300 font-mono shrink-0 shadow-sm">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span>{formatElapsed(activeChat.sessionAgeMs)}</span>
-          </span>
-          <span
-            className="hidden sm:inline-flex items-center gap-1 text-[10px] text-zinc-400 font-mono shrink-0"
-            title="End-to-End Encrypted (ECDH + AES-GCM)"
-          >
-            <Lock className="h-2.5 w-2.5 text-emerald-400" />
-            <span>E2E</span>
-          </span>
+        <div className="relative z-10 flex-1 min-w-0 flex items-center justify-center gap-1 sm:gap-2 px-1 overflow-hidden">
+          <div className="flex items-center gap-1.5 min-w-0 max-w-[110px] xs:max-w-[140px] sm:max-w-[220px]">
+            <span
+              className={cn(
+                "h-2 w-2 rounded-full shrink-0",
+                activeChat.peerPresence === "away"
+                  ? "bg-amber-400"
+                  : activeChat.peerPresence === "disconnected"
+                    ? "bg-zinc-500"
+                    : "bg-emerald-400 animate-pulse",
+              )}
+              title={
+                activeChat.peerPresence === "away"
+                  ? "Stranger is away"
+                  : activeChat.peerPresence === "disconnected"
+                    ? "Disconnected"
+                    : "Active"
+              }
+            />
+            <span className="text-xs sm:text-sm font-semibold font-mono text-zinc-100 truncate">
+              {activeChat.peerCallsign}
+            </span>
+            {activeChat.peerPresence === "away" && (
+              <span className="text-[10px] font-mono text-amber-400/90 shrink-0">(away)</span>
+            )}
+            {activeChat.peerTyping && (
+              <span className="text-[10px] font-mono text-zinc-400 animate-pulse hidden sm:inline shrink-0">
+                (typing…)
+              </span>
+            )}
+          </div>
+          <SessionElapsedBadge
+            createdAt={activeChat.sessionCreatedAt}
+            fallbackAgeMs={activeChat.sessionAgeMs}
+          />
         </div>
-      ) : null}
+      ) : (
+        <div className="flex-1" />
+      )}
 
       <div className="relative z-20 flex items-center gap-1 sm:gap-2 shrink-0">
         <div className="h-4 w-px bg-white/10 hidden sm:block" />
@@ -159,7 +219,21 @@ export function StatusHeader({
             {logOpen ? <X className="h-4 w-4" /> : <HeartHandshake className="h-4 w-4" />}
           </Button>
 
-          {onToggleVoid && (
+          {hasHistory && onToggleHistory && (
+            <Button
+              type="button"
+              variant={historyOpen ? "secondary" : "ghost"}
+              size="icon"
+              onClick={onToggleHistory}
+              aria-label="24h Chat History"
+              title="24h Chat History"
+              className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 cursor-pointer"
+            >
+              {historyOpen ? <X className="h-4 w-4" /> : <History className="h-4 w-4" />}
+            </Button>
+          )}
+
+          {!activeChat && onToggleVoid && (
             <Button
               type="button"
               variant="ghost"
@@ -167,10 +241,7 @@ export function StatusHeader({
               onClick={onToggleVoid}
               aria-label="The Void (24h Orbit Letters)"
               title="The Void (24h Orbit Letters)"
-              className={cn(
-                "h-8 w-8 text-indigo-400 hover:text-indigo-200 hover:bg-zinc-800/80",
-                activeChat && "hidden sm:inline-flex",
-              )}
+              className="h-8 w-8 text-indigo-400 hover:text-indigo-200 hover:bg-zinc-800/80"
             >
               <BlackHoleIcon className="h-4 w-4" />
             </Button>

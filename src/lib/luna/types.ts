@@ -32,6 +32,8 @@ export interface ChatMessage {
   mine: boolean;
   system?: boolean;
   copied: boolean;
+  editedAt?: string;
+  seenAt?: string;
 }
 
 export interface SessionView {
@@ -48,9 +50,8 @@ export interface SessionView {
   alreadyFriends: boolean;
   peerTyping: boolean;
   peerLastSeen?: string;
-  flutter: boolean;
-  drifting?: boolean;
-  reconnectRemainingSeconds?: number;
+  peerPresence?: "active" | "away" | "disconnected";
+  peerIsAway?: boolean;
 }
 
 export interface DeskView {
@@ -68,8 +69,6 @@ export interface DeskView {
 export interface QueueHeartbeatResult {
   status: "idle" | "waiting" | "matched";
   desk: DeskView;
-  waitMs?: number;
-  others?: number;
 }
 
 export interface MessagesPack {
@@ -85,4 +84,15 @@ export interface VoidLetter {
   stars: number;
   hasStarred?: boolean;
   createdAt: string;
+}
+
+export interface HistorySession {
+  sessionId: string;
+  peerCallsign: string;
+  startedAt: number;
+  savedAt: number;
+  messageCount: number;
+  preview: string;
+  interests: string[];
+  messages: ChatMessage[];
 }

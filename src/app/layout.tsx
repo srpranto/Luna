@@ -21,6 +21,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "https://luna.chat"),
   title: "Luna — Late-Night Anonymous Chat",
   description:
     "A quiet late-night sanctuary for honest, encrypted conversations with strangers under the moon.",
@@ -29,6 +30,28 @@ export const metadata: Metadata = {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "Luna",
+  },
+  openGraph: {
+    title: "Luna — Late-Night Anonymous Chat",
+    description: "A quiet late-night sanctuary for honest, encrypted conversations with strangers under the moon.",
+    url: "https://luna.chat",
+    siteName: "Luna",
+    images: [
+      {
+        url: "/og.jpg",
+        width: 1200,
+        height: 630,
+        alt: "Luna — Late-Night Anonymous Chat",
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Luna — Late-Night Anonymous Chat",
+    description: "A quiet late-night sanctuary for honest, encrypted conversations with strangers under the moon.",
+    images: ["/og.jpg"],
   },
   icons: {
     icon: [

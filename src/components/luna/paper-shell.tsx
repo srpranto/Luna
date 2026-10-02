@@ -8,7 +8,7 @@ export function PaperShell({ children }: { children: ReactNode }) {
 
       <div className="pointer-events-none fixed inset-0 ambient-glow opacity-50" />
 
-      <div className="relative z-10 flex h-dvh sm:h-[92vh] w-full max-w-4xl flex-col bg-[#0c0d12]/80 sm:rounded-2xl border-0 sm:border border-white/10 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9),inset_0_1px_0_0_rgba(255,255,255,0.08)] backdrop-blur-2xl overflow-hidden">
+      <div className="relative z-10 flex h-dvh sm:h-[92vh] w-full max-w-4xl flex-col bg-[#0c0d12]/92 sm:bg-[#0c0d12]/95 sm:rounded-2xl border-0 sm:border border-white/10 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9),inset_0_1px_0_0_rgba(255,255,255,0.08)] backdrop-blur-md overflow-hidden">
         <div className="relative flex min-h-0 flex-1 flex-col">{children}</div>
       </div>
     </main>

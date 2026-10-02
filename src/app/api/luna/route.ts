@@ -12,6 +12,9 @@ import {
   reportTyping,
   respondQsl,
   sendMessage,
+  editMessage,
+  deleteMessage,
+  reportPresence,
   updateCallsign,
   deleteStation,
   recordMSpamSession,
@@ -27,6 +30,7 @@ interface RequestBody {
   action?: string;
   deviceId?: string;
   sessionId?: string;
+  messageId?: string;
   friendId?: string;
   requestId?: string;
   accept?: boolean;
@@ -34,6 +38,7 @@ interface RequestBody {
   interests?: string[];
   blockedIds?: string[];
   isTyping?: boolean;
+  isAway?: boolean;
   callsign?: string;
   publicKey?: string;
   peerId?: string;
@@ -151,6 +156,37 @@ export async function POST(req: Request) {
           deviceId,
           sessionId: payload.sessionId,
           body: payload.body,
+        });
+        break;
+
+      case "editMessage":
+        if (!payload.sessionId || !payload.messageId || typeof payload.body !== "string") {
+          throw new Error("Missing sessionId, messageId, or message body.");
+        }
+        data = await editMessage({
+          deviceId,
+          sessionId: payload.sessionId,
+          messageId: payload.messageId,
+          body: payload.body,
+        });
+        break;
+
+      case "deleteMessage":
+        if (!payload.sessionId || !payload.messageId) {
+          throw new Error("Missing sessionId or messageId.");
+        }
+        data = await deleteMessage({
+          deviceId,
+          sessionId: payload.sessionId,
+          messageId: payload.messageId,
+        });
+        break;
+
+      case "reportPresence":
+        data = await reportPresence({
+          deviceId,
+          sessionId: payload.sessionId,
+          isAway: Boolean(payload.isAway),
         });
         break;
 
