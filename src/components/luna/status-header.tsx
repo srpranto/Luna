@@ -1,10 +1,11 @@
 "use client";
 
-import { Moon, HeartHandshake, Settings, X, Sparkles, Lock, Download } from "lucide-react";
+import { Moon, HeartHandshake, Settings, X, Lock, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SoundscapePopover } from "@/components/luna/soundscape-popover";
 import { usePwa } from "@/components/luna/pwa-provider";
+import { BlackHoleIcon } from "@/components/luna/black-hole-icon";
 import { formatElapsed } from "@/lib/luna/identity";
 import { cn } from "@/lib/utils";
 
@@ -58,7 +59,7 @@ export function StatusHeader({
     sessionKind?: "stranger" | "friend";
   };
 }) {
-  const { isInstallable, installApp } = usePwa();
+  const { showInstallButton, installApp } = usePwa();
 
   return (
     <header className="relative z-40 flex items-center justify-between border-b border-white/10 bg-zinc-950/60 px-4 py-3 sm:px-6 backdrop-blur-md">
@@ -171,11 +172,11 @@ export function StatusHeader({
                 activeChat && "hidden sm:inline-flex",
               )}
             >
-              <Sparkles className="h-4 w-4" />
+              <BlackHoleIcon className="h-4 w-4" />
             </Button>
           )}
 
-          {isInstallable && (
+          {showInstallButton && (
             <Button
               type="button"
               variant="ghost"

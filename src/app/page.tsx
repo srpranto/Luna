@@ -1056,7 +1056,7 @@ function BootView({
   onCall: () => void;
   busy: boolean;
 }) {
-  const { isInstallable, installApp } = usePwa();
+  const { showInstallButton, installApp } = usePwa();
 
   return (
     <section className="flex min-h-0 flex-1 flex-col items-center justify-center p-4 sm:p-8 overflow-y-auto">
@@ -1102,7 +1102,7 @@ function BootView({
           <ShieldCheck className="h-3.5 w-3.5 text-zinc-400" />
           <span>Private & ephemeral • Disappears when you leave</span>
         </div>
-        {isInstallable && (
+        {showInstallButton && (
           <>
             <span className="hidden sm:inline text-zinc-700">•</span>
             <button

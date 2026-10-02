@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Sparkles, Star, Send, X, Moon, Clock } from "lucide-react";
+import { Star, Send, X, Moon, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BlackHoleIcon } from "@/components/luna/black-hole-icon";
 import type { VoidLetter } from "@/lib/luna/types";
 import { castVoidLetter, listVoidLetters, starVoidLetter } from "@/lib/luna/client";
 import { cn } from "@/lib/utils";
@@ -102,7 +103,7 @@ export function VoidLetters({ deviceId, onClose }: { deviceId: string; onClose: 
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 sm:px-5 sm:py-4 bg-zinc-900/40">
           <div className="flex items-center gap-2 sm:gap-2.5">
             <div className="flex h-7.5 w-7.5 sm:h-8 sm:w-8 items-center justify-center rounded-lg border border-indigo-500/20 bg-indigo-950/40 text-indigo-300 shrink-0">
-              <Sparkles className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <BlackHoleIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </div>
             <div>
               <h2 className="text-xs sm:text-sm font-semibold text-zinc-100 flex items-center gap-1.5 sm:gap-2">

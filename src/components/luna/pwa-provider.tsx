@@ -13,6 +13,7 @@ interface BeforeInstallPromptEvent extends Event {
 
 interface PwaContextValue {
   isInstallable: boolean;
+  showInstallButton: boolean;
   isStandalone: boolean;
   isIos: boolean;
   installApp: () => Promise<boolean>;
@@ -20,6 +21,7 @@ interface PwaContextValue {
 
 const PwaContext = createContext<PwaContextValue>({
   isInstallable: false,
+  showInstallButton: false,
   isStandalone: false,
   isIos: false,
   installApp: async () => false,
@@ -28,12 +30,21 @@ const PwaContext = createContext<PwaContextValue>({
 export function PwaProvider({ children }: { children: React.ReactNode }) {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isStandalone, setIsStandalone] = useState(false);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
   const [isIos] = useState(() => {
     if (typeof window === "undefined") return false;
     const ua = window.navigator.userAgent.toLowerCase();
     const hasMsStream = "MSStream" in window;
     return /iphone|ipad|ipod/.test(ua) && !hasMsStream;
   });
+
+  useEffect(() => {
+    if (!deferredPrompt) return;
+    const timer = window.setTimeout(() => {
+      setBannerDismissed(true);
+    }, 30000);
+    return () => window.clearTimeout(timer);
+  }, [deferredPrompt]);
 
   useEffect(() => {
     const checkStandalone = () => {
@@ -92,6 +103,7 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
     <PwaContext.Provider
       value={{
         isInstallable: Boolean(deferredPrompt),
+        showInstallButton: Boolean(deferredPrompt) && !isStandalone && !bannerDismissed,
         isStandalone,
         isIos,
         installApp,

@@ -6,7 +6,7 @@ import { useState, useRef, useEffect, type FormEvent, type KeyboardEvent } from 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-export const CELESTIAL_REACTIONS = ["🌙", "✨"];
+const CELESTIAL_REACTIONS = ["🌙", "✨"];
 
 export function Composer({
   value,

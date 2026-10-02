@@ -14,5 +14,3 @@ export function PaperShell({ children }: { children: ReactNode }) {
     </main>
   );
 }
-
-export const ChatShell = PaperShell;

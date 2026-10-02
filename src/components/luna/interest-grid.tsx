@@ -197,5 +197,3 @@ export function InterestGrid({ value, onChange }: InterestInputProps) {
     </div>
   );
 }
-
-export const InterestInput = InterestGrid;
