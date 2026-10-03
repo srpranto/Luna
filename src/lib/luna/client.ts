@@ -149,40 +149,107 @@ export function reportViolation(data: {
 
 type StreamHandler = (eventType: string, data: unknown) => void;
 
-export function subscribeDeskStream(deviceId: string, onEvent: StreamHandler): () => void {
+const STREAM_EVENT_TYPES = [
+  "message",
+  "typing",
+  "session_started",
+  "session_ended",
+  "desk_update",
+  "friend_request",
+  "presence_update",
+  "message_edited",
+  "message_deleted",
+  "banned",
+  "peer_banned",
+];
+
+const RECONNECT_DELAYS_MS = [1000, 2000, 5000, 10000];
+
+export function subscribeDeskStream(
+  deviceId: string,
+  onEvent: StreamHandler,
+  onOpen?: () => void,
+): () => void {
   if (typeof window === "undefined" || !("EventSource" in window)) {
     return () => {};
   }
 
-  const source = new EventSource(`/api/luna/stream?deviceId=${encodeURIComponent(deviceId)}`);
+  let source: EventSource | null = null;
+  let retryTimer: number | null = null;
+  let attempt = 0;
+  let stopped = false;
 
-  const eventTypes = [
-    "message",
-    "typing",
-    "session_started",
-    "session_ended",
-    "desk_update",
-    "friend_request",
-    "presence_update",
-    "message_edited",
-    "message_deleted",
-    "banned",
-    "peer_banned",
-  ];
+  const scheduleReconnect = () => {
+    if (stopped || retryTimer !== null) {
+      return;
+    }
+    const delay = RECONNECT_DELAYS_MS[Math.min(attempt, RECONNECT_DELAYS_MS.length - 1)] ?? 10000;
+    attempt += 1;
+    retryTimer = window.setTimeout(() => {
+      retryTimer = null;
+      connect();
+    }, delay);
+  };
 
-  for (const type of eventTypes) {
-    source.addEventListener(type, (e: MessageEvent) => {
-      try {
-        const payload = JSON.parse(e.data);
-        onEvent(type, payload);
-      } catch {
-        return;
+  const connect = () => {
+    if (stopped) {
+      return;
+    }
+    source?.close();
+    const next = new EventSource(`/api/luna/stream?deviceId=${encodeURIComponent(deviceId)}`);
+    source = next;
+
+    next.addEventListener("open", () => {
+      attempt = 0;
+      onOpen?.();
+    });
+
+    next.addEventListener("error", () => {
+      if (next.readyState === EventSource.CLOSED) {
+        scheduleReconnect();
       }
     });
-  }
+
+    for (const type of STREAM_EVENT_TYPES) {
+      next.addEventListener(type, (e: MessageEvent) => {
+        try {
+          onEvent(type, JSON.parse(e.data));
+        } catch {
+          return;
+        }
+      });
+    }
+  };
+
+  const revive = () => {
+    if (!stopped && (!source || source.readyState === EventSource.CLOSED)) {
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+      attempt = 0;
+      connect();
+    }
+  };
+
+  const onVisible = () => {
+    if (!document.hidden) {
+      revive();
+    }
+  };
+
+  window.addEventListener("online", revive);
+  document.addEventListener("visibilitychange", onVisible);
+  connect();
 
   return () => {
-    source.close();
+    stopped = true;
+    if (retryTimer !== null) {
+      window.clearTimeout(retryTimer);
+    }
+    window.removeEventListener("online", revive);
+    document.removeEventListener("visibilitychange", onVisible);
+    source?.close();
   };
 }
 

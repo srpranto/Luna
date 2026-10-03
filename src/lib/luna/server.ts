@@ -1,5 +1,6 @@
 import { getSql, type Sql } from "./db";
 import {
+  ABANDON_AFTER_MINUTES,
   FRIEND_TTL_DAYS,
   MAX_LINE_CHARS,
   QUEUE_STALE_SECONDS,
@@ -29,7 +30,7 @@ import type {
   Station,
   VoidLetter,
 } from "./types";
-import { emitToDevice } from "./events";
+import { emitToDevice, isDeviceConnected } from "./events";
 import { evaluateSafety } from "./safety";
 
 interface StationRow {
@@ -247,6 +248,69 @@ async function cleanup(sql?: Sql): Promise<void> {
   const stale = `${QUEUE_STALE_SECONDS} seconds`;
   await sql`delete from queue where last_beat < now() - ${stale}::interval`;
   await sql`delete from messages where expires_at < now()`;
+  await reapAbandonedSessions(sql);
+}
+
+export async function touchLastSeen(deviceId: string): Promise<void> {
+  if (!isDeviceId(deviceId)) {
+    return;
+  }
+  const sql = await getSql();
+  await sql`update stations set last_seen = now() where device_id = ${deviceId}`;
+}
+
+async function endSessionOnce(sql: Sql, session: SessionRow): Promise<boolean> {
+  const closed = await sql<{ id: string }>`
+    update sessions set closed_at = now()
+    where id = ${session.id} and closed_at is null
+    returning id
+  `;
+  if (closed.length === 0) {
+    return false;
+  }
+  const ttl = ttlInterval(session.kind);
+  await sql`
+    insert into messages (id, session_id, from_id, body, expires_at)
+    values (${newId()}, ${session.id}, 'system', 'Stranger disconnected. User is no longer available right now.', now() + ${ttl}::interval)
+  `;
+  return true;
+}
+
+async function reapAbandonedSessions(sql: Sql): Promise<void> {
+  const window = `${ABANDON_AFTER_MINUTES} minutes`;
+  const rows = await sql<SessionRow & { a_gone: boolean; b_gone: boolean }>`
+    select ses.id, ses.a_id, ses.b_id, ses.kind, ses.interests, ses.created_at, ses.closed_at,
+      (sa.last_seen is null or sa.last_seen < now() - ${window}::interval) as a_gone,
+      (sb.last_seen is null or sb.last_seen < now() - ${window}::interval) as b_gone
+    from sessions ses
+    left join stations sa on sa.device_id = ses.a_id
+    left join stations sb on sb.device_id = ses.b_id
+    where ses.closed_at is null
+      and ses.kind = 'stranger'
+      and (
+        sa.last_seen is null or sb.last_seen is null
+        or sa.last_seen < now() - ${window}::interval
+        or sb.last_seen < now() - ${window}::interval
+      )
+  `;
+  for (const row of rows) {
+    const aGone = Boolean(row.a_gone) && !isDeviceConnected(row.a_id);
+    const bGone = Boolean(row.b_gone) && !isDeviceConnected(row.b_id);
+    if (!aGone && !bGone) {
+      continue;
+    }
+    const ended = await endSessionOnce(sql, row);
+    if (!ended) {
+      continue;
+    }
+    const payload = { sessionId: row.id, reason: "User is no longer available right now." };
+    if (!aGone) {
+      emitToDevice(row.a_id, "session_ended", payload);
+    }
+    if (!bGone) {
+      emitToDevice(row.b_id, "session_ended", payload);
+    }
+  }
 }
 
 async function loadSessionView(session: SessionRow, deviceId: string): Promise<SessionView> {
@@ -290,33 +354,14 @@ async function loadSessionView(session: SessionRow, deviceId: string): Promise<S
   const peerTyping = Boolean(
     peerStation?.typing_until && new Date(peerStation.typing_until).getTime() > nowMs,
   );
-  const diffSec = peerLastSeenMs > 0 ? (nowMs - peerLastSeenMs) / 1000 : 0;
-  const isStranger = session.kind === "stranger";
-  const isUnclosed = !session.closed_at;
-
-  const peerIsAway = Boolean(peerStation?.is_away || diffSec >= 60);
+  const recentlySeen = peerLastSeenMs > 0 && nowMs - peerLastSeenMs < 25000;
+  const peerOnline = isDeviceConnected(peerId) || recentlySeen;
+  const peerIsAway = Boolean(peerStation?.is_away) || !peerOnline;
   const peerPresence: "active" | "away" | "disconnected" = session.closed_at
     ? "disconnected"
     : peerIsAway
       ? "away"
       : "active";
-
-  if (isStranger && isUnclosed && diffSec >= 300 && peerLastSeenMs > 0) {
-    await sql`update sessions set closed_at = now() where id = ${session.id}`;
-    session.closed_at = new Date().toISOString();
-    await sql`
-      insert into messages (id, session_id, from_id, body, expires_at)
-      values (${newId()}, ${session.id}, 'system', 'Stranger disconnected. User is no longer available right now.', now() + interval '24 hours')
-    `;
-    emitToDevice(deviceId, "session_ended", {
-      sessionId: session.id,
-      reason: "User is no longer available right now.",
-    });
-    emitToDevice(peerId, "session_ended", {
-      sessionId: session.id,
-      reason: "User is no longer available right now.",
-    });
-  }
 
   return {
     id: session.id,
@@ -347,25 +392,7 @@ async function openSessionFor(deviceId: string): Promise<SessionRow | undefined>
     order by created_at desc
     limit 1
   `;
-  const session = rows[0];
-  if (!session) {
-    return undefined;
-  }
-  if (session.kind === "stranger") {
-    const peerId = peerOf(session, deviceId);
-    const peerStation = await sql<{ last_seen: string | null }>`
-      select last_seen from stations where device_id = ${peerId}
-    `;
-    const peerLastSeenMs = peerStation[0]?.last_seen
-      ? new Date(peerStation[0].last_seen).getTime()
-      : 0;
-    const isPeerDead = !peerStation[0] || (peerLastSeenMs > 0 && Date.now() - peerLastSeenMs > 45000);
-    if (isPeerDead) {
-      await sql`update sessions set closed_at = now() where id = ${session.id}`;
-      return undefined;
-    }
-  }
-  return session;
+  return rows[0];
 }
 
 async function loadMessagesPack(
@@ -917,22 +944,13 @@ export async function joinQueue(input: {
   const sql = await getSql();
   const existing = await openSessionFor(deviceId);
   if (existing) {
-    if (existing.kind === "stranger") {
-      await sql`update sessions set closed_at = now() where id = ${existing.id}`;
-    } else {
+    const ended = await endSessionOnce(sql, existing);
+    if (ended) {
       const peerId = peerOf(existing, deviceId);
-      const peerStation = await sql<{ last_seen: string | null }>`
-        select last_seen from stations where device_id = ${peerId}
-      `;
-      const peerLastSeenMs = peerStation[0]?.last_seen
-        ? new Date(peerStation[0].last_seen).getTime()
-        : 0;
-      const peerGone = !peerStation[0] || (peerLastSeenMs > 0 && Date.now() - peerLastSeenMs > 25000);
-      if (peerGone) {
-        await sql`update sessions set closed_at = now() where id = ${existing.id}`;
-      } else {
-        throw new Error("Please leave your current chat first.");
-      }
+      emitToDevice(peerId, "session_ended", {
+        sessionId: existing.id,
+        desk: await loadDesk(peerId),
+      });
     }
   }
 
@@ -983,7 +1001,7 @@ export async function reportTyping(input: {
   `;
   if (sessions[0]) {
     const peerId = peerOf(sessions[0], deviceId);
-    emitToDevice(peerId, "typing", { isTyping: input.isTyping });
+    emitToDevice(peerId, "typing", { sessionId: input.sessionId, isTyping: input.isTyping });
   }
   return { ok: true };
 }
@@ -1053,18 +1071,12 @@ export async function leaveSession(input: {
   }
 
   const peerId = peerOf(session, deviceId);
-  await sql`update sessions set closed_at = now() where id = ${session.id}`;
-
-  const ttl = ttlInterval(session.kind);
-  await sql`
-    insert into messages (id, session_id, from_id, body, expires_at)
-    values (${newId()}, ${session.id}, 'system', 'Stranger disconnected. User is no longer available right now.', now() + ${ttl}::interval)
-  `;
-
+  const ended = await endSessionOnce(sql, session);
   const desk = await loadDesk(deviceId);
-  const peerDesk = await loadDesk(peerId);
-  emitToDevice(peerId, "session_ended", { sessionId: session.id, desk: peerDesk });
-  emitToDevice(peerId, "desk_update", peerDesk);
+  if (ended) {
+    const peerDesk = await loadDesk(peerId);
+    emitToDevice(peerId, "session_ended", { sessionId: session.id, desk: peerDesk });
+  }
   return desk;
 }
 

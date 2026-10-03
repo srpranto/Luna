@@ -49,6 +49,11 @@ export function subscribeDevice(deviceId: string, listener: Listener): () => voi
   };
 }
 
+export function isDeviceConnected(deviceId: string): boolean {
+  const listeners = deviceListeners.get(deviceId);
+  return Boolean(listeners && listeners.size > 0);
+}
+
 export function emitToDevice<T = unknown>(deviceId: string, type: LunaEventType, data: T): void {
   const listeners = deviceListeners.get(deviceId);
   if (!listeners || listeners.size === 0) return;

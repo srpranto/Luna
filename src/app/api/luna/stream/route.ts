@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { subscribeDevice, type LunaEvent } from "@/lib/luna/events";
+import { touchLastSeen } from "@/lib/luna/server";
 
 export const dynamic = "force-dynamic";
 
@@ -32,15 +33,18 @@ export async function GET(req: NextRequest) {
         }
       });
 
+      void touchLastSeen(deviceId).catch(() => {});
+
       const pingInterval = setInterval(() => {
         try {
           controller.enqueue(
             encoder.encode(`event: ping\ndata: "${new Date().toISOString()}"\n\n`),
           );
+          void touchLastSeen(deviceId).catch(() => {});
         } catch {
           clearInterval(pingInterval);
         }
-      }, 15000);
+      }, 10000);
 
       req.signal.addEventListener("abort", () => {
         clearInterval(pingInterval);

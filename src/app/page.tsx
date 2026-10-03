@@ -81,6 +81,7 @@ import type {
 const INTEREST_KEY = "luna.interests";
 const BLOCKED_KEY = "luna.blocked";
 const REACTION_REGEX = /^\[reaction:(🌙|✨)\]$/;
+const IDLE_WARNING_SECONDS = 120;
 
 function readSavedInterests(): string[] {
   if (typeof window === "undefined") {
@@ -229,6 +230,31 @@ export default function Home() {
   const peerTypingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastMessageAtRef = useRef<number>(0);
   const sendQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const activeSessionRef = useRef<SessionView | null>(null);
+  const leftSessionIdsRef = useRef<Set<string>>(new Set());
+  const [resyncTick, setResyncTick] = useState(0);
+
+  const isEventForActiveSession = useCallback((sessionId: string | undefined) => {
+    if (!sessionId || leftSessionIdsRef.current.has(sessionId)) {
+      return false;
+    }
+    return activeSessionRef.current?.id === sessionId;
+  }, []);
+
+  const markActiveSessionClosed = useCallback((sessionId: string | undefined) => {
+    setSessionView((prev) => {
+      const base =
+        prev && prev.id === sessionId
+          ? prev
+          : activeSessionRef.current?.id === sessionId
+            ? activeSessionRef.current
+            : null;
+      if (!base) {
+        return prev;
+      }
+      return { ...base, closed: true, peerPresence: "disconnected", peerTyping: false };
+    });
+  }, []);
 
   const notifyUnread = useCallback((fromCallsign: string, text: string) => {
     if (typeof document !== "undefined" && document.hidden) {
@@ -346,7 +372,14 @@ export default function Home() {
 
       if (eventType === "message") {
         const pack = data as MessagesPack;
-        if (pack.session?.id) {
+        const packId = pack.session?.id;
+        const acceptable =
+          isEventForActiveSession(packId) ||
+          (Boolean(packId) &&
+            activeSessionRef.current === null &&
+            !leftSessionIdsRef.current.has(packId) &&
+            !pack.session.closed);
+        if (packId && acceptable) {
           if (pack.session.peerPublicKey) {
             await establishSharedKey(deviceId, pack.session.id, pack.session.peerPublicKey);
           }
@@ -385,6 +418,10 @@ export default function Home() {
             }
           }
 
+          if (cancelled || leftSessionIdsRef.current.has(packId)) {
+            return;
+          }
+
           setMessages((prev) => {
             const map = new Map<string, ChatMessage>();
             for (const m of displayMsgs) {
@@ -420,13 +457,16 @@ export default function Home() {
 
           const lastMsg = displayMsgs[displayMsgs.length - 1];
           if (lastMsg && !lastMsg.mine && !lastMsg.system) {
+            if (!document.hidden) {
+              lastActivityRef.current = Date.now();
+            }
             playMessageReceived();
             notifyUnread(lastMsg.fromCallsign, lastMsg.body);
           }
         }
       } else if (eventType === "message_edited") {
         const pack = data as MessagesPack;
-        if (pack.session?.id) {
+        if (isEventForActiveSession(pack.session?.id)) {
           const decrypted = await Promise.all(
             pack.messages.map(async (m) => {
               if (m.body.startsWith("e2e:")) {
@@ -436,6 +476,9 @@ export default function Home() {
               return m;
             }),
           );
+          if (cancelled || !isEventForActiveSession(pack.session.id)) {
+            return;
+          }
           const displayMsgs = decrypted.filter((m) => !REACTION_REGEX.test(m.body));
           setMessages(displayMsgs);
           saveCachedMessages(pack.session.id, displayMsgs);
@@ -456,9 +499,11 @@ export default function Home() {
         }
       } else if (eventType === "message_deleted") {
         const info = data as { sessionId: string; messageId: string };
-        setMessages((prev) => prev.filter((m) => m.id !== info.messageId));
         if (info.sessionId) {
           deleteCachedMessage(info.sessionId, info.messageId);
+        }
+        if (isEventForActiveSession(info.sessionId)) {
+          setMessages((prev) => prev.filter((m) => m.id !== info.messageId));
         }
       } else if (eventType === "presence_update") {
         const info = data as { sessionId: string; peerId: string; isAway: boolean };
@@ -471,13 +516,21 @@ export default function Home() {
           };
         });
       } else if (eventType === "typing") {
-        const info = data as { isTyping: boolean };
-        setSessionView((prev) => (prev ? { ...prev, peerTyping: info.isTyping } : prev));
+        const info = data as { sessionId?: string; isTyping: boolean };
+        if (!isEventForActiveSession(info.sessionId)) {
+          return;
+        }
+        setSessionView((prev) =>
+          prev && prev.id === info.sessionId ? { ...prev, peerTyping: info.isTyping } : prev,
+        );
         if (peerTypingTimeoutRef.current) {
           clearTimeout(peerTypingTimeoutRef.current);
           peerTypingTimeoutRef.current = null;
         }
         if (info.isTyping) {
+          if (!document.hidden) {
+            lastActivityRef.current = Date.now();
+          }
           peerTypingTimeoutRef.current = setTimeout(() => {
             setSessionView((prev) => (prev ? { ...prev, peerTyping: false } : prev));
           }, 3000);
@@ -494,12 +547,13 @@ export default function Home() {
         playMatchChime();
       } else if (eventType === "session_ended") {
         const info = data as { sessionId: string; desk?: DeskView };
+        if (!isEventForActiveSession(info.sessionId)) {
+          return;
+        }
+        markActiveSessionClosed(info.sessionId);
         if (info.desk) {
           setDesk(info.desk);
         }
-        setSessionView((prev) =>
-          prev ? { ...prev, closed: true, peerPresence: "disconnected" } : null,
-        );
         playLeaveTone();
       } else if (eventType === "banned") {
         const info = data as { reason?: string };
@@ -507,14 +561,15 @@ export default function Home() {
         setBanReason(info.reason ?? "Access restricted.");
         setSessionView(null);
       } else if (eventType === "peer_banned") {
-        const info = data as { reason?: string };
+        const info = data as { sessionId?: string; reason?: string };
+        if (!isEventForActiveSession(info.sessionId)) {
+          return;
+        }
         setNote(
           info.reason ??
             "The other user was removed and banned for violating community safety guidelines.",
         );
-        setSessionView((prev) =>
-          prev ? { ...prev, closed: true, peerPresence: "disconnected" } : null,
-        );
+        markActiveSessionClosed(info.sessionId);
       } else if (eventType === "desk_update" || eventType === "friend_request") {
         const refreshed = data as DeskView;
         if (refreshed && refreshed.station) {
@@ -525,6 +580,12 @@ export default function Home() {
           setDesk(refreshed);
         }
       }
+    }, () => {
+      if (cancelled) return;
+      getDesk({ deviceId })
+        .then((d) => !cancelled && setDesk(d))
+        .catch(() => {});
+      setResyncTick((n) => n + 1);
     });
 
     const pollTimer = window.setInterval(() => {
@@ -549,11 +610,16 @@ export default function Home() {
         clearTimeout(peerTypingTimeoutRef.current);
       }
     };
-  }, [deviceId, notifyUnread, notifyError]);
+  }, [deviceId, notifyUnread, notifyError, isEventForActiveSession, markActiveSessionClosed]);
 
   const session = desk?.activeSession ?? null;
-  const currentSession = sessionView ?? session;
+  const sessionViewIsCurrent = Boolean(sessionView && (!session || session.id === sessionView.id));
+  const currentSession = sessionViewIsCurrent ? sessionView : session;
   const listening = Boolean(desk?.queued) && !currentSession;
+
+  useEffect(() => {
+    activeSessionRef.current = currentSession;
+  }, [currentSession]);
 
   useEffect(() => {
     lastMessageAtRef.current = Date.now();
@@ -606,6 +672,10 @@ export default function Home() {
             }
           }
 
+          if (cancelled || leftSessionIdsRef.current.has(currentSession.id)) {
+            return;
+          }
+
           setMessages((prev) => {
             const map = new Map<string, ChatMessage>();
             for (const m of displayDecrypted) {
@@ -649,7 +719,7 @@ export default function Home() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [deviceId, currentSession?.id]);
+  }, [deviceId, currentSession?.id, resyncTick]);
 
   useEffect(() => {
     if (!deviceId || !listening) {
@@ -782,6 +852,7 @@ export default function Home() {
     setIsAway(false);
     setReplyingTo(null);
     if (targetSessionId) {
+      leftSessionIdsRef.current.add(targetSessionId);
       destroySessionKey(targetSessionId);
       try {
         setNote(null);
@@ -812,6 +883,7 @@ export default function Home() {
     setIsAway(false);
     setReplyingTo(null);
     if (targetSessionId) {
+      leftSessionIdsRef.current.add(targetSessionId);
       destroySessionKey(targetSessionId);
       try {
         await leaveSession({ deviceId, sessionId: targetSessionId });
@@ -853,7 +925,7 @@ export default function Home() {
       } else if (elapsed >= IDLE_AWAY_THRESHOLD_MS) {
         const remaining = Math.max(0, Math.ceil((INACTIVITY_DISCONNECT_MS - elapsed) / 1000));
         setRemainingIdleSeconds(remaining);
-        setShowDynamicIsland(true);
+        setShowDynamicIsland(remaining <= IDLE_WARNING_SECONDS);
         if (!isAwayRef.current) {
           setIsAway(true);
           if (deviceId && currentSession?.id) {
@@ -876,19 +948,32 @@ export default function Home() {
     }
 
     function onVisibility() {
-      if (!document.hidden) {
-        evaluateIdle();
+      if (document.hidden) {
+        if (!isAwayRef.current) {
+          isAwayRef.current = true;
+          setIsAway(true);
+          if (deviceId && currentSession?.id) {
+            void reportPresence({ deviceId, sessionId: currentSession.id, isAway: true }).catch(() => {});
+          }
+        }
+        return;
       }
+      resetIdle();
+      setResyncTick((n) => n + 1);
     }
 
     function onFocus() {
-      evaluateIdle();
+      resetIdle();
     }
 
+    const passiveCapture = { capture: true, passive: true } as const;
+
     window.addEventListener("keydown", onActivity);
-    window.addEventListener("touchstart", onActivity);
+    window.addEventListener("touchstart", onActivity, { passive: true });
     window.addEventListener("pointerdown", onActivity);
     window.addEventListener("click", onActivity);
+    window.addEventListener("wheel", onActivity, { passive: true });
+    document.addEventListener("scroll", onActivity, passiveCapture);
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibility);
 
@@ -900,6 +985,8 @@ export default function Home() {
       window.removeEventListener("touchstart", onActivity);
       window.removeEventListener("pointerdown", onActivity);
       window.removeEventListener("click", onActivity);
+      window.removeEventListener("wheel", onActivity);
+      document.removeEventListener("scroll", onActivity, passiveCapture);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
       window.clearInterval(interval);
