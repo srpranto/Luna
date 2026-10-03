@@ -149,6 +149,8 @@
   animation-name: stellar-twinkle;
   animation-iteration-count: infinite;
   animation-timing-function: ease-in-out;
+  will-change: transform, opacity;
+  contain: layout style;
 }
 
 @keyframes reaction-float {

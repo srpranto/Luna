@@ -1,7 +1,6 @@
 const CACHE_NAME = "luna-pwa-v1";
 
 const PRECACHE_ASSETS = [
-  "/",
   "/offline.html",
   "/manifest.webmanifest",
   "/favicon.svg",
@@ -12,7 +11,6 @@ const PRECACHE_ASSETS = [
   "/icons/icon-maskable-512.png"
 ];
 
-// Install: pre-cache offline shell & icons
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
@@ -22,7 +20,6 @@ self.addEventListener("install", (event) => {
   );
 });
 
-// Activate: clean up obsolete caches & take control
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
@@ -38,17 +35,14 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// Fetch: smart network-first for navigation/API, cache-first for static assets
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // 1. NEVER intercept or cache API or Server-Sent Events (SSE) routes
   if (url.pathname.startsWith("/api/")) {
     return;
   }
 
-  // 2. Navigation requests (Page loads / reloads): Network first -> offline fallback
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request).catch(() => {
@@ -58,7 +52,6 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // 3. Static assets (_next/static, fonts, icons, images, sound files)
   const isStatic =
     url.pathname.startsWith("/_next/static/") ||
     url.pathname.startsWith("/icons/") ||
@@ -72,7 +65,6 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       caches.match(request).then((cached) => {
         if (cached) {
-          // Stale-while-revalidate in background
           fetch(request)
             .then((networkResponse) => {
               if (networkResponse && networkResponse.status === 200) {
@@ -98,11 +90,9 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Default: pass through to network
   event.respondWith(fetch(request));
 });
 
-// Message listener for skipWaiting trigger
 self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") {
     self.skipWaiting();

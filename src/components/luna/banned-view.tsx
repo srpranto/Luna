@@ -27,7 +27,7 @@ export function BannedView({ reason }: { reason?: string | null }) {
           • Spamming gender/ASL queries across chats is automatically banned.
         </p>
       </div>
-      <p className="mt-8 text-xs text-zinc-600">
+      <p className="mt-8 text-xs text-zinc-400">
         Permanent restrictions applied by Luna automated moderation cannot be appealed.
       </p>
     </section>

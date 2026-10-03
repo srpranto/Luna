@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CloudRain, Sparkles, Radio, Volume2, VolumeX, Sliders, X } from "lucide-react";
 import {
   getSavedSoundscape,
@@ -17,12 +17,18 @@ interface SoundscapePopoverProps {
 
 export function SoundscapePopover({ soundFxEnabled, onToggleSoundFx }: SoundscapePopoverProps) {
   const [open, setOpen] = useState(false);
-  const [soundscape, setSoundscape] = useState<SoundscapeType>(() => {
-    return typeof window !== "undefined" ? getSavedSoundscape() : "off";
-  });
-  const [volume, setVolume] = useState(() => {
-    return typeof window !== "undefined" ? getSavedVolume() : 0.35;
-  });
+  const [soundscape, setSoundscape] = useState<SoundscapeType>("off");
+  const [volume, setVolume] = useState(0.35);
+
+  useEffect(() => {
+    const savedScape = getSavedSoundscape();
+    const savedVol = getSavedVolume();
+    const timer = window.setTimeout(() => {
+      setSoundscape(savedScape);
+      setVolume(savedVol);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   function handleSelect(type: SoundscapeType) {
     setSoundscape(type);

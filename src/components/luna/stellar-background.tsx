@@ -55,7 +55,7 @@ const FULL_VIEW_STARS = [
 
 export function StellarBackground() {
   return (
-    <div className="pointer-events-none fixed inset-0 overflow-hidden z-0" aria-hidden="true">
+    <div className="pointer-events-none fixed inset-0 overflow-hidden z-0 hidden sm:block" aria-hidden="true">
       <div className="absolute inset-0 bg-radial-[ellipse_80%_60%_at_50%_30%] from-indigo-950/25 via-transparent to-transparent opacity-70" />
       <div className="absolute inset-0 bg-radial-[ellipse_60%_50%_at_80%_70%] from-purple-950/15 via-transparent to-transparent opacity-60" />
 

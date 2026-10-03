@@ -46,7 +46,9 @@
       height: 36px;
       fill: none;
       stroke: #a1a1aa;
-      stroke-width: 1.5;
+      stroke-width: 1.75;
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
     h1 {
       font-size: 22px;
@@ -85,7 +87,7 @@
       background: rgba(24, 24, 27, 0.8);
       border: 1px solid rgba(255, 255, 255, 0.08);
       font-size: 11px;
-      color: #71717a;
+      color: #a1a1aa;
       margin-bottom: 16px;
       font-family: monospace;
     }
@@ -94,6 +96,7 @@
       height: 6px;
       border-radius: 50%;
       background: #f43f5e;
+      box-shadow: 0 0 8px rgba(244, 63, 94, 0.6);
     }
   </style>
 </head>
@@ -101,17 +104,27 @@
   <div class="container">
     <div class="badge">
       <span class="dot"></span>
-      <span>radio frequency quiet</span>
+      <span>No internet connection</span>
     </div>
     <div class="icon">
       <svg viewBox="0 0 24 24">
-        <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z" />
-        <path d="M4.93 4.93l14.14 14.14" />
+        <line x1="1" y1="1" x2="23" y2="23" />
+        <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55" />
+        <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39" />
+        <path d="M10.71 5.05A16 16 0 0 1 22.58 9" />
+        <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88" />
+        <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+        <line x1="12" y1="20" x2="12.01" y2="20" />
       </svg>
     </div>
-    <h1>Orbit Out of Range</h1>
-    <p>Luna needs an active internet connection to transmit encrypted signals through the void. Connect to Wi-Fi or data to resume.</p>
-    <button onclick="window.location.reload()">Retry Connection</button>
+    <h1>You're Offline</h1>
+    <p>Please check your Wi-Fi or mobile data connection and try again.</p>
+    <button onclick="window.location.reload()">Check Connection</button>
   </div>
+  <script>
+    window.addEventListener("online", function() {
+      window.location.reload();
+    });
+  </script>
 </body>
 </html>

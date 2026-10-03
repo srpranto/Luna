@@ -1,9 +1,8 @@
 "use client";
 
-import { MessageSquare, ShieldCheck, Download } from "lucide-react";
+import { MessageSquare, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InterestGrid } from "@/components/luna/interest-grid";
-import { usePwa } from "@/components/luna/pwa-provider";
 
 export function BootView({
   interests,
@@ -16,7 +15,6 @@ export function BootView({
   onCall: () => void;
   busy: boolean;
 }) {
-  const { showInstallButton, installApp } = usePwa();
 
   return (
     <section className="flex min-h-0 flex-1 flex-col items-center justify-center p-4 sm:p-8 overflow-y-auto">
@@ -47,34 +45,22 @@ export function BootView({
           size="lg"
           onClick={onCall}
           disabled={busy}
+          aria-label="Start Text Chat"
           className="h-11 sm:h-12 w-full sm:w-auto px-8 sm:px-10 rounded-full font-semibold text-sm sm:text-base bg-white text-zinc-950 hover:bg-zinc-200 shadow-[0_0_30px_rgba(255,255,255,0.25)] active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2.5"
         >
           <MessageSquare className="h-4 w-4" />
           <span>Start Text Chat</span>
         </Button>
-        <span className="hidden sm:inline-block text-[11px] font-mono text-zinc-500">
+        <span className="hidden sm:inline-block text-[11px] font-mono text-zinc-400">
           press Enter ↵
         </span>
       </div>
 
-      <div className="animate-fade-up stagger-5 mt-6 sm:mt-8 flex flex-col sm:flex-row items-center justify-center gap-3 text-[11px] sm:text-xs text-zinc-500 text-center">
+      <div className="animate-fade-up stagger-5 mt-6 sm:mt-8 flex flex-col sm:flex-row items-center justify-center gap-3 text-[11px] sm:text-xs text-zinc-400 text-center">
         <div className="flex items-center gap-1.5">
           <ShieldCheck className="h-3.5 w-3.5 text-zinc-400" />
           <span>Private & ephemeral • Disappears when you leave</span>
         </div>
-        {showInstallButton && (
-          <>
-            <span className="hidden sm:inline text-zinc-700">•</span>
-            <button
-              type="button"
-              onClick={installApp}
-              className="inline-flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer"
-            >
-              <Download className="h-3.5 w-3.5" />
-              <span>Install App</span>
-            </button>
-          </>
-        )}
       </div>
     </section>
   );

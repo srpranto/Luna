@@ -89,7 +89,7 @@ export function InterestGrid({ value, onChange }: InterestInputProps) {
     <div className="flex flex-col gap-3.5">
       <div className="flex items-center justify-between text-xs">
         <span className="font-semibold tracking-tight text-zinc-200">What do you like?</span>
-        <div className="flex items-center gap-2 text-zinc-500">
+        <div className="flex items-center gap-2 text-zinc-400">
           <span className="text-[11px] font-mono">
             {value.length > 0 ? `${value.length}/10` : "optional"}
           </span>
@@ -97,7 +97,7 @@ export function InterestGrid({ value, onChange }: InterestInputProps) {
             <button
               type="button"
               onClick={handleClear}
-              className="text-zinc-500 hover:text-zinc-300 underline underline-offset-2 transition-colors cursor-pointer text-[11px]"
+              className="text-zinc-400 hover:text-zinc-200 underline underline-offset-2 transition-colors cursor-pointer text-[11px] p-1 -m-1"
             >
               Clear
             </button>
@@ -115,9 +115,9 @@ export function InterestGrid({ value, onChange }: InterestInputProps) {
             onBlur={handleBlur}
             disabled={reachedMax}
             placeholder={reachedMax ? "10 topics max" : "Type a topic (e.g. philosophy, lo-fi)…"}
-            className="lowercase text-xs sm:text-sm pr-9 bg-zinc-900/80 border-white/10 text-zinc-100 placeholder:text-zinc-500 focus-visible:border-white/30 rounded-xl h-10"
+            className="lowercase text-xs sm:text-sm pr-9 bg-zinc-900/80 border-white/10 text-zinc-100 placeholder:text-zinc-400 focus-visible:border-white/30 rounded-xl h-10"
           />
-          <Hash className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500 pointer-events-none" />
+          <Hash className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 pointer-events-none" />
         </div>
         <Button
           type="button"
@@ -145,7 +145,7 @@ export function InterestGrid({ value, onChange }: InterestInputProps) {
                 type="button"
                 onClick={() => handleRemove(item)}
                 aria-label={`Remove ${item}`}
-                className="rounded-full hover:bg-white/10 p-0.5 transition-colors cursor-pointer text-zinc-400 hover:text-zinc-100"
+                className="rounded-full hover:bg-white/10 p-1 -mr-1 transition-colors cursor-pointer text-zinc-400 hover:text-zinc-100 flex items-center justify-center"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -158,7 +158,7 @@ export function InterestGrid({ value, onChange }: InterestInputProps) {
         <button
           type="button"
           onClick={() => setShowSuggestions(!showSuggestions)}
-          className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer py-0.5"
+          className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer min-h-[36px] py-1.5"
         >
           <Sparkles className="h-3 w-3 text-indigo-400" />
           <span>Browse popular topics</span>
@@ -181,10 +181,10 @@ export function InterestGrid({ value, onChange }: InterestInputProps) {
                   style={{ animationDelay: `${idx * 25}ms` }}
                   onClick={() => handleToggleTag(tag)}
                   className={cn(
-                    "animate-fade-up rounded-full px-2.5 py-1 text-xs font-medium transition-all cursor-pointer",
+                    "animate-fade-up rounded-full px-3 py-1.5 min-h-[32px] text-xs font-medium transition-all cursor-pointer",
                     isSelected
                       ? "bg-zinc-100 text-zinc-950 shadow-sm"
-                      : "bg-zinc-900/90 text-zinc-400 border border-white/10 hover:bg-zinc-800 hover:text-zinc-200 hover:border-white/20",
+                      : "bg-zinc-900/90 text-zinc-300 border border-white/10 hover:bg-zinc-800 hover:text-zinc-100 hover:border-white/20",
                   )}
                 >
                   #{tag}

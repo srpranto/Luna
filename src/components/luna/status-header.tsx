@@ -1,10 +1,9 @@
 "use client";
 
-import { HeartHandshake, Settings, X, Download, History } from "lucide-react";
+import { HeartHandshake, Settings, X, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SoundscapePopover } from "@/components/luna/soundscape-popover";
-import { usePwa } from "@/components/luna/pwa-provider";
 import { BlackHoleIcon } from "@/components/luna/black-hole-icon";
 import { LunaMoon } from "@/components/luna/luna-moon";
 import { formatElapsed } from "@/lib/luna/identity";
@@ -32,7 +31,10 @@ function SessionElapsedBadge({
   }, [createdAt]);
 
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-zinc-900/90 px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-[11px] text-zinc-300 font-mono shrink-0 shadow-sm">
+    <span
+      className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-zinc-900/90 px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-[11px] text-zinc-300 font-mono shrink-0 shadow-sm"
+      suppressHydrationWarning
+    >
       <span>{formatElapsed(elapsed)}</span>
     </span>
   );
@@ -97,27 +99,27 @@ export function StatusHeader({
     peerTyping?: boolean;
   };
 }) {
-  const { showInstallButton, installApp } = usePwa();
-
   return (
     <header className="relative z-40 flex items-center justify-between border-b border-white/10 bg-zinc-950/60 px-4 py-3 sm:px-6 backdrop-blur-md">
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
         <div className="absolute inset-0 bg-radial-[ellipse_80%_60%_at_50%_40%] from-indigo-950/15 via-transparent to-transparent opacity-60" />
-        {STELLAR_STARS.map((star, idx) => (
-          <span
-            key={idx}
-            className="stellar-star"
-            style={{
-              top: star.top,
-              left: star.left,
-              width: `${star.size}px`,
-              height: `${star.size}px`,
-              animationDuration: star.duration,
-              animationDelay: star.delay,
-              boxShadow: star.glow ? "0 0 3px 1px rgba(255, 255, 255, 0.7)" : undefined,
-            }}
-          />
-        ))}
+        <div className="hidden sm:block">
+          {STELLAR_STARS.map((star, idx) => (
+            <span
+              key={idx}
+              className="stellar-star"
+              style={{
+                top: star.top,
+                left: star.left,
+                width: `${star.size}px`,
+                height: `${star.size}px`,
+                animationDuration: star.duration,
+                animationDelay: star.delay,
+                boxShadow: star.glow ? "0 0 3px 1px rgba(255, 255, 255, 0.7)" : undefined,
+              }}
+            />
+          ))}
+        </div>
       </div>
 
       <div className="relative z-10 flex items-center gap-2 sm:gap-3 min-w-0 shrink-0">
@@ -196,9 +198,15 @@ export function StatusHeader({
         {meta && (
           <Badge
             variant="outline"
-            className="hidden md:inline-flex text-[11px] font-mono capitalize"
+            className={cn(
+              "hidden md:inline-flex text-[11px] font-mono capitalize items-center gap-1.5",
+              meta === "offline" && "border-rose-500/40 text-rose-300 bg-rose-950/30",
+            )}
           >
-            {meta}
+            {meta === "offline" && (
+              <span className="h-1.5 w-1.5 rounded-full bg-rose-400 animate-pulse" />
+            )}
+            <span>{meta}</span>
           </Badge>
         )}
 
@@ -247,20 +255,6 @@ export function StatusHeader({
             </Button>
           )}
 
-          {showInstallButton && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={installApp}
-              aria-label="Install Luna App"
-              title="Install Luna App"
-              className="h-8 w-8 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/30 cursor-pointer"
-            >
-              <Download className="h-4 w-4" />
-            </Button>
-          )}
-
           {onToggleSettings && (
             <Button
               type="button"
@@ -269,7 +263,7 @@ export function StatusHeader({
               onClick={onToggleSettings}
               aria-label="Settings"
               title="Settings"
-              className="text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80"
+              className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 cursor-pointer"
             >
               {settingsOpen ? <X className="h-4 w-4" /> : <Settings className="h-4 w-4" />}
             </Button>

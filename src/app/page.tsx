@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useSyncExternalStore } from "react";
 import { LogPanel } from "@/components/luna/log-panel";
 import { SettingsPanel } from "@/components/luna/settings-panel";
 import { PaperShell } from "@/components/luna/paper-shell";
@@ -13,6 +13,7 @@ import { BootView } from "@/components/luna/boot-view";
 import { ListeningView } from "@/components/luna/listening-view";
 import { BannedView } from "@/components/luna/banned-view";
 import { LineView } from "@/components/luna/line-view";
+import { NetworkBanner } from "@/components/luna/network-banner";
 import type { FloatingItem } from "@/components/luna/floating-reactions";
 import {
   IDLE_AWAY_THRESHOLD_MS,
@@ -27,7 +28,6 @@ import {
 import {
   decryptText,
   encryptText,
-  loadCachedMessages,
   saveCachedMessages,
   updateCachedMessage,
   deleteCachedMessage,
@@ -128,10 +128,46 @@ function saveBlockedStation(peerId: string): void {
 }
 
 function errorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    return "You're offline. Please check your internet connection.";
   }
-  return "The connection slipped away. Please try again.";
+  if (error instanceof Error && error.message) {
+    const msg = error.message;
+    if (
+      msg.includes("Line not found") ||
+      msg.includes("Chat session not found") ||
+      msg.includes("conversation has ended") ||
+      msg.includes("aborted")
+    ) {
+      return "";
+    }
+    if (
+      msg.includes("Failed to fetch") ||
+      msg.includes("NetworkError") ||
+      msg.includes("Load failed")
+    ) {
+      return "No internet connection. Waiting for network...";
+    }
+    return msg;
+  }
+  return "";
+}
+
+function subscribeNetwork(callback: () => void) {
+  window.addEventListener("online", callback);
+  window.addEventListener("offline", callback);
+  return () => {
+    window.removeEventListener("online", callback);
+    window.removeEventListener("offline", callback);
+  };
+}
+
+function getNetworkSnapshot(): boolean {
+  return navigator.onLine;
+}
+
+function getNetworkServerSnapshot(): boolean {
+  return true;
 }
 
 let lastTypingReport = 0;
@@ -143,6 +179,14 @@ export default function Home() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [note, setNote] = useState<string | null>(null);
+
+  const notifyError = useCallback((err: unknown) => {
+    const msg = errorMessage(err);
+    if (msg) {
+      setNote(msg);
+    }
+  }, []);
+
   const [desk, setDesk] = useState<DeskView | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionView, setSessionView] = useState<SessionView | null>(null);
@@ -158,6 +202,22 @@ export default function Home() {
   const [showDynamicIsland, setShowDynamicIsland] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historySessions, setHistorySessions] = useState<HistorySession[]>([]);
+  const [replyingTo, setReplyingTo] = useState<{ id: string; fromCallsign: string; body: string } | null>(null);
+  const isOnline = useSyncExternalStore(
+    subscribeNetwork,
+    getNetworkSnapshot,
+    getNetworkServerSnapshot,
+  );
+  const prevOnlineRef = useRef(isOnline);
+
+  useEffect(() => {
+    if (!prevOnlineRef.current && isOnline) {
+      if (deviceId) {
+        void getDesk({ deviceId }).then(setDesk).catch(() => {});
+      }
+    }
+    prevOnlineRef.current = isOnline;
+  }, [isOnline, deviceId]);
 
   const seenReactionsRef = useRef<Set<string>>(new Set());
   const unreadRef = useRef(0);
@@ -167,6 +227,8 @@ export default function Home() {
     isAwayRef.current = isAway;
   }, [isAway]);
   const peerTypingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastMessageAtRef = useRef<number>(0);
+  const sendQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   const notifyUnread = useCallback((fromCallsign: string, text: string) => {
     if (typeof document !== "undefined" && document.hidden) {
@@ -275,7 +337,7 @@ export default function Home() {
       })
       .catch((err) => {
         if (!cancelled) {
-          setNote(errorMessage(err));
+          notifyError(err);
         }
       });
 
@@ -323,8 +385,22 @@ export default function Home() {
             }
           }
 
-          setMessages(displayMsgs);
-          saveCachedMessages(pack.session.id, displayMsgs);
+          setMessages((prev) => {
+            const map = new Map<string, ChatMessage>();
+            for (const m of displayMsgs) {
+              map.set(m.id, m);
+            }
+            for (const m of prev) {
+              if (m.id.startsWith("opt-") && !map.has(m.id)) {
+                map.set(m.id, m);
+              }
+            }
+            const merged = Array.from(map.values()).sort(
+              (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+            );
+            saveCachedMessages(pack.session.id, displayMsgs);
+            return merged;
+          });
           setSessionView(pack.session);
 
           if (displayMsgs.length > 0) {
@@ -473,11 +549,15 @@ export default function Home() {
         clearTimeout(peerTypingTimeoutRef.current);
       }
     };
-  }, [deviceId, notifyUnread]);
+  }, [deviceId, notifyUnread, notifyError]);
 
   const session = desk?.activeSession ?? null;
   const currentSession = sessionView ?? session;
   const listening = Boolean(desk?.queued) && !currentSession;
+
+  useEffect(() => {
+    lastMessageAtRef.current = Date.now();
+  }, [currentSession?.id, messages.length]);
 
   useEffect(() => {
     if (currentSession?.id) {
@@ -526,41 +606,40 @@ export default function Home() {
             }
           }
 
-          const cached = loadCachedMessages(currentSession.id);
-          const map = new Map<string, ChatMessage>();
-          for (const m of cached) {
-            map.set(m.id, m);
-          }
-          for (const m of displayDecrypted) {
-            map.set(m.id, m);
-          }
-          const merged = Array.from(map.values()).sort(
-            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-          );
-          saveCachedMessages(currentSession.id, merged);
-          setMessages(merged);
+          setMessages((prev) => {
+            const map = new Map<string, ChatMessage>();
+            for (const m of displayDecrypted) {
+              map.set(m.id, m);
+            }
+            for (const m of prev) {
+              if (m.id.startsWith("opt-") && !map.has(m.id)) {
+                map.set(m.id, m);
+              }
+            }
+            const merged = Array.from(map.values()).sort(
+              (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+            );
+            saveCachedMessages(currentSession.id, merged);
+            return merged;
+          });
           setSessionView(pack.session);
 
-          if (merged.length > 0) {
-            const lastMsg = merged[merged.length - 1];
+          if (displayDecrypted.length > 0) {
+            const lastMsg = displayDecrypted[displayDecrypted.length - 1];
             saveHistorySession({
               sessionId: currentSession.id,
               peerCallsign: pack.session.peerCallsign,
               startedAt: new Date(pack.session.createdAt).getTime(),
               savedAt: Date.now(),
-              messageCount: merged.length,
+              messageCount: displayDecrypted.length,
               preview: lastMsg?.body ?? "",
               interests: pack.session.interests,
-              messages: merged,
+              messages: displayDecrypted,
             });
             setHistorySessions(loadChatHistory());
           }
         })
-        .catch((err) => {
-          if (!cancelled) {
-            setNote(errorMessage(err));
-          }
-        });
+        .catch(() => {});
     };
 
     fetchMessages();
@@ -586,10 +665,8 @@ export default function Home() {
           return;
         }
         setDesk(result.desk);
-      } catch (error) {
-        if (!cancelled) {
-          setNote(errorMessage(error));
-        }
+      } catch {
+        return;
       }
     };
 
@@ -656,12 +733,12 @@ export default function Home() {
         setLogOpen(false);
         setSettingsOpen(false);
       } catch (err) {
-        setNote(errorMessage(err));
+        notifyError(err);
       } finally {
         setBusy(false);
       }
     },
-    [deviceId, busy, interests],
+    [deviceId, busy, interests, notifyError],
   );
 
   async function handleLeaveQueue() {
@@ -674,7 +751,7 @@ export default function Home() {
       const next = await leaveQueue({ deviceId });
       setDesk(next);
     } catch (err) {
-      setNote(errorMessage(err));
+      notifyError(err);
     } finally {
       setBusy(false);
     }
@@ -703,6 +780,7 @@ export default function Home() {
     playLeaveTone();
     setShowDynamicIsland(false);
     setIsAway(false);
+    setReplyingTo(null);
     if (targetSessionId) {
       destroySessionKey(targetSessionId);
       try {
@@ -732,6 +810,7 @@ export default function Home() {
     playLeaveTone();
     setShowDynamicIsland(false);
     setIsAway(false);
+    setReplyingTo(null);
     if (targetSessionId) {
       destroySessionKey(targetSessionId);
       try {
@@ -755,11 +834,11 @@ export default function Home() {
       setLogOpen(false);
       setSettingsOpen(false);
     } catch (err) {
-      setNote(errorMessage(err));
+      notifyError(err);
     } finally {
       setBusy(false);
     }
-  }, [deviceId, busy, currentSession?.id, interests]);
+  }, [deviceId, busy, currentSession?.id, interests, notifyError]);
 
   useEffect(() => {
     if (!currentSession?.id || currentSession.closed) {
@@ -778,31 +857,26 @@ export default function Home() {
         if (!isAwayRef.current) {
           setIsAway(true);
           if (deviceId && currentSession?.id) {
-            void reportPresence({ deviceId, sessionId: currentSession.id, isAway: true });
+            void reportPresence({ deviceId, sessionId: currentSession.id, isAway: true }).catch(() => {});
           }
         }
       } else {
         setShowDynamicIsland(false);
+        if (isAwayRef.current) {
+          setIsAway(false);
+          if (deviceId && currentSession?.id) {
+            void reportPresence({ deviceId, sessionId: currentSession.id, isAway: false }).catch(() => {});
+          }
+        }
       }
     }
 
     function onActivity() {
-      if (!isAwayRef.current) {
-        lastActivityRef.current = Date.now();
-      }
-    }
-
-    function onKeyDown() {
       resetIdle();
     }
 
     function onVisibility() {
-      if (document.hidden) {
-        setIsAway(true);
-        if (deviceId && currentSession?.id) {
-          void reportPresence({ deviceId, sessionId: currentSession.id, isAway: true });
-        }
-      } else {
+      if (!document.hidden) {
         evaluateIdle();
       }
     }
@@ -811,43 +885,47 @@ export default function Home() {
       evaluateIdle();
     }
 
-    function onBlur() {
-      setIsAway(true);
-      if (deviceId && currentSession?.id) {
-        void reportPresence({ deviceId, sessionId: currentSession.id, isAway: true });
-      }
-    }
-
-    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onActivity);
     window.addEventListener("touchstart", onActivity);
+    window.addEventListener("pointerdown", onActivity);
     window.addEventListener("click", onActivity);
     window.addEventListener("focus", onFocus);
-    window.addEventListener("blur", onBlur);
     document.addEventListener("visibilitychange", onVisibility);
 
     evaluateIdle();
     const interval = window.setInterval(evaluateIdle, 1000);
 
     return () => {
-      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keydown", onActivity);
       window.removeEventListener("touchstart", onActivity);
+      window.removeEventListener("pointerdown", onActivity);
       window.removeEventListener("click", onActivity);
       window.removeEventListener("focus", onFocus);
-      window.removeEventListener("blur", onBlur);
       document.removeEventListener("visibilitychange", onVisibility);
       window.clearInterval(interval);
     };
-  }, [currentSession?.id, currentSession?.closed, deviceId, handleLeaveSession, resetIdle]);
+  }, [currentSession?.id, currentSession?.closed, currentSession?.kind, deviceId, handleLeaveSession, handleNextStranger, resetIdle]);
 
   async function handleSendMessage() {
+    if (!isOnline) {
+      setNote("You're offline. Reconnect to send messages.");
+      return;
+    }
     const activeSessionId = currentSession?.id;
-    if (!deviceId || !activeSessionId || !draft.trim() || busy) {
+    if (!deviceId || !activeSessionId || !draft.trim() || currentSession?.closed) {
       return;
     }
     resetIdle();
+    lastMessageAtRef.current = Date.now();
     const rawText = draft.trim();
+    let textToSend = rawText;
+    if (replyingTo) {
+      const quoteSnippet = replyingTo.body.replace(/[\r\n]+/g, " ").slice(0, 100);
+      textToSend = `> ${replyingTo.fromCallsign}: ${quoteSnippet}\n${rawText}`;
+      setReplyingTo(null);
+    }
     const isFirst = messages.length === 0 || !messages.some((m) => m.mine);
-    const safety = evaluateSafety(rawText, isFirst);
+    const safety = evaluateSafety(textToSend, isFirst);
 
     if (safety.autoBan) {
       setDraft("");
@@ -879,12 +957,12 @@ export default function Home() {
       } catch {}
     }
 
-    const tempId = `opt-${Date.now()}`;
+    const tempId = `opt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const optimisticMsg: ChatMessage = {
       id: tempId,
       fromId: deviceId,
       fromCallsign: desk?.station.callsign ?? "You",
-      body: rawText,
+      body: textToSend,
       createdAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 86400000).toISOString(),
       mine: true,
@@ -895,67 +973,75 @@ export default function Home() {
     setDraft("");
     playMessagePop();
     setMessages((prev) => [...prev, optimisticMsg]);
-    setBusy(true);
 
-    try {
-      const bodyToSend = await encryptText(rawText, activeSessionId);
+    sendQueueRef.current = sendQueueRef.current.then(async () => {
+      try {
+        const bodyToSend = await encryptText(textToSend, activeSessionId);
 
-      const pack = await sendMessage({
-        deviceId,
-        sessionId: activeSessionId,
-        body: bodyToSend,
-      });
-      setNote(null);
-      const decrypted = await Promise.all(
-        pack.messages.map(async (m) => {
-          if (m.body.startsWith("e2e:")) {
-            const plain = await decryptText(m.body, activeSessionId);
-            return { ...m, body: plain };
+        const pack = await sendMessage({
+          deviceId,
+          sessionId: activeSessionId,
+          body: bodyToSend,
+        });
+        if (pack.session?.closed) {
+          setSessionView(pack.session);
+          return;
+        }
+        const decrypted = await Promise.all(
+          pack.messages.map(async (m) => {
+            if (m.body.startsWith("e2e:")) {
+              const plain = await decryptText(m.body, activeSessionId);
+              return { ...m, body: plain };
+            }
+            return m;
+          }),
+        );
+        const displayDecrypted: ChatMessage[] = [];
+        for (const m of decrypted) {
+          if (!REACTION_REGEX.test(m.body)) {
+            displayDecrypted.push(m);
           }
-          return m;
-        }),
-      );
-      const displayDecrypted: ChatMessage[] = [];
-      for (const m of decrypted) {
-        if (!REACTION_REGEX.test(m.body)) {
-          displayDecrypted.push(m);
         }
-      }
-      const cached = loadCachedMessages(activeSessionId);
-      const map = new Map<string, ChatMessage>();
-      for (const m of cached) {
-        if (!m.id.startsWith("opt-")) {
-          map.set(m.id, m);
-        }
-      }
-      for (const m of displayDecrypted) {
-        map.set(m.id, m);
-      }
-      const merged = Array.from(map.values()).sort(
-        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-      );
-      saveCachedMessages(activeSessionId, merged);
-      setMessages(merged);
-      setSessionView(pack.session);
+        setMessages((prev) => {
+          const map = new Map<string, ChatMessage>();
+          for (const m of displayDecrypted) {
+            map.set(m.id, m);
+          }
+          for (const m of prev) {
+            if (m.id.startsWith("opt-") && m.id !== tempId) {
+              if (!map.has(m.id)) {
+                map.set(m.id, m);
+              }
+            }
+          }
+          const merged = Array.from(map.values()).sort(
+            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+          );
+          saveCachedMessages(activeSessionId, merged);
+          return merged;
+        });
+        setSessionView(pack.session);
 
-      saveHistorySession({
-        sessionId: activeSessionId,
-        peerCallsign: pack.session.peerCallsign,
-        startedAt: new Date(pack.session.createdAt).getTime(),
-        savedAt: Date.now(),
-        messageCount: merged.length,
-        preview: rawText,
-        interests: pack.session.interests,
-        messages: merged,
-      });
-      setHistorySessions(loadChatHistory());
-    } catch (err) {
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
-      setDraft(rawText);
-      setNote(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
+        saveHistorySession({
+          sessionId: activeSessionId,
+          peerCallsign: pack.session.peerCallsign,
+          startedAt: new Date(pack.session.createdAt).getTime(),
+          savedAt: Date.now(),
+          messageCount: displayDecrypted.length,
+          preview: rawText,
+          interests: pack.session.interests,
+          messages: displayDecrypted,
+        });
+        setHistorySessions(loadChatHistory());
+      } catch (err) {
+        const msg = errorMessage(err);
+        if (msg.includes("ended") || msg.includes("closed") || msg.includes("not found")) {
+          setSessionView((prev) => (prev ? { ...prev, closed: true } : null));
+        } else {
+          setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        }
+      }
+    });
   }
 
   async function handleEditMessage(messageId: string, newBody: string) {
@@ -991,7 +1077,7 @@ export default function Home() {
       });
       setHistorySessions(loadChatHistory());
     } catch (err) {
-      setNote(errorMessage(err));
+      notifyError(err);
     }
   }
 
@@ -1027,7 +1113,7 @@ export default function Home() {
       }
       setHistorySessions(loadChatHistory());
     } catch (err) {
-      setNote(errorMessage(err));
+      notifyError(err);
     }
   }
 
@@ -1075,7 +1161,7 @@ export default function Home() {
       const refreshed = await getDesk({ deviceId });
       setDesk(refreshed);
     } catch (err) {
-      setNote(errorMessage(err));
+      notifyError(err);
     } finally {
       setBusy(false);
     }
@@ -1099,7 +1185,7 @@ export default function Home() {
         setSessionView(pack.session);
       }
     } catch (err) {
-      setNote(errorMessage(err));
+      notifyError(err);
     } finally {
       setBusy(false);
     }
@@ -1117,7 +1203,7 @@ export default function Home() {
       setLogOpen(false);
       setSettingsOpen(false);
     } catch (err) {
-      setNote(errorMessage(err));
+      notifyError(err);
     } finally {
       setBusy(false);
     }
@@ -1183,13 +1269,15 @@ export default function Home() {
 
   const inboundOnLine = currentSession?.inboundQsl;
 
-  const meta = currentSession
-    ? currentSession.kind === "friend"
-      ? "friend"
-      : "chatting"
-    : listening
-      ? "searching"
-      : "online";
+  const meta = !isOnline
+    ? "offline"
+    : currentSession
+      ? currentSession.kind === "friend"
+        ? "friend"
+        : "chatting"
+      : listening
+        ? "searching"
+        : "online";
 
   return (
     <PaperShell>
@@ -1237,6 +1325,8 @@ export default function Home() {
         onStayConnected={resetIdle}
       />
 
+      <NetworkBanner isOnline={isOnline} />
+
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {isBanned || desk?.banned ? (
           <BannedView reason={banReason ?? desk?.banReason} />
@@ -1249,6 +1339,7 @@ export default function Home() {
               const newDid = getOrCreateDeviceId();
               setDeviceId(newDid);
               setDesk(null);
+              setReplyingTo(null);
               setMessages([]);
               setSessionView(null);
               void registerStation({ deviceId: newDid })
@@ -1279,6 +1370,9 @@ export default function Home() {
             sending={busy}
             closed={currentSession.closed}
             peerTyping={currentSession.peerTyping}
+            replyingTo={replyingTo}
+            onReply={setReplyingTo}
+            onCancelReply={() => setReplyingTo(null)}
             canQsl={
               currentSession.kind === "stranger" &&
               !currentSession.alreadyFriends &&

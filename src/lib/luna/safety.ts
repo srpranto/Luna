@@ -50,7 +50,7 @@ function normalizeText(text: string): string {
     .trim();
 }
 
-export function isMSpam(text: string): boolean {
+function isMSpam(text: string): boolean {
   const trimmed = text.trim();
   if (M_SPAM_PATTERNS.some((pat) => pat.test(trimmed))) {
     return true;
@@ -59,12 +59,12 @@ export function isMSpam(text: string): boolean {
   return M_SPAM_PATTERNS.some((pat) => pat.test(norm));
 }
 
-export function isSevereViolation(text: string): boolean {
+function isSevereViolation(text: string): boolean {
   const norm = normalizeText(text);
   return SEVERE_PATTERNS.some((pat) => pat.test(text) || pat.test(norm));
 }
 
-export function isSexualViolation(text: string): boolean {
+function isSexualViolation(text: string): boolean {
   const norm = normalizeText(text);
   return SEXUAL_PATTERNS.some((pat) => pat.test(text) || pat.test(norm));
 }

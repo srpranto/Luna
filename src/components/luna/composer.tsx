@@ -1,7 +1,7 @@
 "use client";
 
 import { MAX_LINE_CHARS } from "@/lib/luna/constants";
-import { ArrowUp, Sparkles, X } from "lucide-react";
+import { ArrowUp, Reply, Sparkles, X } from "lucide-react";
 import { useState, useRef, useEffect, type FormEvent, type KeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,8 @@ export function Composer({
   placeholder,
   autoFocus,
   onActivity,
+  replyingTo,
+  onCancelReply,
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -28,6 +30,8 @@ export function Composer({
   placeholder: string;
   autoFocus?: boolean;
   onActivity?: () => void;
+  replyingTo?: { id: string; fromCallsign: string; body: string } | null;
+  onCancelReply?: () => void;
 }) {
   const [showReactions, setShowReactions] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -50,9 +54,15 @@ export function Composer({
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    const newHeight = Math.min(130, Math.max(40, el.scrollHeight));
+    const newHeight = Math.min(200, Math.max(40, el.scrollHeight));
     el.style.height = `${newHeight}px`;
   }, [value]);
+
+  useEffect(() => {
+    if (replyingTo && textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, [replyingTo]);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -67,6 +77,11 @@ export function Composer({
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Escape" && replyingTo) {
+      event.preventDefault();
+      onCancelReply?.();
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       if (!disabled && value.trim()) {
@@ -131,6 +146,27 @@ export function Composer({
         </div>
       )}
 
+      {replyingTo && (
+        <div className="flex items-center justify-between gap-2 px-3 py-1.5 mb-2 rounded-xl bg-zinc-900/90 border border-white/10 text-xs text-zinc-300 animate-fade-up">
+          <div className="flex items-center gap-2 min-w-0">
+            <Reply className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
+            <div className="truncate">
+              <span className="font-semibold text-zinc-100">{replyingTo.fromCallsign}</span>
+              <span className="text-zinc-500 mx-1.5">•</span>
+              <span className="text-zinc-400">{replyingTo.body.replace(/\n/g, " ").slice(0, 50)}</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onCancelReply}
+            aria-label="Cancel reply"
+            className="p-1 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors cursor-pointer shrink-0"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
       <label className="sr-only" htmlFor="chat-message-input">
         Chat message
       </label>
@@ -160,10 +196,10 @@ export function Composer({
               clearTypingTimer();
               onTyping?.(false);
             }}
-            className="min-h-[40px] max-h-[130px] w-full resize-none rounded-xl border border-zinc-800 bg-zinc-900/60 pl-3.5 pr-14 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 shadow-inner transition-colors focus:border-zinc-500 focus:outline-none disabled:opacity-40 leading-relaxed overflow-y-auto"
+            className="min-h-[40px] max-h-[200px] w-full resize-none rounded-xl border border-zinc-800 bg-zinc-900/60 pl-3.5 pr-14 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-400 shadow-inner transition-colors focus:border-zinc-500 focus:outline-none disabled:opacity-40 leading-relaxed overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
           />
           {value.length > 0 && (
-            <span className="absolute right-2.5 bottom-2 text-[10px] font-mono text-zinc-500 pointer-events-none bg-zinc-900/80 px-1 rounded">
+            <span className="absolute right-2.5 bottom-2 text-[10px] font-mono text-zinc-400 pointer-events-none bg-zinc-900/80 px-1 rounded">
               {value.length}/{MAX_LINE_CHARS}
             </span>
           )}
@@ -176,11 +212,12 @@ export function Composer({
             size="sm"
             onClick={() => setShowReactions((prev) => !prev)}
             disabled={disabled}
+            aria-label="Celestial reactions"
+            title="Celestial reactions"
             className={cn(
               "h-10 w-10 p-0 rounded-xl text-zinc-400 hover:text-zinc-100 hover:bg-zinc-850 shrink-0 cursor-pointer transition-colors",
               showReactions && "text-indigo-400 bg-zinc-850 ring-1 ring-indigo-500/30",
             )}
-            title="Celestial reactions"
           >
             <Sparkles className="h-4 w-4" />
           </Button>
@@ -190,8 +227,9 @@ export function Composer({
           type="submit"
           disabled={disabled || !value.trim()}
           size="sm"
-          className="h-10 px-3.5 shrink-0 bg-zinc-100 text-zinc-950 hover:bg-zinc-200 rounded-xl font-medium cursor-pointer"
+          aria-label="Send message"
           title="Send message (Enter, Shift+Enter for new line)"
+          className="h-10 px-3.5 shrink-0 bg-zinc-100 text-zinc-950 hover:bg-zinc-200 rounded-xl font-medium cursor-pointer"
         >
           <ArrowUp className="h-4 w-4" />
           <span className="hidden sm:inline">Send</span>

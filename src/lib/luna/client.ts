@@ -163,6 +163,11 @@ export function subscribeDeskStream(deviceId: string, onEvent: StreamHandler): (
     "session_ended",
     "desk_update",
     "friend_request",
+    "presence_update",
+    "message_edited",
+    "message_deleted",
+    "banned",
+    "peer_banned",
   ];
 
   for (const type of eventTypes) {

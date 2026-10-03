@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { formatClock, formatRemaining } from "@/lib/luna/identity";
 import type { ChatMessage } from "@/lib/luna/types";
 import { cn } from "@/lib/utils";
-import { Check, CheckCheck, ArrowRight, Pencil, Trash2, Copy, Lock } from "lucide-react";
+import { ArrowRight, Pencil, Trash2, Reply, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 function renderFormattedBody(body: string, isMine: boolean) {
@@ -61,6 +61,33 @@ function renderFormattedBody(body: string, isMine: boolean) {
     }
 
     if (isQuote) {
+      const colonIdx = content.indexOf(": ");
+      if (colonIdx > 0 && colonIdx < 32) {
+        const quoteAuthor = content.slice(0, colonIdx);
+        const quoteSnippet = content.slice(colonIdx + 2);
+        return (
+          <div
+            key={lineIdx}
+            className={cn(
+              "rounded-lg border-l-4 px-2.5 py-1.5 mb-2 text-xs select-none",
+              isMine
+                ? "border-zinc-500 bg-zinc-200/80 text-zinc-800"
+                : "border-sky-500 bg-white/5 text-zinc-300",
+            )}
+          >
+            <div
+              className={cn(
+                "text-[10px] font-semibold tracking-wide uppercase font-mono",
+                isMine ? "text-zinc-700" : "text-sky-400",
+              )}
+            >
+              {quoteAuthor}
+            </div>
+            <div className="line-clamp-2 italic text-[11px] opacity-90 mt-0.5">{quoteSnippet}</div>
+          </div>
+        );
+      }
+
       return (
         <blockquote
           key={lineIdx}
@@ -97,6 +124,7 @@ export function Transcript({
   onLeave,
   onEditMessage,
   onDeleteMessage,
+  onReply,
 }: {
   messages: ChatMessage[];
   now?: Date | null;
@@ -108,13 +136,60 @@ export function Transcript({
   onLeave?: () => void;
   onEditMessage?: (messageId: string, newBody: string) => Promise<void>;
   onDeleteMessage?: (messageId: string) => Promise<void>;
+  onReply?: (target: { id: string; fromCallsign: string; body: string }) => void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showInterests, setShowInterests] = useState(true);
+
+  const [swipingId, setSwipingId] = useState<string | null>(null);
+  const [swipeOffset, setSwipeOffset] = useState<number>(0);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  function handleTouchStart(e: React.TouchEvent, msgId: string) {
+    touchStartRef.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+    };
+    setSwipingId(msgId);
+    setSwipeOffset(0);
+  }
+
+  function handleTouchMove(e: React.TouchEvent, msgId: string) {
+    if (!touchStartRef.current || swipingId !== msgId) return;
+    const deltaX = e.touches[0].clientX - touchStartRef.current.x;
+    const deltaY = e.touches[0].clientY - touchStartRef.current.y;
+    if (Math.abs(deltaX) > Math.abs(deltaY) && deltaX < 0) {
+      const clamped = Math.max(-60, deltaX);
+      setSwipeOffset(clamped);
+    }
+  }
+
+  function handleTouchEnd(msg: ChatMessage) {
+    if (swipeOffset <= -35 && onReply && !closed) {
+      onReply({
+        id: msg.id,
+        fromCallsign: msg.fromCallsign,
+        body: msg.body,
+      });
+      if (typeof window !== "undefined" && "vibrate" in navigator) {
+        try {
+          navigator.vibrate(20);
+        } catch {}
+      }
+    }
+    setSwipingId(null);
+    setSwipeOffset(0);
+    touchStartRef.current = null;
+  }
+
+  function handleTouchCancel() {
+    setSwipingId(null);
+    setSwipeOffset(0);
+    touchStartRef.current = null;
+  }
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -150,14 +225,6 @@ export function Transcript({
       setEditDraft("");
     } finally {
       setSavingEdit(false);
-    }
-  }
-
-  function handleCopy(id: string, body: string) {
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      void navigator.clipboard.writeText(body);
-      setCopiedId(id);
-      window.setTimeout(() => setCopiedId(null), 1500);
     }
   }
 
@@ -218,6 +285,9 @@ export function Transcript({
             );
           }
 
+          const isSwipingThis = swipingId === msg.id;
+          const currentOffset = isSwipingThis ? swipeOffset : 0;
+
           return (
             <div
               key={msg.id}
@@ -239,19 +309,17 @@ export function Transcript({
                 )}
               >
                 <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(msg.id, msg.body)}
-                    aria-label="Copy message"
-                    title={copiedId === msg.id ? "Copied!" : "Copy message"}
-                    className="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer"
-                  >
-                    {copiedId === msg.id ? (
-                      <Check className="h-3 w-3 text-emerald-400" />
-                    ) : (
-                      <Copy className="h-3 w-3" />
-                    )}
-                  </button>
+                  {onReply && !closed && (
+                    <button
+                      type="button"
+                      onClick={() => onReply({ id: msg.id, fromCallsign: msg.fromCallsign, body: msg.body })}
+                      aria-label="Reply to message"
+                      title="Reply"
+                      className="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer"
+                    >
+                      <Reply className="h-3 w-3" />
+                    </button>
+                  )}
 
                   {isMine && !closed && editingId !== msg.id && onEditMessage && (
                     <button
@@ -323,64 +391,64 @@ export function Transcript({
                     </div>
                   </div>
                 ) : (
-                  <div
-                    className={cn(
-                      "relative inline-block w-fit max-w-[85%] sm:max-w-[70%] rounded-2xl px-3.5 py-2 text-xs sm:text-sm leading-relaxed break-words shadow-sm",
-                      isMine
-                        ? "bg-zinc-100 text-zinc-950 rounded-br-xs font-normal"
-                        : "bg-zinc-900 border border-white/10 text-zinc-100 rounded-bl-xs",
-                    )}
-                    title={formatClock(new Date(msg.createdAt))}
-                  >
-                    <div className="inline">{renderFormattedBody(msg.body, isMine)}</div>
-                    <span className="inline-flex items-center gap-1 float-right mt-1.5 ml-2.5 text-[10px] font-mono select-none">
-                      <span className="hidden group-hover:inline text-[10px] text-zinc-500 transition-opacity">
-                        {formatClock(new Date(msg.createdAt))}
+                  <div className="relative inline-flex items-center max-w-[85%] sm:max-w-[70%]">
+                    <div
+                      onTouchStart={(e) => handleTouchStart(e, msg.id)}
+                      onTouchMove={(e) => handleTouchMove(e, msg.id)}
+                      onTouchEnd={() => handleTouchEnd(msg)}
+                      onTouchCancel={handleTouchCancel}
+                      style={{
+                        transform: currentOffset !== 0 ? `translateX(${currentOffset}px)` : undefined,
+                        transition: isSwipingThis ? "none" : "transform 0.2s cubic-bezier(0.2, 0, 0, 1)",
+                      }}
+                      className={cn(
+                        "relative inline-block w-fit rounded-2xl px-3.5 py-2 text-xs sm:text-sm leading-relaxed break-words shadow-sm touch-pan-y",
+                        isMine
+                          ? "bg-zinc-100 text-zinc-950 rounded-br-xs font-normal"
+                          : "bg-zinc-900 border border-white/10 text-zinc-100 rounded-bl-xs",
+                      )}
+                      title={formatClock(new Date(msg.createdAt))}
+                    >
+                      <div className="inline">{renderFormattedBody(msg.body, isMine)}</div>
+                      <span className="inline-flex items-center gap-1 float-right mt-1.5 ml-2.5 text-[10px] font-mono select-none">
+                        <span className="hidden group-hover:inline text-[10px] text-zinc-500 transition-opacity">
+                          {formatClock(new Date(msg.createdAt))}
+                        </span>
+                        {msg.editedAt && (
+                          <span className="text-[9px] italic text-zinc-500">
+                            edited
+                          </span>
+                        )}
+                        {remaining && (
+                          <span className="text-[9px] hidden group-hover:inline text-zinc-500">
+                            ({remaining})
+                          </span>
+                        )}
                       </span>
-                      {msg.editedAt && (
-                        <span className="text-[9px] italic text-zinc-500">
-                          edited
-                        </span>
-                      )}
-                      {remaining && (
-                        <span className="text-[9px] hidden group-hover:inline text-zinc-500">
-                          ({remaining})
-                        </span>
-                      )}
-                      {isMine && (
-                        <span className="inline-flex items-center">
-                          {msg.seenAt ? (
-                            <CheckCheck className="h-3 w-3 text-sky-500" />
-                          ) : msg.copied ? (
-                            <CheckCheck className="h-3 w-3 text-zinc-400" />
-                          ) : (
-                            <Check className="h-3 w-3 text-zinc-400" />
-                          )}
-                        </span>
-                      )}
-                    </span>
+                    </div>
+
+                    {isSwipingThis && currentOffset < -5 && (
+                      <div
+                        className="flex items-center justify-center shrink-0 pl-1.5 text-sky-400 transition-opacity"
+                        style={{
+                          opacity: Math.min(1, Math.abs(currentOffset) / 35),
+                          transform: `scale(${Math.min(1, Math.abs(currentOffset) / 35)})`,
+                        }}
+                      >
+                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-800 border border-white/10 text-sky-400 shadow-md">
+                          <Reply className="h-3 w-3" />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
 
-              {msg.id === lastMineMsgId && !closed && (
-                <div className="flex items-center justify-end gap-1 px-1 pt-0.5 text-[10px] font-mono select-none animate-fade-up">
-                  {msg.seenAt ? (
-                    <span className="flex items-center gap-1 text-sky-400 font-medium">
-                      <span>Seen</span>
-                      <CheckCheck className="h-3 w-3 text-sky-400" />
-                    </span>
-                  ) : msg.copied ? (
-                    <span className="flex items-center gap-1 text-zinc-400 font-medium">
-                      <span>Delivered</span>
-                      <CheckCheck className="h-3 w-3 text-zinc-400" />
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1 text-zinc-500">
-                      <span>Sent</span>
-                      <Check className="h-3 w-3 text-zinc-500" />
-                    </span>
-                  )}
+              {msg.id === lastMineMsgId && !closed && (msg.seenAt || msg.copied) && (
+                <div className="flex items-center justify-end px-1 pt-0.5 text-[10px] font-mono select-none animate-fade-up">
+                  <span className={cn("text-[10px]", msg.seenAt ? "text-sky-400 font-medium" : "text-zinc-400")}>
+                    {msg.seenAt ? "Seen" : "Delivered"}
+                  </span>
                 </div>
               )}
             </div>

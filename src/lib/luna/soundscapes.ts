@@ -25,7 +25,7 @@ export function getSavedVolume(): number {
   return isNaN(val) ? 0.35 : Math.max(0, Math.min(1, val));
 }
 
-export function saveVolume(vol: number): void {
+function saveVolume(vol: number): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(VOLUME_KEY, vol.toString());
 }

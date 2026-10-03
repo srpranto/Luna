@@ -153,7 +153,7 @@ const ecdhStore = new Map<
   }
 >();
 
-export async function getOrCreateDeviceKeyPair(deviceId: string): Promise<CryptoKeyPair | null> {
+async function getOrCreateDeviceKeyPair(deviceId: string): Promise<CryptoKeyPair | null> {
   if (typeof window === "undefined" || !crypto?.subtle) return null;
   const existing = ecdhStore.get(`device:${deviceId}`)?.keyPair;
   if (existing) return existing;

@@ -71,7 +71,7 @@ export function PrivacyShield() {
           <span className="text-sm font-semibold tracking-tight text-zinc-100">
             Luna Private Sanctuary
           </span>
-          <span className="mt-1 text-xs text-zinc-500 font-mono">
+          <span className="mt-1 text-xs text-zinc-400 font-mono">
             Screen protected • Content hidden while window is unfocused
           </span>
         </div>

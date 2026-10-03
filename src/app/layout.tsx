@@ -7,16 +7,14 @@ const googleSans = Google_Sans({
   subsets: ["latin"],
   variable: "--font-sans",
   display: "swap",
-  weight: ["400", "500", "600", "700"],
+  weight: ["400", "500", "600"],
   fallback: ["system-ui", "-apple-system", "sans-serif"],
-  adjustFontFallback: false,
 });
 
 export const viewport: Viewport = {
   themeColor: "#09090b",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
   viewportFit: "cover",
 };
 
@@ -25,6 +23,13 @@ export const metadata: Metadata = {
   title: "Luna — Late-Night Anonymous Chat",
   description:
     "A quiet late-night sanctuary for honest, encrypted conversations with strangers under the moon.",
+  alternates: {
+    canonical: "/",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
@@ -65,8 +70,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`dark ${googleSans.variable} font-sans`}>
-      <body className="antialiased min-h-dvh bg-[#09090b] text-[#fafafa] font-sans selection:bg-white/20 selection:text-white">
+    <html lang="en" className={`dark ${googleSans.variable} font-sans`} suppressHydrationWarning>
+      <body
+        className="antialiased min-h-dvh bg-[#09090b] text-[#fafafa] font-sans selection:bg-white/20 selection:text-white"
+        suppressHydrationWarning
+      >
         <PwaProvider>{children}</PwaProvider>
       </body>
     </html>

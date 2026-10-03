@@ -23,7 +23,7 @@ export function MatchChathead({
           <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-200">
               <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
-              <span>Deep Space Matchmaker</span>
+              <span>Match Suggestions</span>
             </div>
             <button
               type="button"
@@ -31,7 +31,8 @@ export function MatchChathead({
                 setOpen(false);
                 onDismiss?.();
               }}
-              className="text-zinc-400 hover:text-zinc-100 p-1 rounded-md transition-colors"
+              aria-label="Minimize"
+              className="text-zinc-400 hover:text-zinc-100 p-1 rounded-md transition-colors cursor-pointer"
               title="Minimize"
             >
               <X className="h-3.5 w-3.5" />
@@ -39,9 +40,9 @@ export function MatchChathead({
           </div>
 
           <p className="text-xs text-zinc-300 leading-relaxed">
-            Floating alone in deep space? No strangers are active on your exact topics right now.
+            Looking for a match? No active strangers have matching topics right now.
           </p>
-          <p className="text-[11px] text-zinc-500 mt-1">
+          <p className="text-[11px] text-zinc-400 mt-1">
             Broaden your search with popular midnight topics to connect faster.
           </p>
 
@@ -89,6 +90,7 @@ export function MatchChathead({
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
+        aria-label="Matchmaking suggestions"
         className="group relative flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-full border border-white/20 bg-zinc-900/90 shadow-[0_8px_25px_rgba(0,0,0,0.6),inset_0_1px_0_0_rgba(255,255,255,0.15)] backdrop-blur-md transition-all hover:scale-105 active:scale-95 cursor-pointer"
         title="Matchmaking suggestions"
       >

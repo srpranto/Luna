@@ -41,6 +41,9 @@ export function LineView({
   onEditMessage,
   onDeleteMessage,
   onActivity,
+  replyingTo,
+  onReply,
+  onCancelReply,
 }: {
   sessionKind: "stranger" | "friend";
   peerCallsign: string;
@@ -70,6 +73,9 @@ export function LineView({
   onEditMessage: (messageId: string, newBody: string) => Promise<void>;
   onDeleteMessage: (messageId: string) => Promise<void>;
   onActivity?: () => void;
+  replyingTo?: { id: string; fromCallsign: string; body: string } | null;
+  onReply?: (target: { id: string; fromCallsign: string; body: string }) => void;
+  onCancelReply?: () => void;
 }) {
   const [lockRemainingSeconds, setLockRemainingSeconds] = useState(() => {
     if (closed || !createdAt) return 0;
@@ -147,6 +153,7 @@ export function LineView({
               variant="secondary"
               onClick={onQsl}
               disabled={busy}
+              aria-label="Add contact"
               className="h-7 sm:h-7.5 px-2 sm:px-2.5 gap-1 sm:gap-1.5 text-xs bg-zinc-850 hover:bg-zinc-800 text-zinc-200 border border-white/10 cursor-pointer"
               title="Add contact"
             >
@@ -172,6 +179,7 @@ export function LineView({
               variant={closed ? "default" : "secondary"}
               onClick={onNext}
               disabled={busy || lockRemainingSeconds > 0}
+              aria-label={closed ? "Search for someone" : "Leave and find next stranger"}
               className={cn(
                 "h-7 sm:h-7.5 px-2 sm:px-2.5 gap-1 sm:gap-1.5 text-xs cursor-pointer transition-all",
                 closed
@@ -207,6 +215,7 @@ export function LineView({
             variant="ghost"
             onClick={onLeave}
             disabled={busy}
+            aria-label="Leave this chat"
             className="h-7 sm:h-7.5 px-2 sm:px-2.5 gap-1 text-xs text-zinc-400 hover:text-zinc-100 hover:bg-zinc-850 cursor-pointer"
             title="Leave this chat"
           >
@@ -221,7 +230,8 @@ export function LineView({
               variant="ghost"
               onClick={onBlock}
               disabled={busy}
-              className="h-7 sm:h-7.5 px-1.5 sm:px-2 text-xs text-zinc-500 hover:text-red-400 hover:bg-red-950/30 cursor-pointer flex items-center gap-1"
+              aria-label="Block and leave"
+              className="h-7 sm:h-7.5 px-1.5 sm:px-2 text-xs text-zinc-400 hover:text-red-400 hover:bg-red-950/30 cursor-pointer flex items-center gap-1"
               title="Block and leave"
             >
               <Ban className="h-3.5 w-3.5" />
@@ -280,6 +290,7 @@ export function LineView({
           onLeave={onLeave}
           onEditMessage={onEditMessage}
           onDeleteMessage={onDeleteMessage}
+          onReply={onReply}
         />
         <ScrollBottomPill visible={showScrollBottom} onClick={handleScrollToBottom} />
       </div>
@@ -298,11 +309,13 @@ export function LineView({
         onTyping={onTyping}
         onReaction={onReaction}
         onActivity={onActivity}
-        disabled={closed || sending}
+        disabled={closed}
         placeholder={
           closed ? "This chat has ended. Click Next to search for someone." : "Say something…"
         }
         autoFocus
+        replyingTo={replyingTo}
+        onCancelReply={onCancelReply}
       />
     </section>
   );

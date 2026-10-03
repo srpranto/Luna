@@ -3,7 +3,6 @@ import {
   FRIEND_TTL_DAYS,
   MAX_LINE_CHARS,
   QUEUE_STALE_SECONDS,
-  SEND_COOLDOWN_MS,
   STRANGER_NAMES,
   type StrangerName,
   STRANGER_TTL_MINUTES,
@@ -368,7 +367,23 @@ async function loadMessagesPack(
   `;
   const session = sessions[0];
   if (!session) {
-    throw new Error("Line not found.");
+    return {
+      session: {
+        id: sessionId,
+        kind: "stranger",
+        peerId: "",
+        peerCallsign: "Stranger",
+        interests: [],
+        createdAt: new Date().toISOString(),
+        closed: true,
+        outboundQsl: null,
+        inboundQsl: null,
+        alreadyFriends: false,
+        peerTyping: false,
+        peerPresence: "disconnected",
+      },
+      messages: [],
+    };
   }
 
   const stationRows = await sql<{ is_away: boolean | null }>`
@@ -1032,24 +1047,26 @@ export async function sendMessage(input: {
   `;
   const session = sessions[0];
   if (!session) {
-    throw new Error("Chat session not found.");
+    return {
+      session: {
+        id: input.sessionId,
+        kind: "stranger",
+        peerId: "",
+        peerCallsign: "Stranger",
+        interests: [],
+        createdAt: new Date().toISOString(),
+        closed: true,
+        outboundQsl: null,
+        inboundQsl: null,
+        alreadyFriends: false,
+        peerTyping: false,
+        peerPresence: "disconnected",
+      },
+      messages: [],
+    };
   }
   if (session.closed_at) {
-    throw new Error("This conversation has ended.");
-  }
-
-  const recent = await sql<MessageRow>`
-    select id, session_id, from_id, body, created_at, expires_at, copied_at
-    from messages
-    where session_id = ${session.id} and from_id = ${deviceId}
-    order by created_at desc
-    limit 1
-  `;
-  if (recent[0]) {
-    const age = Date.now() - new Date(recent[0].created_at).getTime();
-    if (Number.isFinite(age) && age < SEND_COOLDOWN_MS) {
-      throw new Error("Please wait a moment before sending another message.");
-    }
+    return loadMessagesPack(deviceId, session.id, true);
   }
 
   const ttl = ttlInterval(session.kind);

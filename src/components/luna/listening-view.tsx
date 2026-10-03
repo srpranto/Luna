@@ -60,7 +60,7 @@ export function ListeningView({
         </div>
 
         <p className="animate-fade-up stagger-3 mt-2 text-xs text-zinc-400">
-          Traversing deep space to find a quiet mind
+          Searching for someone with matching interests…
         </p>
 
         {interests.length > 0 && (
@@ -89,7 +89,8 @@ export function ListeningView({
             variant="outline"
             onClick={onStop}
             disabled={busy}
-            className="h-9 sm:h-10 px-5 w-full sm:w-auto border-zinc-800 text-zinc-300 hover:text-white bg-zinc-950/80 backdrop-blur-sm text-xs sm:text-sm"
+            aria-label="Leave the queue"
+            className="h-10 px-5 w-full sm:w-auto border-zinc-800 text-zinc-300 hover:text-white bg-zinc-950/80 backdrop-blur-sm text-xs sm:text-sm"
           >
             Leave the queue
           </Button>
