@@ -1,5 +1,5 @@
 export const MAX_LINE_CHARS = 280;
-export const QUEUE_STALE_SECONDS = 12;
+export const QUEUE_STALE_SECONDS = 6;
 export const STRANGER_TTL_MINUTES = 1440;
 export const IDLE_AWAY_THRESHOLD_MS = 60000;
 export const INACTIVITY_DISCONNECT_MS = 300000;
@@ -49,7 +49,9 @@ export function sharedInterests(a: string[], b: string[]): string[] {
 }
 
 export function minSharedForWait(waitMs: number): number {
-  void waitMs;
+  if (waitMs >= 4000) {
+    return 0;
+  }
   return 1;
 }
 

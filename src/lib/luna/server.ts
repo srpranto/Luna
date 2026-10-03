@@ -347,7 +347,25 @@ async function openSessionFor(deviceId: string): Promise<SessionRow | undefined>
     order by created_at desc
     limit 1
   `;
-  return rows[0];
+  const session = rows[0];
+  if (!session) {
+    return undefined;
+  }
+  if (session.kind === "stranger") {
+    const peerId = peerOf(session, deviceId);
+    const peerStation = await sql<{ last_seen: string | null }>`
+      select last_seen from stations where device_id = ${peerId}
+    `;
+    const peerLastSeenMs = peerStation[0]?.last_seen
+      ? new Date(peerStation[0].last_seen).getTime()
+      : 0;
+    const isPeerDead = !peerStation[0] || (peerLastSeenMs > 0 && Date.now() - peerLastSeenMs > 45000);
+    if (isPeerDead) {
+      await sql`update sessions set closed_at = now() where id = ${session.id}`;
+      return undefined;
+    }
+  }
+  return session;
 }
 
 async function loadMessagesPack(
@@ -509,6 +527,25 @@ async function loadMessagesPack(
   };
 }
 
+function isPrivateOrLocalIp(ip: string): boolean {
+  const clean = ip.trim();
+  return (
+    clean === "" ||
+    clean === "127.0.0.1" ||
+    clean === "::1" ||
+    clean === "localhost" ||
+    clean.startsWith("192.168.") ||
+    clean.startsWith("10.") ||
+    clean.startsWith("172.16.") ||
+    clean.startsWith("172.17.") ||
+    clean.startsWith("172.18.") ||
+    clean.startsWith("172.19.") ||
+    clean.startsWith("172.2") ||
+    clean.startsWith("172.30.") ||
+    clean.startsWith("172.31.")
+  );
+}
+
 async function getBanInfo(
   deviceId: string,
   ip?: string,
@@ -516,11 +553,18 @@ async function getBanInfo(
   const sql = await getSql();
   const cleanIp = ip?.trim() || "";
   try {
-    const rows = await sql<{ device_id: string; ip: string; reason: string; violation: string }>`
-      select device_id, ip, reason, violation from bans
-      where device_id = ${deviceId} or (ip is not null and ip <> '' and ip = ${cleanIp})
-      limit 1
-    `;
+    const checkIp = cleanIp && !isPrivateOrLocalIp(cleanIp);
+    const rows = checkIp
+      ? await sql<{ device_id: string; ip: string; reason: string; violation: string }>`
+          select device_id, ip, reason, violation from bans
+          where device_id = ${deviceId} or ip = ${cleanIp}
+          limit 1
+        `
+      : await sql<{ device_id: string; ip: string; reason: string; violation: string }>`
+          select device_id, ip, reason, violation from bans
+          where device_id = ${deviceId}
+          limit 1
+        `;
     if (rows[0]) {
       return {
         banned: true,
@@ -742,14 +786,20 @@ async function heartbeatQueueHandler(
 
   const waitMs = Date.now() - new Date(me.entered_at).getTime();
   const myInterests = parseInterests(me.interests);
-  const minShared = minSharedForWait(Number.isFinite(waitMs) ? waitMs : 0);
-  const stale = `${QUEUE_STALE_SECONDS} seconds`;
+  const minShared = myInterests.length === 0 ? 0 : minSharedForWait(Number.isFinite(waitMs) ? waitMs : 0);
 
   const others = await sql<QueueRow>`
-    select device_id, interests, entered_at, last_beat
-    from queue
-    where device_id <> ${deviceId}
-      and last_beat > now() - ${stale}::interval
+    select q.device_id, q.interests, q.entered_at, q.last_beat
+    from queue q
+    inner join stations s on s.device_id = q.device_id
+    where q.device_id <> ${deviceId}
+      and q.last_beat > now() - interval '6 seconds'
+      and s.last_seen > now() - interval '8 seconds'
+      and not exists (
+        select 1 from sessions ses
+        where ses.closed_at is null
+          and (ses.a_id = q.device_id or ses.b_id = q.device_id)
+      )
   `;
 
   let best: { row: QueueRow; shared: string[] } | null = null;
@@ -861,22 +911,33 @@ export async function joinQueue(input: {
   }
 
   const interests = sanitizeInterests(input.interests);
-  if (interests.length < 1) {
-    throw new Error("Enter at least one interest to start chatting.");
-  }
 
   await cleanup();
 
+  const sql = await getSql();
   const existing = await openSessionFor(deviceId);
   if (existing) {
-    throw new Error("Please leave your current chat first.");
+    if (existing.kind === "stranger") {
+      await sql`update sessions set closed_at = now() where id = ${existing.id}`;
+    } else {
+      const peerId = peerOf(existing, deviceId);
+      const peerStation = await sql<{ last_seen: string | null }>`
+        select last_seen from stations where device_id = ${peerId}
+      `;
+      const peerLastSeenMs = peerStation[0]?.last_seen
+        ? new Date(peerStation[0].last_seen).getTime()
+        : 0;
+      const peerGone = !peerStation[0] || (peerLastSeenMs > 0 && Date.now() - peerLastSeenMs > 25000);
+      if (peerGone) {
+        await sql`update sessions set closed_at = now() where id = ${existing.id}`;
+      } else {
+        throw new Error("Please leave your current chat first.");
+      }
+    }
   }
 
-  if (input.publicKey) {
-    await touchStation(deviceId, input.clientIp, input.publicKey);
-  }
+  await touchStation(deviceId, input.clientIp, input.publicKey);
 
-  const sql = await getSql();
   const payload = JSON.stringify(interests);
   await sql`
     insert into queue (device_id, interests, entered_at, last_beat)
