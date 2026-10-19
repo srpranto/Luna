@@ -7,6 +7,7 @@ import { SoundscapePopover } from "@/components/luna/soundscape-popover";
 import { BlackHoleIcon } from "@/components/luna/black-hole-icon";
 import { LunaMoon } from "@/components/luna/luna-moon";
 import { formatElapsed } from "@/lib/luna/identity";
+import { triggerHaptic } from "@/lib/luna/sound";
 import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
 
@@ -100,7 +101,7 @@ export function StatusHeader({
   };
 }) {
   return (
-    <header className="relative z-40 flex items-center justify-between border-b border-white/10 bg-zinc-950/60 px-4 py-3 sm:px-6 backdrop-blur-md">
+    <header className="relative z-40 flex items-center justify-between border-b border-white/10 bg-zinc-950/60 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:px-6 backdrop-blur-md">
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
         <div className="absolute inset-0 bg-radial-[ellipse_80%_60%_at_50%_40%] from-indigo-950/15 via-transparent to-transparent opacity-60" />
         <div className="hidden sm:block">
@@ -219,10 +220,13 @@ export function StatusHeader({
             type="button"
             variant={logOpen ? "secondary" : "ghost"}
             size="icon"
-            onClick={onToggleLog}
+            onClick={() => {
+              triggerHaptic("light");
+              onToggleLog();
+            }}
             aria-label="Connections"
             title="Connections"
-            className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80"
+            className="h-8.5 w-8.5 sm:h-8 sm:w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 touch-manipulation"
           >
             {logOpen ? <X className="h-4 w-4" /> : <HeartHandshake className="h-4 w-4" />}
           </Button>
@@ -232,10 +236,13 @@ export function StatusHeader({
               type="button"
               variant={historyOpen ? "secondary" : "ghost"}
               size="icon"
-              onClick={onToggleHistory}
+              onClick={() => {
+                triggerHaptic("light");
+                onToggleHistory();
+              }}
               aria-label="24h Chat History"
               title="24h Chat History"
-              className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 cursor-pointer"
+              className="h-8.5 w-8.5 sm:h-8 sm:w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 cursor-pointer touch-manipulation"
             >
               {historyOpen ? <X className="h-4 w-4" /> : <History className="h-4 w-4" />}
             </Button>
@@ -246,10 +253,13 @@ export function StatusHeader({
               type="button"
               variant="ghost"
               size="icon"
-              onClick={onToggleVoid}
+              onClick={() => {
+                triggerHaptic("light");
+                onToggleVoid();
+              }}
               aria-label="The Void (24h Orbit Letters)"
               title="The Void (24h Orbit Letters)"
-              className="h-8 w-8 text-indigo-400 hover:text-indigo-200 hover:bg-zinc-800/80"
+              className="h-8.5 w-8.5 sm:h-8 sm:w-8 text-indigo-400 hover:text-indigo-200 hover:bg-zinc-800/80 touch-manipulation"
             >
               <BlackHoleIcon className="h-4 w-4" />
             </Button>
@@ -260,10 +270,13 @@ export function StatusHeader({
               type="button"
               variant={settingsOpen ? "secondary" : "ghost"}
               size="icon"
-              onClick={onToggleSettings}
+              onClick={() => {
+                triggerHaptic("light");
+                onToggleSettings();
+              }}
               aria-label="Settings"
               title="Settings"
-              className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 cursor-pointer"
+              className="h-8.5 w-8.5 sm:h-8 sm:w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 cursor-pointer touch-manipulation"
             >
               {settingsOpen ? <X className="h-4 w-4" /> : <Settings className="h-4 w-4" />}
             </Button>

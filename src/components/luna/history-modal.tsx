@@ -6,6 +6,7 @@ import type { HistorySession } from "@/lib/luna/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatClock } from "@/lib/luna/identity";
+import { triggerHaptic } from "@/lib/luna/sound";
 import { cn } from "@/lib/utils";
 
 function formatRelativeTime(savedAt: number): string {
@@ -45,8 +46,9 @@ export function HistoryModal({
   const activeSession = sessions.find((s) => s.sessionId === selectedSessionId) ?? null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-xl animate-fade-up">
-      <div className="relative w-full max-w-lg max-h-[85vh] flex flex-col rounded-2xl border border-white/10 bg-zinc-950/95 shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 bg-black/80 backdrop-blur-xl animate-in fade-in duration-200">
+      <div className="relative w-full max-w-lg max-h-[90vh] sm:max-h-[85vh] flex flex-col rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 bg-zinc-950/95 shadow-2xl overflow-hidden animate-sheet-up sm:animate-none pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-0">
+        <div className="w-10 h-1 bg-zinc-700/60 rounded-full mx-auto my-2.5 sm:hidden" />
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 sm:px-6 sm:py-4 bg-zinc-900/40">
           <div className="flex items-center gap-2.5 min-w-0">
             {activeSession ? (
@@ -54,8 +56,11 @@ export function HistoryModal({
                 type="button"
                 variant="ghost"
                 size="icon"
-                onClick={() => setSelectedSessionId(null)}
-                className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+                onClick={() => {
+                  triggerHaptic("light");
+                  setSelectedSessionId(null);
+                }}
+                className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 touch-manipulation cursor-pointer"
               >
                 <ArrowLeft className="h-4 w-4" />
               </Button>
@@ -80,8 +85,11 @@ export function HistoryModal({
             type="button"
             variant="ghost"
             size="icon"
-            onClick={onClose}
-            className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 shrink-0"
+            onClick={() => {
+              triggerHaptic("light");
+              onClose();
+            }}
+            className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 shrink-0 touch-manipulation cursor-pointer"
           >
             <X className="h-4 w-4" />
           </Button>
@@ -145,11 +153,14 @@ export function HistoryModal({
             sessions.map((item) => (
               <div
                 key={item.sessionId}
-                className="group relative flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-zinc-900/50 p-3.5 transition-all hover:bg-zinc-900 hover:border-white/20"
+                className="group relative flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-zinc-900/50 p-3.5 transition-all hover:bg-zinc-900 hover:border-white/20 active:scale-[0.99] touch-manipulation"
               >
                 <button
                   type="button"
-                  onClick={() => setSelectedSessionId(item.sessionId)}
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setSelectedSessionId(item.sessionId);
+                  }}
                   className="flex-1 text-left min-w-0 cursor-pointer"
                 >
                   <div className="flex items-center gap-2">
@@ -181,8 +192,11 @@ export function HistoryModal({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    onClick={() => onDeleteSession(item.sessionId)}
-                    className="h-8 w-8 text-zinc-500 hover:text-red-400 hover:bg-red-950/30 cursor-pointer"
+                    onClick={() => {
+                      triggerHaptic("light");
+                      onDeleteSession(item.sessionId);
+                    }}
+                    className="h-8 w-8 text-zinc-500 hover:text-red-400 hover:bg-red-950/30 cursor-pointer touch-manipulation active:scale-95"
                     title="Delete this history entry"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -191,8 +205,11 @@ export function HistoryModal({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    onClick={() => setSelectedSessionId(item.sessionId)}
-                    className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 cursor-pointer"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setSelectedSessionId(item.sessionId);
+                    }}
+                    className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 cursor-pointer touch-manipulation active:scale-95"
                     title="Open transcript"
                   >
                     <ChevronRight className="h-4 w-4" />
@@ -209,8 +226,11 @@ export function HistoryModal({
               type="button"
               variant="ghost"
               size="sm"
-              onClick={onClearAll}
-              className="text-xs text-zinc-500 hover:text-red-400 hover:bg-red-950/20 cursor-pointer h-8 px-2.5"
+              onClick={() => {
+                triggerHaptic("light");
+                onClearAll();
+              }}
+              className="text-xs text-zinc-500 hover:text-red-400 hover:bg-red-950/20 cursor-pointer h-8 px-2.5 touch-manipulation active:scale-[0.98]"
             >
               Clear all history
             </Button>
@@ -222,8 +242,11 @@ export function HistoryModal({
             type="button"
             variant="outline"
             size="sm"
-            onClick={onClose}
-            className="text-xs border-zinc-800 text-zinc-300 hover:text-white cursor-pointer h-8 px-3.5"
+            onClick={() => {
+              triggerHaptic("light");
+              onClose();
+            }}
+            className="text-xs border-zinc-800 text-zinc-300 hover:text-white cursor-pointer h-8 px-3.5 touch-manipulation active:scale-[0.98]"
           >
             Close
           </Button>

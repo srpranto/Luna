@@ -7,6 +7,7 @@ import { StarfieldCanvas } from "@/components/luna/starfield-canvas";
 import { MatchChathead } from "@/components/luna/match-chathead";
 import { LunaMoon } from "@/components/luna/luna-moon";
 import { formatElapsed } from "@/lib/luna/identity";
+import { triggerHaptic } from "@/lib/luna/sound";
 
 export function ListeningView({
   enteredAt,
@@ -32,6 +33,17 @@ export function ListeningView({
     }, 1000);
     return () => window.clearInterval(timer);
   }, [enteredAt]);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && !busy) {
+        e.preventDefault();
+        onStop();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [busy, onStop]);
 
   return (
     <section className="relative flex min-h-0 flex-1 flex-col items-center justify-center p-4 sm:p-8 text-center overflow-hidden">
@@ -85,17 +97,23 @@ export function ListeningView({
           </div>
         )}
 
-        <div className="animate-fade-up stagger-5 mt-6 sm:mt-8 flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+        <div className="animate-fade-up stagger-5 mt-6 sm:mt-8 flex flex-col items-center gap-2 w-full sm:w-auto">
           <Button
             type="button"
             variant="outline"
-            onClick={onStop}
+            onClick={() => {
+              triggerHaptic("light");
+              onStop();
+            }}
             disabled={busy}
             aria-label="Leave the queue"
-            className="h-10 px-5 w-full sm:w-auto border-zinc-800 text-zinc-300 hover:text-white bg-zinc-950/80 backdrop-blur-sm text-xs sm:text-sm"
+            className="h-10 px-6 w-full sm:w-auto border-zinc-800 text-zinc-300 hover:text-white bg-zinc-950/80 backdrop-blur-sm text-xs sm:text-sm cursor-pointer touch-manipulation active:scale-[0.98]"
           >
             Leave the queue
           </Button>
+          <span className="hidden sm:inline-block text-[11px] font-mono text-zinc-500">
+            press Esc to cancel
+          </span>
         </div>
       </div>
 

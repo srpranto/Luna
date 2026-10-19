@@ -228,6 +228,7 @@ export default function Home() {
   const sendQueueRef = useRef<Promise<void>>(Promise.resolve());
   const activeSessionRef = useRef<SessionView | null>(null);
   const leftSessionIdsRef = useRef<Set<string>>(new Set());
+  const lastMatchChimeRef = useRef<string | null>(null);
 
   const isEventForActiveSession = useCallback((sessionId: string | undefined) => {
     if (!sessionId || leftSessionIdsRef.current.has(sessionId)) {
@@ -539,11 +540,14 @@ export default function Home() {
             .then((d) => !cancelled && setDesk(d))
             .catch(() => {});
         }
-        playMatchChime();
-        if (typeof window !== "undefined" && "vibrate" in navigator) {
-          try {
-            navigator.vibrate([15, 60, 20]);
-          } catch {}
+        if (info.sessionId && lastMatchChimeRef.current !== info.sessionId) {
+          lastMatchChimeRef.current = info.sessionId;
+          playMatchChime();
+          if (typeof window !== "undefined" && "vibrate" in navigator) {
+            try {
+              navigator.vibrate([15, 60, 20]);
+            } catch {}
+          }
         }
       } else if (eventType === "session_ended") {
         const info = data as { sessionId: string; desk?: DeskView };
@@ -627,7 +631,10 @@ export default function Home() {
 
   useEffect(() => {
     if (currentSession?.id) {
-      playMatchChime();
+      if (lastMatchChimeRef.current !== currentSession.id) {
+        lastMatchChimeRef.current = currentSession.id;
+        playMatchChime();
+      }
       if (currentSession.peerPublicKey && deviceId) {
         void establishSharedKey(deviceId, currentSession.id, currentSession.peerPublicKey);
       }
@@ -810,7 +817,7 @@ export default function Home() {
     [deviceId, busy, interests, notifyError],
   );
 
-  async function handleLeaveQueue() {
+  const handleLeaveQueue = useCallback(async () => {
     if (!deviceId || busy) {
       return;
     }
@@ -824,7 +831,7 @@ export default function Home() {
     } finally {
       setBusy(false);
     }
-  }
+  }, [deviceId, busy, notifyError]);
 
   const POPULAR_MIDNIGHT_TOPICS = [
     "quiet thoughts",
@@ -1296,7 +1303,7 @@ export default function Home() {
     if (isTyping && current - lastTypingReport < 1800) {
       return;
     }
-    lastTypingReport = current;
+    lastTypingReport = isTyping ? current : 0;
     void reportTyping({ deviceId, sessionId: activeSessionId, isTyping }).catch(() => {});
   }
 
@@ -1315,6 +1322,9 @@ export default function Home() {
             setWireCutPrimed(true);
             setNote("Press Esc again to leave this chat");
           }
+        } else if (listening) {
+          e.preventDefault();
+          void handleLeaveQueue();
         }
       } else if (e.key === "Enter") {
         if (currentSession?.closed) {
@@ -1337,10 +1347,12 @@ export default function Home() {
   }, [
     currentSession,
     wireCutPrimed,
+    listening,
     busy,
     deviceId,
     desk?.queued,
     handleJoinQueue,
+    handleLeaveQueue,
     handleLeaveSession,
     handleNextStranger,
   ]);

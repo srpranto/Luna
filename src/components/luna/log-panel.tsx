@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { LunaMoon } from "@/components/luna/luna-moon";
+import { triggerHaptic } from "@/lib/luna/sound";
 
 export function LogPanel({
   desk,
@@ -21,7 +22,7 @@ export function LogPanel({
   const empty = desk.friends.length === 0 && desk.inboundQsl.length === 0;
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col gap-6 p-4 sm:p-6 overflow-y-auto">
+    <section className="flex min-h-0 flex-1 flex-col gap-6 p-4 sm:p-6 overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))]">
       <div className="animate-fade-up">
         <div className="flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]">
@@ -67,8 +68,11 @@ export function LogPanel({
                         type="button"
                         size="sm"
                         disabled={busy}
-                        onClick={() => onRespond(card.id, true)}
-                        className="gap-1.5 h-8 bg-zinc-100 text-zinc-950 hover:bg-zinc-200"
+                        onClick={() => {
+                          triggerHaptic("medium");
+                          onRespond(card.id, true);
+                        }}
+                        className="gap-1.5 h-8 bg-zinc-100 text-zinc-950 hover:bg-zinc-200 touch-manipulation cursor-pointer active:scale-95"
                       >
                         <Check className="h-3.5 w-3.5" />
                         <span>Accept</span>
@@ -78,8 +82,11 @@ export function LogPanel({
                         variant="ghost"
                         size="sm"
                         disabled={busy}
-                        onClick={() => onRespond(card.id, false)}
-                        className="gap-1.5 h-8 text-zinc-400 hover:text-red-400"
+                        onClick={() => {
+                          triggerHaptic("light");
+                          onRespond(card.id, false);
+                        }}
+                        className="gap-1.5 h-8 text-zinc-400 hover:text-red-400 touch-manipulation cursor-pointer active:scale-95"
                       >
                         <X className="h-3.5 w-3.5" />
                         <span>Decline</span>
@@ -126,8 +133,11 @@ export function LogPanel({
                   size="sm"
                   variant="secondary"
                   disabled={busy || Boolean(desk.activeSession)}
-                  onClick={() => onOpenFriend(friend.deviceId)}
-                  className="gap-1.5 h-8"
+                  onClick={() => {
+                    triggerHaptic("medium");
+                    onOpenFriend(friend.deviceId);
+                  }}
+                  className="gap-1.5 h-8 touch-manipulation cursor-pointer active:scale-95"
                 >
                   <MessageSquare className="h-3.5 w-3.5" />
                   <span>Chat</span>

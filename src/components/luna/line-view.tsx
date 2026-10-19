@@ -9,6 +9,7 @@ import { FloatingReactionsOverlay, type FloatingItem } from "@/components/luna/f
 import { Transcript } from "@/components/luna/transcript";
 import { ScrollBottomPill } from "@/components/luna/scroll-bottom-pill";
 import { Composer } from "@/components/luna/composer";
+import { triggerHaptic } from "@/lib/luna/sound";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@/lib/luna/types";
 
@@ -80,14 +81,14 @@ export function LineView({
   const [lockRemainingSeconds, setLockRemainingSeconds] = useState(() => {
     if (closed || !createdAt) return 0;
     const diff = Date.now() - new Date(createdAt).getTime();
-    return diff < 10000 ? Math.max(0, 10 - Math.floor(diff / 1000)) : 0;
+    return diff < 2000 ? Math.max(0, 2 - Math.floor(diff / 1000)) : 0;
   });
 
   useEffect(() => {
     if (closed || !createdAt) return;
     const timer = window.setInterval(() => {
       const diff = Date.now() - new Date(createdAt).getTime();
-      const rem = diff < 10000 ? Math.max(0, 10 - Math.floor(diff / 1000)) : 0;
+      const rem = diff < 2000 ? Math.max(0, 2 - Math.floor(diff / 1000)) : 0;
       setLockRemainingSeconds(rem);
       if (rem <= 0) {
         window.clearInterval(timer);
@@ -120,6 +121,7 @@ export function LineView({
   }
 
   function handleScrollToBottom() {
+    triggerHaptic("light");
     const el = transcriptScrollRef.current;
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
@@ -151,10 +153,13 @@ export function LineView({
               type="button"
               size="sm"
               variant="secondary"
-              onClick={onQsl}
+              onClick={() => {
+                triggerHaptic("medium");
+                onQsl();
+              }}
               disabled={busy}
               aria-label="Add contact"
-              className="h-7 sm:h-7.5 px-2 sm:px-2.5 gap-1 sm:gap-1.5 text-xs bg-zinc-850 hover:bg-zinc-800 text-zinc-200 border border-white/10 cursor-pointer"
+              className="h-7 sm:h-7.5 px-2 sm:px-2.5 gap-1 sm:gap-1.5 text-xs bg-zinc-850 hover:bg-zinc-800 text-zinc-200 border border-white/10 cursor-pointer touch-manipulation active:scale-95"
               title="Add contact"
             >
               <HeartHandshake className="h-3.5 w-3.5 text-indigo-400" />
@@ -177,11 +182,14 @@ export function LineView({
               type="button"
               size="sm"
               variant={closed ? "default" : "secondary"}
-              onClick={onNext}
+              onClick={() => {
+                triggerHaptic("medium");
+                onNext();
+              }}
               disabled={busy || lockRemainingSeconds > 0}
               aria-label={closed ? "Search for someone" : "Leave and find next stranger"}
               className={cn(
-                "h-7 sm:h-7.5 px-2 sm:px-2.5 gap-1 sm:gap-1.5 text-xs cursor-pointer transition-all",
+                "h-7 sm:h-7.5 px-2 sm:px-2.5 gap-1 sm:gap-1.5 text-xs cursor-pointer transition-all touch-manipulation active:scale-95",
                 closed
                   ? "bg-white text-zinc-950 hover:bg-zinc-200 font-medium shadow-[0_0_15px_rgba(255,255,255,0.18)]"
                   : "text-zinc-100 hover:bg-zinc-800 disabled:opacity-50",
@@ -213,10 +221,13 @@ export function LineView({
             type="button"
             size="sm"
             variant="ghost"
-            onClick={onLeave}
+            onClick={() => {
+              triggerHaptic("light");
+              onLeave();
+            }}
             disabled={busy}
             aria-label="Leave this chat"
-            className="h-7 sm:h-7.5 px-2 sm:px-2.5 gap-1 text-xs text-zinc-400 hover:text-zinc-100 hover:bg-zinc-850 cursor-pointer"
+            className="h-7 sm:h-7.5 px-2 sm:px-2.5 gap-1 text-xs text-zinc-400 hover:text-zinc-100 hover:bg-zinc-850 cursor-pointer touch-manipulation active:scale-95"
             title="Leave this chat"
           >
             <DoorOpen className="h-3.5 w-3.5" />
@@ -228,10 +239,13 @@ export function LineView({
               type="button"
               size="sm"
               variant="ghost"
-              onClick={onBlock}
+              onClick={() => {
+                triggerHaptic("heavy");
+                onBlock();
+              }}
               disabled={busy}
               aria-label="Block and leave"
-              className="h-7 sm:h-7.5 px-1.5 sm:px-2 text-xs text-zinc-400 hover:text-red-400 hover:bg-red-950/30 cursor-pointer flex items-center gap-1"
+              className="h-7 sm:h-7.5 px-1.5 sm:px-2 text-xs text-zinc-400 hover:text-red-400 hover:bg-red-950/30 cursor-pointer flex items-center gap-1 touch-manipulation active:scale-95"
               title="Block and leave"
             >
               <Ban className="h-3.5 w-3.5" />
@@ -253,9 +267,12 @@ export function LineView({
             <Button
               type="button"
               size="sm"
-              onClick={onAcceptInbound}
+              onClick={() => {
+                triggerHaptic("medium");
+                onAcceptInbound();
+              }}
               disabled={busy}
-              className="h-6.5 sm:h-7 px-2.5 sm:px-3 text-[11px] sm:text-xs bg-zinc-100 text-zinc-950 hover:bg-zinc-200 font-medium"
+              className="h-6.5 sm:h-7 px-2.5 sm:px-3 text-[11px] sm:text-xs bg-zinc-100 text-zinc-950 hover:bg-zinc-200 font-medium touch-manipulation cursor-pointer active:scale-95"
             >
               Accept
             </Button>
@@ -263,9 +280,12 @@ export function LineView({
               type="button"
               size="sm"
               variant="ghost"
-              onClick={onDeclineInbound}
+              onClick={() => {
+                triggerHaptic("light");
+                onDeclineInbound();
+              }}
               disabled={busy}
-              className="h-6.5 sm:h-7 px-2 sm:px-3 text-[11px] sm:text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/80"
+              className="h-6.5 sm:h-7 px-2.5 sm:px-3 text-[11px] sm:text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/80 touch-manipulation cursor-pointer active:scale-95"
             >
               Decline
             </Button>
@@ -295,13 +315,6 @@ export function LineView({
         <ScrollBottomPill visible={showScrollBottom} onClick={handleScrollToBottom} />
       </div>
 
-      {peerTyping && (
-        <div className="flex items-center gap-1.5 px-4 sm:px-6 py-1 bg-zinc-950/80 border-t border-white/5 text-[11px] font-mono text-zinc-400 shrink-0">
-          <span className="h-1.5 w-1.5 rounded-full bg-zinc-400 animate-pulse" />
-          <span>{peerCallsign} is typing…</span>
-        </div>
-      )}
-
       <Composer
         value={draft}
         onChange={onDraft}
@@ -316,6 +329,7 @@ export function LineView({
         autoFocus
         replyingTo={replyingTo}
         onCancelReply={onCancelReply}
+        onNext={onNext}
       />
     </section>
   );

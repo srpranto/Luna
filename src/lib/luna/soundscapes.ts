@@ -1,4 +1,4 @@
-export type SoundscapeType = "off" | "rain" | "cosmic" | "lofi";
+export type SoundscapeType = "off" | "cosmic" | "lofi";
 
 const SOUNDSCAPE_KEY = "luna.soundscape_type";
 const VOLUME_KEY = "luna.soundscape_volume";
@@ -6,7 +6,7 @@ const VOLUME_KEY = "luna.soundscape_volume";
 export function getSavedSoundscape(): SoundscapeType {
   if (typeof window === "undefined") return "off";
   const stored = localStorage.getItem(SOUNDSCAPE_KEY);
-  if (stored === "rain" || stored === "cosmic" || stored === "lofi") {
+  if (stored === "cosmic" || stored === "lofi") {
     return stored;
   }
   return "off";
@@ -36,10 +36,6 @@ class SoundscapeEngine {
   private currentType: SoundscapeType = "off";
   private currentVolume = 0.35;
   private activeNodes: { stop?: () => void; disconnect: () => void }[] = [];
-  private rainAudio: HTMLAudioElement | null = null;
-  private rainFadeTimer: number | null = null;
-  private rainInterval: number | null = null;
-  private thunderTimeout: number | null = null;
   private vinylInterval: number | null = null;
   private lofiChordTimer: number | null = null;
   private lofiPulseTimer: number | null = null;
@@ -68,9 +64,6 @@ class SoundscapeEngine {
   public setVolume(vol: number) {
     this.currentVolume = Math.max(0, Math.min(1, vol));
     saveVolume(this.currentVolume);
-    if (this.rainAudio && this.currentType === "rain") {
-      this.rainAudio.volume = this.currentVolume;
-    }
     if (this.masterGain && this.ctx) {
       this.masterGain.gain.setTargetAtTime(this.currentVolume, this.ctx.currentTime, 0.05);
     }
@@ -85,7 +78,7 @@ class SoundscapeEngine {
   }
 
   public play(type: SoundscapeType) {
-    if (this.currentType === type && (this.activeNodes.length > 0 || (this.rainAudio && !this.rainAudio.paused))) return;
+    if (this.currentType === type && this.activeNodes.length > 0) return;
     this.stopCurrent();
     this.currentType = type;
     saveSoundscape(type);
@@ -99,9 +92,7 @@ class SoundscapeEngine {
       void ctx.resume();
     }
 
-    if (type === "rain") {
-      this.startRain(ctx, this.masterGain);
-    } else if (type === "cosmic") {
+    if (type === "cosmic") {
       this.startCosmic(ctx, this.masterGain);
     } else if (type === "lofi") {
       this.startLofi(ctx, this.masterGain);
@@ -113,24 +104,6 @@ class SoundscapeEngine {
   }
 
   private stopCurrent() {
-    if (this.rainFadeTimer !== null) {
-      window.clearInterval(this.rainFadeTimer);
-      this.rainFadeTimer = null;
-    }
-    if (this.rainAudio) {
-      try {
-        this.rainAudio.pause();
-        this.rainAudio.currentTime = 0;
-      } catch {}
-    }
-    if (this.rainInterval !== null) {
-      window.clearInterval(this.rainInterval);
-      this.rainInterval = null;
-    }
-    if (this.thunderTimeout !== null) {
-      window.clearTimeout(this.thunderTimeout);
-      this.thunderTimeout = null;
-    }
     if (this.vinylInterval !== null) {
       window.clearInterval(this.vinylInterval);
       this.vinylInterval = null;
@@ -151,284 +124,6 @@ class SoundscapeEngine {
       } catch {}
     }
     this.activeNodes = [];
-  }
-
-  private startRain(ctx: AudioContext, destination: GainNode) {
-    if (typeof window !== "undefined") {
-      try {
-        if (!this.rainAudio) {
-          this.rainAudio = new Audio("/rain.mp3");
-          this.rainAudio.loop = true;
-          this.rainAudio.preload = "auto";
-        }
-        this.rainAudio.volume = 0;
-        this.rainAudio.currentTime = 0;
-        const playPromise = this.rainAudio.play();
-        if (playPromise !== undefined) {
-          playPromise
-            .then(() => {
-              if (this.currentType !== "rain" || !this.rainAudio) return;
-              const target = this.currentVolume;
-              const step = Math.max(0.01, target / 15);
-              const fadeInterval = window.setInterval(() => {
-                if (!this.rainAudio || this.currentType !== "rain") {
-                  window.clearInterval(fadeInterval);
-                  return;
-                }
-                if (this.rainAudio.volume + step < target) {
-                  this.rainAudio.volume += step;
-                } else {
-                  this.rainAudio.volume = target;
-                  window.clearInterval(fadeInterval);
-                }
-              }, 20);
-              this.rainFadeTimer = fadeInterval;
-            })
-            .catch(() => {
-              this.startSyntheticRain(ctx, destination);
-            });
-        }
-        return;
-      } catch {
-        this.startSyntheticRain(ctx, destination);
-        return;
-      }
-    }
-    this.startSyntheticRain(ctx, destination);
-  }
-
-  private startSyntheticRain(ctx: AudioContext, destination: GainNode) {
-    const bufferSize = ctx.sampleRate * 4;
-
-    const brownBuffer = ctx.createBuffer(2, bufferSize, ctx.sampleRate);
-    const brownLeft = brownBuffer.getChannelData(0);
-    const brownRight = brownBuffer.getChannelData(1);
-    let lastL = 0.0,
-      lastR = 0.0;
-    for (let i = 0; i < bufferSize; i++) {
-      const whiteL = Math.random() * 2 - 1;
-      const whiteR = Math.random() * 2 - 1;
-      lastL = (lastL + 0.022 * whiteL) / 1.022;
-      lastR = (lastR + 0.022 * whiteR) / 1.022;
-      brownLeft[i] = lastL * 3.6;
-      brownRight[i] = lastR * 3.6;
-    }
-
-    const brownSource = ctx.createBufferSource();
-    brownSource.buffer = brownBuffer;
-    brownSource.loop = true;
-
-    const brownFilter = ctx.createBiquadFilter();
-    brownFilter.type = "lowpass";
-    brownFilter.frequency.setValueAtTime(450, ctx.currentTime);
-
-    const brownGain = ctx.createGain();
-    brownGain.gain.setValueAtTime(0.5, ctx.currentTime);
-
-    brownSource.connect(brownFilter);
-    brownFilter.connect(brownGain);
-    brownGain.connect(destination);
-    brownSource.start();
-
-    const pinkBuffer = ctx.createBuffer(2, bufferSize, ctx.sampleRate);
-    const pinkL = pinkBuffer.getChannelData(0);
-    const pinkR = pinkBuffer.getChannelData(1);
-    let b0L = 0,
-      b1L = 0,
-      b2L = 0,
-      b3L = 0,
-      b4L = 0,
-      b5L = 0,
-      b6L = 0;
-    let b0R = 0,
-      b1R = 0,
-      b2R = 0,
-      b3R = 0,
-      b4R = 0,
-      b5R = 0,
-      b6R = 0;
-    for (let i = 0; i < bufferSize; i++) {
-      const wL = Math.random() * 2 - 1;
-      b0L = 0.99886 * b0L + wL * 0.0555179;
-      b1L = 0.99332 * b1L + wL * 0.0750759;
-      b2L = 0.969 * b2L + wL * 0.153852;
-      b3L = 0.8665 * b3L + wL * 0.3104856;
-      b4L = 0.55 * b4L + wL * 0.5329522;
-      b5L = -0.7616 * b5L - wL * 0.016898;
-      pinkL[i] = (b0L + b1L + b2L + b3L + b4L + b5L + b6L + wL * 0.5362) * 0.09;
-      b6L = wL * 0.115926;
-
-      const wR = Math.random() * 2 - 1;
-      b0R = 0.99886 * b0R + wR * 0.0555179;
-      b1R = 0.99332 * b1R + wR * 0.0750759;
-      b2R = 0.969 * b2R + wR * 0.153852;
-      b3R = 0.8665 * b3R + wR * 0.3104856;
-      b4R = 0.55 * b4R + wR * 0.5329522;
-      b5R = -0.7616 * b5R - wR * 0.016898;
-      pinkR[i] = (b0R + b1R + b2R + b3R + b4R + b5R + b6R + wR * 0.5362) * 0.09;
-      b6R = wR * 0.115926;
-    }
-
-    const pinkSource = ctx.createBufferSource();
-    pinkSource.buffer = pinkBuffer;
-    pinkSource.loop = true;
-
-    const pinkFilter = ctx.createBiquadFilter();
-    pinkFilter.type = "bandpass";
-    pinkFilter.frequency.setValueAtTime(1800, ctx.currentTime);
-    pinkFilter.Q.setValueAtTime(0.5, ctx.currentTime);
-
-    const highShelf = ctx.createBiquadFilter();
-    highShelf.type = "highshelf";
-    highShelf.frequency.setValueAtTime(3200, ctx.currentTime);
-    highShelf.gain.setValueAtTime(3.0, ctx.currentTime);
-
-    const rainLfo = ctx.createOscillator();
-    const rainLfoGain = ctx.createGain();
-    rainLfo.type = "sine";
-    rainLfo.frequency.setValueAtTime(0.08, ctx.currentTime);
-    rainLfoGain.gain.setValueAtTime(280, ctx.currentTime);
-    rainLfo.connect(rainLfoGain);
-    rainLfoGain.connect(pinkFilter.frequency);
-    rainLfo.start();
-
-    const pinkGain = ctx.createGain();
-    pinkGain.gain.setValueAtTime(0.42, ctx.currentTime);
-
-    pinkSource.connect(pinkFilter);
-    pinkFilter.connect(highShelf);
-    highShelf.connect(pinkGain);
-    pinkGain.connect(destination);
-    pinkSource.start();
-
-    this.activeNodes.push({
-      stop: () => {
-        brownSource.stop();
-        pinkSource.stop();
-        rainLfo.stop();
-      },
-      disconnect: () => {
-        brownSource.disconnect();
-        brownFilter.disconnect();
-        brownGain.disconnect();
-        pinkSource.disconnect();
-        pinkFilter.disconnect();
-        highShelf.disconnect();
-        rainLfo.disconnect();
-        rainLfoGain.disconnect();
-        pinkGain.disconnect();
-      },
-    });
-
-    this.rainInterval = window.setInterval(() => {
-      if (!this.ctx || !this.masterGain) return;
-      try {
-        const now = this.ctx.currentTime;
-        const dropOsc = this.ctx.createOscillator();
-        const dropFilter = this.ctx.createBiquadFilter();
-        const dropGain = this.ctx.createGain();
-
-        const startFreq = 1400 + Math.random() * 1200;
-        dropOsc.type = "sine";
-        dropOsc.frequency.setValueAtTime(startFreq, now);
-        dropOsc.frequency.exponentialRampToValueAtTime(280, now + 0.04);
-
-        dropFilter.type = "bandpass";
-        dropFilter.frequency.setValueAtTime(startFreq * 0.85, now);
-        dropFilter.Q.setValueAtTime(2.5, now);
-
-        const dropVol = 0.015 + Math.random() * 0.035;
-        dropGain.gain.setValueAtTime(dropVol, now);
-        dropGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.045);
-
-        dropOsc.connect(dropFilter);
-        dropFilter.connect(dropGain);
-        dropGain.connect(this.masterGain);
-
-        dropOsc.start(now);
-        dropOsc.stop(now + 0.05);
-      } catch {}
-    }, 110);
-
-    const scheduleThunder = (delayMs: number) => {
-      this.thunderTimeout = window.setTimeout(() => {
-        if (!this.ctx || !this.masterGain || this.currentType !== "rain") return;
-        this.playRollingThunder(this.ctx, this.masterGain);
-        scheduleThunder(22000 + Math.random() * 16000);
-      }, delayMs);
-    };
-
-    scheduleThunder(2200);
-  }
-
-  private playRollingThunder(ctx: AudioContext, destination: GainNode) {
-    try {
-      const now = ctx.currentTime;
-      const duration = 8.0;
-
-      const thunderBuf = ctx.createBuffer(2, Math.floor(ctx.sampleRate * duration), ctx.sampleRate);
-      const dataL = thunderBuf.getChannelData(0);
-      const dataR = thunderBuf.getChannelData(1);
-      let lastValL = 0,
-        lastValR = 0;
-      for (let i = 0; i < dataL.length; i++) {
-        const whiteL = Math.random() * 2 - 1;
-        const whiteR = Math.random() * 2 - 1;
-        lastValL = (lastValL + 0.03 * whiteL) / 1.03;
-        lastValR = (lastValR + 0.03 * whiteR) / 1.03;
-        dataL[i] = lastValL * 4.5;
-        dataR[i] = lastValR * 4.5;
-      }
-
-      const noiseSource = ctx.createBufferSource();
-      noiseSource.buffer = thunderBuf;
-
-      const lowpass = ctx.createBiquadFilter();
-      lowpass.type = "lowpass";
-      lowpass.frequency.setValueAtTime(75, now);
-      lowpass.frequency.linearRampToValueAtTime(130, now + 1.2);
-      lowpass.frequency.linearRampToValueAtTime(60, now + 5.5);
-
-      const thunderGain = ctx.createGain();
-      thunderGain.gain.setValueAtTime(0.0001, now);
-      thunderGain.gain.linearRampToValueAtTime(0.55, now + 0.7);
-      thunderGain.gain.linearRampToValueAtTime(0.32, now + 1.8);
-      thunderGain.gain.linearRampToValueAtTime(0.42, now + 2.8);
-      thunderGain.gain.linearRampToValueAtTime(0.24, now + 4.2);
-      thunderGain.gain.linearRampToValueAtTime(0.18, now + 5.6);
-      thunderGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-
-      const subOsc1 = ctx.createOscillator();
-      const subOsc2 = ctx.createOscillator();
-      const subGain = ctx.createGain();
-
-      subOsc1.type = "sine";
-      subOsc1.frequency.setValueAtTime(38, now);
-      subOsc1.frequency.linearRampToValueAtTime(28, now + duration);
-
-      subOsc2.type = "sine";
-      subOsc2.frequency.setValueAtTime(54, now);
-      subOsc2.frequency.linearRampToValueAtTime(42, now + duration);
-
-      subGain.gain.setValueAtTime(0.0001, now);
-      subGain.gain.linearRampToValueAtTime(0.35, now + 0.8);
-      subGain.gain.exponentialRampToValueAtTime(0.0001, now + duration * 0.85);
-
-      noiseSource.connect(lowpass);
-      lowpass.connect(thunderGain);
-      thunderGain.connect(destination);
-
-      subOsc1.connect(subGain);
-      subOsc2.connect(subGain);
-      subGain.connect(destination);
-
-      noiseSource.start(now);
-      noiseSource.stop(now + duration);
-      subOsc1.start(now);
-      subOsc1.stop(now + duration);
-      subOsc2.start(now);
-      subOsc2.stop(now + duration);
-    } catch {}
   }
 
   private startCosmic(ctx: AudioContext, destination: GainNode) {

@@ -50,16 +50,21 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     color-scheme: dark;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
   }
 
   html,
   body {
     min-height: 100%;
+    min-height: 100dvh;
     background-color: #09090b;
     color: #fafafa;
     font-family: var(--font-sans);
     margin: 0;
     overflow-x: hidden;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
   input,
@@ -72,6 +77,7 @@
   button:not(:disabled),
   [role="button"]:not(:disabled) {
     cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
   }
 
   ::selection {
@@ -191,14 +197,10 @@
   animation: smooth-fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-@keyframes imessage-bubble-mine {
+@keyframes bubble-in-mine {
   0% {
     opacity: 0;
-    transform: translate3d(6px, 14px, 0) scale(0.88);
-  }
-  65% {
-    opacity: 1;
-    transform: translate3d(0, -1px, 0) scale(1.015);
+    transform: translate3d(4px, 10px, 0) scale(0.92);
   }
   100% {
     opacity: 1;
@@ -206,14 +208,10 @@
   }
 }
 
-@keyframes imessage-bubble-peer {
+@keyframes bubble-in-peer {
   0% {
     opacity: 0;
-    transform: translate3d(-6px, 14px, 0) scale(0.88);
-  }
-  65% {
-    opacity: 1;
-    transform: translate3d(0, -1px, 0) scale(1.015);
+    transform: translate3d(-4px, 10px, 0) scale(0.92);
   }
   100% {
     opacity: 1;
@@ -223,12 +221,47 @@
 
 .animate-bubble-mine {
   transform-origin: bottom right;
-  animation: imessage-bubble-mine 0.32s cubic-bezier(0.2, 0.95, 0.32, 1.15) both;
+  animation: bubble-in-mine 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
 }
 
 .animate-bubble-peer {
   transform-origin: bottom left;
-  animation: imessage-bubble-peer 0.32s cubic-bezier(0.2, 0.95, 0.32, 1.15) both;
+  animation: bubble-in-peer 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+}
+
+@keyframes sheet-slide-up {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 36px, 0) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.animate-sheet-up {
+  animation: sheet-slide-up 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  transition: transform 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(1.2);
 }
 
 .stagger-1 {

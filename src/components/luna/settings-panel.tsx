@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { updateCallsign, deleteStation } from "@/lib/luna/client";
 import { mintCallsign } from "@/lib/luna/constants";
 import { setCachedCustomName, clearCachedCustomName } from "@/lib/luna/identity";
+import { triggerHaptic } from "@/lib/luna/sound";
 import { usePwa } from "@/components/luna/pwa-provider";
 import type { DeskView } from "@/lib/luna/types";
 
@@ -65,6 +66,7 @@ export function SettingsPanel({
         callsign: clean,
       });
 
+      triggerHaptic("medium");
       setCachedCustomName(clean);
       onCallsignUpdated(nextDesk);
       setStatus("Name saved.");
@@ -78,11 +80,13 @@ export function SettingsPanel({
   }
 
   function handleMintRandom() {
+    triggerHaptic("selection");
     const random = mintCallsign();
     setHandle(random);
   }
 
   async function handleDeleteAccountOrBurn() {
+    triggerHaptic("heavy");
     setDeleting(true);
     setError(null);
     try {
@@ -101,7 +105,7 @@ export function SettingsPanel({
   }
 
   return (
-    <div className="flex flex-col gap-6 p-4 sm:p-6 overflow-y-auto">
+    <div className="flex flex-col gap-6 p-4 sm:p-6 overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))]">
       <div className="flex items-center justify-between border-b border-white/10 pb-3">
         <div className="flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]">
@@ -113,9 +117,12 @@ export function SettingsPanel({
         </div>
         <button
           type="button"
-          onClick={onClose}
+          onClick={() => {
+            triggerHaptic("light");
+            onClose();
+          }}
           aria-label="Close"
-          className="text-zinc-500 hover:text-zinc-200 transition-colors cursor-pointer"
+          className="text-zinc-500 hover:text-zinc-200 transition-colors cursor-pointer p-1 touch-manipulation"
         >
           <X className="h-4 w-4" />
         </button>
@@ -145,9 +152,9 @@ export function SettingsPanel({
               onChange={(e) => setHandle(e.target.value)}
               maxLength={20}
               placeholder="Rainy-Soul"
-              className="font-mono text-sm tracking-wider bg-zinc-900/60 border-zinc-800"
+              className="font-mono text-base sm:text-sm tracking-wider bg-zinc-900/60 border-zinc-800"
             />
-            <Button type="submit" disabled={saving || !handle.trim()} className="shrink-0 h-9">
+            <Button type="submit" disabled={saving || !handle.trim()} className="shrink-0 h-9 touch-manipulation active:scale-95">
               {saving ? "Saving…" : "Save"}
             </Button>
           </div>
@@ -156,7 +163,7 @@ export function SettingsPanel({
             <button
               type="button"
               onClick={handleMintRandom}
-              className="inline-flex items-center gap-1 text-zinc-400 hover:text-zinc-100 transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1 text-zinc-400 hover:text-zinc-100 transition-colors cursor-pointer touch-manipulation active:scale-95 py-1"
             >
               <Sparkles className="h-3 w-3" />
               <span>Suggest a name</span>

@@ -3,6 +3,7 @@
 import { MessageSquare, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InterestGrid } from "@/components/luna/interest-grid";
+import { triggerHaptic } from "@/lib/luna/sound";
 
 export function BootView({
   interests,
@@ -43,10 +44,13 @@ export function BootView({
         <Button
           type="button"
           size="lg"
-          onClick={onCall}
+          onClick={() => {
+            triggerHaptic("medium");
+            onCall();
+          }}
           disabled={busy}
           aria-label="Start Text Chat"
-          className="h-11 sm:h-12 w-full sm:w-auto px-8 sm:px-10 rounded-full font-semibold text-sm sm:text-base bg-white text-zinc-950 hover:bg-zinc-200 shadow-[0_0_30px_rgba(255,255,255,0.25)] active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2.5"
+          className="h-11 sm:h-12 w-full sm:w-auto px-8 sm:px-10 rounded-full font-semibold text-sm sm:text-base bg-white text-zinc-950 hover:bg-zinc-200 shadow-[0_0_30px_rgba(255,255,255,0.25)] active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2.5 touch-manipulation"
         >
           <MessageSquare className="h-4 w-4" />
           <span>Start Text Chat</span>

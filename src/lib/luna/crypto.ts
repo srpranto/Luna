@@ -9,7 +9,7 @@ interface CachedEnvelope {
   savedAt: number;
 }
 
-export function loadCachedMessages(sessionId: string): ChatMessage[] {
+function loadCachedMessages(sessionId: string): ChatMessage[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(`${CHAT_CACHE_PREFIX}.${sessionId}`);

@@ -8,7 +8,7 @@ const googleSans = Google_Sans({
   variable: "--font-sans",
   display: "swap",
   weight: ["400", "500", "600"],
-  fallback: ["system-ui", "-apple-system", "sans-serif"],
+  fallback: ["system-ui", "sans-serif"],
 });
 
 export const viewport: Viewport = {

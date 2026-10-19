@@ -6,6 +6,7 @@ import type { ChatMessage } from "@/lib/luna/types";
 import { cn } from "@/lib/utils";
 import { ArrowRight, Pencil, Trash2, Reply, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { triggerHaptic } from "@/lib/luna/sound";
 
 function renderFormattedBody(body: string, isMine: boolean) {
   const lines = body.split("\n");
@@ -169,16 +170,12 @@ export function Transcript({
 
   function handleTouchEnd(msg: ChatMessage) {
     if (swipeOffset <= -35 && onReply && !closed) {
+      triggerHaptic("medium");
       onReply({
         id: msg.id,
         fromCallsign: msg.fromCallsign,
         body: msg.body,
       });
-      if (typeof window !== "undefined" && "vibrate" in navigator) {
-        try {
-          navigator.vibrate(20);
-        } catch {}
-      }
     }
     setSwipingId(null);
     setSwipeOffset(0);
@@ -240,7 +237,7 @@ export function Transcript({
 
   return (
     <div className="flex flex-1 flex-col justify-end p-3 sm:p-6 space-y-3 sm:space-y-4 select-none">
-      <div className="animate-fade-up mx-auto my-1 w-full max-w-xs sm:max-w-sm rounded-xl border border-white/5 bg-zinc-950/60 p-2 sm:p-2.5 text-center backdrop-blur-md shadow-sm transition-all duration-500">
+      <div className="animate-fade-up mx-auto my-1 w-full max-w-xs sm:max-w-sm rounded-xl border border-white/10 bg-zinc-950/75 p-2.5 sm:p-3 text-center backdrop-blur-md shadow-sm transition-all duration-500">
         <div className="flex items-center justify-center gap-1.5 text-[11px] text-zinc-400 font-mono">
           <Lock className="h-3 w-3 text-emerald-400 shrink-0" />
           <span className="font-semibold text-zinc-300">End-to-End Encrypted</span>
@@ -251,9 +248,12 @@ export function Transcript({
             </>
           )}
         </div>
+        <p className="mt-1 text-xs text-zinc-200 font-medium">
+          You are chatting with a stranger. Say hello!
+        </p>
         {showInterests && (
-          <p className="mt-0.5 text-[10px] sm:text-[11px] text-zinc-500 transition-opacity">
-            Chat is private and automatically expires after 24 hours.
+          <p className="mt-0.5 text-[10px] text-zinc-500 transition-opacity">
+            Private & ephemeral • Expires automatically after 24 hours
           </p>
         )}
         {showInterests && interests.length > 0 && (
@@ -275,10 +275,14 @@ export function Transcript({
         )}
       </div>
 
-      <div className="flex flex-col space-y-2 sm:space-y-2.5 pt-1">
+      <div className="flex flex-col pt-1">
         {messages.map((msg, idx) => {
           const isMine = msg.mine;
           const isSystem = msg.system;
+          const isConsecutive =
+            idx > 0 &&
+            messages[idx - 1]?.mine === isMine &&
+            !messages[idx - 1]?.system;
           const remaining = stamp > 0 ? formatRemaining(msg.expiresAt, stamp) : null;
           const showPeerHeader =
             !isMine &&
@@ -287,7 +291,7 @@ export function Transcript({
 
           if (isSystem) {
             return (
-              <div key={msg.id} className="animate-fade-up flex justify-center my-1.5">
+              <div key={msg.id} className="animate-fade-up flex justify-center my-2">
                 <span className="rounded-full bg-zinc-900/60 border border-white/10 px-2.5 py-0.5 text-[11px] sm:text-xs text-zinc-400 shadow-sm">
                   {msg.body}
                 </span>
@@ -304,6 +308,7 @@ export function Transcript({
               className={cn(
                 "flex flex-col group transition-opacity duration-150",
                 isMine ? "items-end animate-bubble-mine" : "items-start animate-bubble-peer",
+                isConsecutive ? "mt-1" : "mt-3",
               )}
             >
               {showPeerHeader && (
@@ -322,10 +327,13 @@ export function Transcript({
                   {onReply && !closed && (
                     <button
                       type="button"
-                      onClick={() => onReply({ id: msg.id, fromCallsign: msg.fromCallsign, body: msg.body })}
+                      onClick={() => {
+                        triggerHaptic("light");
+                        onReply({ id: msg.id, fromCallsign: msg.fromCallsign, body: msg.body });
+                      }}
                       aria-label="Reply to message"
                       title="Reply"
-                      className="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer"
+                      className="p-1.5 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer touch-manipulation active:scale-90"
                     >
                       <Reply className="h-3 w-3" />
                     </button>
@@ -334,10 +342,13 @@ export function Transcript({
                   {isMine && !closed && editingId !== msg.id && onEditMessage && (
                     <button
                       type="button"
-                      onClick={() => handleStartEditing(msg.id, msg.body)}
+                      onClick={() => {
+                        triggerHaptic("light");
+                        handleStartEditing(msg.id, msg.body);
+                      }}
                       aria-label="Edit message"
                       title="Edit message"
-                      className="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer"
+                      className="p-1.5 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer touch-manipulation active:scale-90"
                     >
                       <Pencil className="h-3 w-3" />
                     </button>
@@ -346,10 +357,13 @@ export function Transcript({
                   {isMine && !closed && editingId !== msg.id && onDeleteMessage && (
                     <button
                       type="button"
-                      onClick={() => void onDeleteMessage(msg.id)}
+                      onClick={() => {
+                        triggerHaptic("light");
+                        void onDeleteMessage(msg.id);
+                      }}
                       aria-label="Delete message"
                       title="Delete message"
-                      className="p-1 rounded text-zinc-500 hover:text-red-400 hover:bg-red-950/40 transition-colors cursor-pointer"
+                      className="p-1.5 rounded text-zinc-500 hover:text-red-400 hover:bg-red-950/40 transition-colors cursor-pointer touch-manipulation active:scale-90"
                     >
                       <Trash2 className="h-3 w-3" />
                     </button>
@@ -480,35 +494,44 @@ export function Transcript({
 
         {closed && (
           <div className="animate-fade-up mx-auto my-3 w-full max-w-sm rounded-xl border border-white/10 bg-zinc-950/90 p-4 text-center shadow-xl backdrop-blur-md space-y-3">
-            <p className="text-xs sm:text-sm font-medium text-zinc-300">
+            <p className="text-xs sm:text-sm font-medium text-zinc-200">
               User is no longer available right now
             </p>
-            <p className="text-[11px] text-zinc-500">
+            <p className="text-[11px] text-zinc-400">
               The stranger disconnected or left the conversation.
             </p>
-            <div className="flex items-center justify-center gap-2 pt-0.5">
-              {onNext && (
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={onNext}
-                  className="h-8 px-4 text-xs font-semibold bg-white text-zinc-950 hover:bg-zinc-200 cursor-pointer gap-1.5 shadow-[0_0_15px_rgba(255,255,255,0.18)]"
-                >
-                  <span>Search for someone</span>
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </Button>
-              )}
-              {onLeave && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={onLeave}
-                  className="h-8 px-3 text-xs border-zinc-800 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 cursor-pointer"
-                >
-                  Leave
-                </Button>
-              )}
+            <div className="flex flex-col items-center gap-2 pt-1">
+              <div className="flex items-center justify-center gap-2">
+                {onNext && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => {
+                      triggerHaptic("medium");
+                      onNext();
+                    }}
+                    className="h-10 px-4 text-xs font-semibold bg-white text-zinc-950 hover:bg-zinc-200 cursor-pointer gap-1.5 shadow-[0_0_20px_rgba(255,255,255,0.2)] touch-manipulation active:scale-[0.97]"
+                  >
+                    <span>Find Next Stranger</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+                {onLeave && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      triggerHaptic("light");
+                      onLeave();
+                    }}
+                    className="h-10 px-3.5 text-xs border-zinc-800 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 cursor-pointer touch-manipulation active:scale-[0.97]"
+                  >
+                    Leave
+                  </Button>
+                )}
+              </div>
+              <span className="text-[10px] font-mono text-zinc-500">press Enter ↵ to find someone new</span>
             </div>
           </div>
         )}

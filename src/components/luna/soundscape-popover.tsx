@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CloudRain, Sparkles, Radio, Volume2, VolumeX, Sliders, X } from "lucide-react";
+import { Sparkles, Radio, Volume2, VolumeX, Sliders, X } from "lucide-react";
 import {
   getSavedSoundscape,
   getSavedVolume,
   getSoundscapeEngine,
   type SoundscapeType,
 } from "@/lib/luna/soundscapes";
+import { triggerHaptic } from "@/lib/luna/sound";
 import { cn } from "@/lib/utils";
 
 interface SoundscapePopoverProps {
@@ -31,6 +32,7 @@ export function SoundscapePopover({ soundFxEnabled, onToggleSoundFx }: Soundscap
   }, []);
 
   function handleSelect(type: SoundscapeType) {
+    triggerHaptic("selection");
     setSoundscape(type);
     const engine = getSoundscapeEngine();
     engine.play(type);
@@ -48,11 +50,14 @@ export function SoundscapePopover({ soundFxEnabled, onToggleSoundFx }: Soundscap
     <div className="relative inline-block">
       <button
         type="button"
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={() => {
+          triggerHaptic("light");
+          setOpen((prev) => !prev);
+        }}
         aria-label="Sound & Ambient Atmosphere"
         title="Sound & Ambient Atmosphere"
         className={cn(
-          "relative flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 transition-colors cursor-pointer",
+          "relative flex h-8.5 w-8.5 sm:h-8 sm:w-8 items-center justify-center rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 transition-colors cursor-pointer touch-manipulation active:scale-95",
           open && "bg-zinc-800 text-zinc-100 ring-1 ring-white/20",
           isSoundscapeActive && "text-indigo-400 hover:text-indigo-300",
         )}
@@ -92,8 +97,11 @@ export function SoundscapePopover({ soundFxEnabled, onToggleSoundFx }: Soundscap
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={onToggleSoundFx}
-                  className="text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors flex items-center gap-1 cursor-pointer"
+                  onClick={() => {
+                    triggerHaptic("light");
+                    onToggleSoundFx();
+                  }}
+                  className="text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors flex items-center gap-1 cursor-pointer touch-manipulation active:scale-95"
                   title={
                     soundFxEnabled
                       ? "Mute interface sound effects"
@@ -114,8 +122,11 @@ export function SoundscapePopover({ soundFxEnabled, onToggleSoundFx }: Soundscap
                 </button>
                 <button
                   type="button"
-                  onClick={() => setOpen(false)}
-                  className="text-zinc-400 hover:text-zinc-200 p-1 rounded hover:bg-zinc-850 cursor-pointer"
+                  onClick={() => {
+                    triggerHaptic("light");
+                    setOpen(false);
+                  }}
+                  className="text-zinc-400 hover:text-zinc-200 p-1 rounded hover:bg-zinc-850 cursor-pointer touch-manipulation active:scale-95"
                   title="Close"
                   aria-label="Close"
                 >
@@ -124,75 +135,73 @@ export function SoundscapePopover({ soundFxEnabled, onToggleSoundFx }: Soundscap
               </div>
             </div>
 
-            <p className="text-[11px] text-zinc-400 mb-2">Ambient Audio & Soundscapes</p>
+            <p className="text-[11px] text-zinc-400 mb-2">Ambient Atmosphere</p>
 
-            <div className="grid grid-cols-2 gap-1.5 mb-3">
-              <button
-                type="button"
-                onClick={() => handleSelect("rain")}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs text-left transition-all cursor-pointer",
-                  soundscape === "rain"
-                    ? "border-indigo-500/60 bg-indigo-950/60 text-indigo-200 font-medium shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]"
-                    : "border-white/10 bg-zinc-900/60 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-850",
-                )}
-              >
-                <CloudRain className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-                <div className="min-w-0">
-                  <div className="truncate font-medium">Rain</div>
-                  <div className="text-[9px] text-zinc-500 truncate">rain.mp3</div>
-                </div>
-              </button>
-
+            <div className="flex flex-col gap-1.5 mb-3">
               <button
                 type="button"
                 onClick={() => handleSelect("cosmic")}
                 className={cn(
-                  "flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs text-left transition-all cursor-pointer",
+                  "flex items-center gap-2.5 rounded-lg border px-3 py-2 text-xs text-left transition-all cursor-pointer active:scale-[0.98] touch-manipulation",
                   soundscape === "cosmic"
-                    ? "border-indigo-500/60 bg-indigo-950/60 text-indigo-200 font-medium shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]"
-                    : "border-white/10 bg-zinc-900/60 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-855",
+                    ? "border-purple-500/60 bg-purple-950/40 text-purple-200 font-medium shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]"
+                    : "border-white/10 bg-zinc-900/60 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-850",
                 )}
               >
-                <Sparkles className="h-3.5 w-3.5 text-purple-400 shrink-0" />
-                <div className="min-w-0">
-                  <div className="truncate font-medium">Cosmic Drift</div>
-                  <div className="text-[9px] text-zinc-500 truncate">Deep ambient drone</div>
+                <div className="flex h-7 w-7 items-center justify-center rounded-md bg-purple-950/80 border border-purple-500/30 shrink-0">
+                  <Sparkles className="h-3.5 w-3.5 text-purple-400" />
                 </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium text-zinc-100">Cosmic Drift</div>
+                  <div className="text-[10px] text-zinc-500 truncate">Deep ambient drone & soft bells</div>
+                </div>
+                {soundscape === "cosmic" && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-purple-400 shrink-0" />
+                )}
               </button>
 
               <button
                 type="button"
                 onClick={() => handleSelect("lofi")}
                 className={cn(
-                  "flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs text-left transition-all cursor-pointer",
+                  "flex items-center gap-2.5 rounded-lg border px-3 py-2 text-xs text-left transition-all cursor-pointer active:scale-[0.98] touch-manipulation",
                   soundscape === "lofi"
-                    ? "border-indigo-500/60 bg-indigo-950/60 text-indigo-200 font-medium shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]"
-                    : "border-white/10 bg-zinc-900/60 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-855",
+                    ? "border-amber-500/60 bg-amber-950/40 text-amber-200 font-medium shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]"
+                    : "border-white/10 bg-zinc-900/60 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-850",
                 )}
               >
-                <Radio className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-                <div className="min-w-0">
-                  <div className="truncate font-medium">Lo-Fi Tape</div>
-                  <div className="text-[9px] text-zinc-500 truncate">Rhodes jazz chords</div>
+                <div className="flex h-7 w-7 items-center justify-center rounded-md bg-amber-950/80 border border-amber-500/30 shrink-0">
+                  <Radio className="h-3.5 w-3.5 text-amber-400" />
                 </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium text-zinc-100">Lo-Fi Tape</div>
+                  <div className="text-[10px] text-zinc-500 truncate">Rhodes jazz chords & vinyl warmth</div>
+                </div>
+                {soundscape === "lofi" && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
+                )}
               </button>
 
               <button
                 type="button"
                 onClick={() => handleSelect("off")}
                 className={cn(
-                  "flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs text-left transition-all cursor-pointer",
+                  "flex items-center gap-2.5 rounded-lg border px-3 py-2 text-xs text-left transition-all cursor-pointer active:scale-[0.98] touch-manipulation",
                   soundscape === "off"
                     ? "border-white/20 bg-zinc-800/80 text-zinc-200 font-medium"
                     : "border-white/10 bg-zinc-900/60 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-850",
                 )}
               >
-                <VolumeX className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
-                <div className="min-w-0">
-                  <div className="truncate font-medium">Silent</div>
-                  <div className="text-[9px] text-zinc-500 truncate">Mute ambient</div>
+                <div className="flex h-7 w-7 items-center justify-center rounded-md bg-zinc-900 border border-white/10 shrink-0">
+                  <VolumeX className="h-3.5 w-3.5 text-zinc-400" />
                 </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium text-zinc-200">Silent</div>
+                  <div className="text-[10px] text-zinc-500 truncate">Mute ambient atmosphere</div>
+                </div>
+                {soundscape === "off" && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-zinc-400 shrink-0" />
+                )}
               </button>
             </div>
 
@@ -201,7 +210,7 @@ export function SoundscapePopover({ soundFxEnabled, onToggleSoundFx }: Soundscap
                 <div className="flex items-center justify-between text-[11px] text-zinc-400 mb-1">
                   <span className="flex items-center gap-1">
                     <Sliders className="h-3 w-3 text-indigo-400" />
-                    <span>Ambient Volume</span>
+                    <span>Atmosphere Volume</span>
                   </span>
                   <span className="font-mono text-zinc-400 font-medium">
                     {Math.round(volume * 100)}%

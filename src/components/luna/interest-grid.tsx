@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { sanitizeInterests } from "@/lib/luna/constants";
+import { triggerHaptic } from "@/lib/luna/sound";
 import { cn } from "@/lib/utils";
 
 const POPULAR_TAGS = [
@@ -38,6 +39,7 @@ export function InterestGrid({ value, onChange }: InterestInputProps) {
     if (!text.trim()) return;
     const combined = [...value, ...text.split(",")];
     const sanitized = sanitizeInterests(combined);
+    triggerHaptic("light");
     onChange(sanitized);
     setDraft("");
   }
@@ -65,10 +67,12 @@ export function InterestGrid({ value, onChange }: InterestInputProps) {
   }
 
   function handleRemove(item: string) {
+    triggerHaptic("light");
     onChange(value.filter((entry) => entry !== item));
   }
 
   function handleToggleTag(tag: string) {
+    triggerHaptic("selection");
     if (value.includes(tag)) {
       handleRemove(tag);
     } else {
@@ -79,6 +83,7 @@ export function InterestGrid({ value, onChange }: InterestInputProps) {
   }
 
   function handleClear() {
+    triggerHaptic("light");
     onChange([]);
     setDraft("");
   }
@@ -115,7 +120,7 @@ export function InterestGrid({ value, onChange }: InterestInputProps) {
             onBlur={handleBlur}
             disabled={reachedMax}
             placeholder={reachedMax ? "10 topics max" : "Type a topic (e.g. philosophy, lo-fi)…"}
-            className="lowercase text-xs sm:text-sm pr-9 bg-zinc-900/80 border-white/10 text-zinc-100 placeholder:text-zinc-400 focus-visible:border-white/30 rounded-xl h-10"
+            className="lowercase text-base sm:text-sm pr-9 bg-zinc-900/80 border-white/10 text-zinc-100 placeholder:text-zinc-400 focus-visible:border-white/30 rounded-xl h-10"
           />
           <Hash className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 pointer-events-none" />
         </div>
@@ -125,7 +130,7 @@ export function InterestGrid({ value, onChange }: InterestInputProps) {
           size="sm"
           onClick={() => commitWords(draft)}
           disabled={!draft.trim() || reachedMax}
-          className="shrink-0 h-10 px-3.5 rounded-xl border border-white/10 bg-zinc-850 hover:bg-zinc-800 text-zinc-200 text-xs cursor-pointer"
+          className="shrink-0 h-10 px-3.5 rounded-xl border border-white/10 bg-zinc-850 hover:bg-zinc-800 text-zinc-200 text-xs cursor-pointer touch-manipulation active:scale-[0.97]"
         >
           <Plus className="h-3.5 w-3.5 mr-1" />
           <span>Add</span>
@@ -138,7 +143,7 @@ export function InterestGrid({ value, onChange }: InterestInputProps) {
             <Badge
               key={item}
               variant="secondary"
-              className="gap-1.5 py-1 px-3 text-xs lowercase rounded-full bg-zinc-900 border border-white/15 text-zinc-200 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] hover:border-white/25 transition-all"
+              className="gap-1.5 py-1 px-3 text-xs lowercase rounded-full bg-zinc-900 border border-white/15 text-zinc-200 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] hover:border-white/25 transition-all active:scale-95 touch-manipulation"
             >
               <span>#{item}</span>
               <button
@@ -157,8 +162,11 @@ export function InterestGrid({ value, onChange }: InterestInputProps) {
       <div className="pt-0.5">
         <button
           type="button"
-          onClick={() => setShowSuggestions(!showSuggestions)}
-          className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer min-h-[36px] py-1.5"
+          onClick={() => {
+            triggerHaptic("selection");
+            setShowSuggestions(!showSuggestions);
+          }}
+          className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer min-h-[36px] py-1.5 touch-manipulation"
         >
           <Sparkles className="h-3 w-3 text-indigo-400" />
           <span>Browse popular topics</span>
@@ -181,7 +189,7 @@ export function InterestGrid({ value, onChange }: InterestInputProps) {
                   style={{ animationDelay: `${idx * 25}ms` }}
                   onClick={() => handleToggleTag(tag)}
                   className={cn(
-                    "animate-fade-up rounded-full px-3 py-1.5 min-h-[32px] text-xs font-medium transition-all cursor-pointer",
+                    "animate-fade-up rounded-full px-3 py-1.5 min-h-[32px] text-xs font-medium transition-all cursor-pointer active:scale-95 touch-manipulation",
                     isSelected
                       ? "bg-zinc-100 text-zinc-950 shadow-sm"
                       : "bg-zinc-900/90 text-zinc-300 border border-white/10 hover:bg-zinc-800 hover:text-zinc-100 hover:border-white/20",

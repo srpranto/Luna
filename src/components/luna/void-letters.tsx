@@ -7,6 +7,7 @@ import { BlackHoleIcon } from "@/components/luna/black-hole-icon";
 import { LunaMoon } from "@/components/luna/luna-moon";
 import type { VoidLetter } from "@/lib/luna/types";
 import { castVoidLetter, listVoidLetters, starVoidLetter } from "@/lib/luna/client";
+import { triggerHaptic } from "@/lib/luna/sound";
 import { cn } from "@/lib/utils";
 
 function formatAgo(dateStr: string): string {
@@ -48,6 +49,7 @@ export function VoidLetters({ deviceId, onClose }: { deviceId: string; onClose: 
 
   async function handleCast() {
     if (!draft.trim() || submitting) return;
+    triggerHaptic("medium");
     setSubmitting(true);
     setError(null);
     try {
@@ -67,6 +69,7 @@ export function VoidLetters({ deviceId, onClose }: { deviceId: string; onClose: 
   }
 
   async function handleToggleStar(letterId: string) {
+    triggerHaptic("selection");
     setLetters((prev) =>
       prev.map((l) => {
         if (l.id === letterId) {
@@ -99,8 +102,9 @@ export function VoidLetters({ deviceId, onClose }: { deviceId: string; onClose: 
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative flex flex-col w-full max-w-xl max-h-[92dvh] sm:max-h-[85vh] rounded-2xl border border-white/10 bg-zinc-950/95 shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="relative flex flex-col w-full max-w-xl max-h-[92dvh] sm:max-h-[85vh] rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 bg-zinc-950/95 shadow-2xl overflow-hidden animate-sheet-up sm:animate-none pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-0">
+        <div className="w-10 h-1 bg-zinc-700/60 rounded-full mx-auto my-2.5 sm:hidden" />
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 sm:px-5 sm:py-4 bg-zinc-900/40">
           <div className="flex items-center gap-2 sm:gap-2.5">
             <div className="flex h-7.5 w-7.5 sm:h-8 sm:w-8 items-center justify-center rounded-lg border border-indigo-500/20 bg-indigo-950/40 text-indigo-300 shrink-0">
@@ -120,8 +124,11 @@ export function VoidLetters({ deviceId, onClose }: { deviceId: string; onClose: 
           </div>
           <button
             type="button"
-            onClick={onClose}
-            className="rounded-lg p-1 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
+            onClick={() => {
+              triggerHaptic("light");
+              onClose();
+            }}
+            className="rounded-lg p-1.5 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors touch-manipulation cursor-pointer"
           >
             <X className="h-4 w-4" />
           </button>
@@ -135,7 +142,7 @@ export function VoidLetters({ deviceId, onClose }: { deviceId: string; onClose: 
               placeholder="Cast a quiet midnight thought into the void…"
               rows={2}
               maxLength={280}
-              className="w-full resize-none rounded-xl border border-white/10 bg-zinc-900/60 p-3 text-xs sm:text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-indigo-500/50 focus:outline-none transition-colors"
+              className="w-full resize-none rounded-xl border border-white/10 bg-zinc-900/60 p-3 text-base sm:text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-indigo-500/50 focus:outline-none transition-colors"
             />
             <div className="mt-2 flex items-center justify-between">
               <span className="text-[11px] font-mono text-zinc-500">{draft.length}/280</span>
@@ -144,7 +151,7 @@ export function VoidLetters({ deviceId, onClose }: { deviceId: string; onClose: 
                 size="sm"
                 onClick={handleCast}
                 disabled={submitting || !draft.trim()}
-                className="h-7 px-3 text-xs bg-zinc-100 text-zinc-950 hover:bg-zinc-200 font-medium"
+                className="h-8 px-3.5 text-xs bg-zinc-100 text-zinc-950 hover:bg-zinc-200 font-medium touch-manipulation cursor-pointer active:scale-95"
               >
                 <Send className="h-3 w-3 mr-1" />
                 <span>Cast to Void</span>
@@ -186,7 +193,7 @@ export function VoidLetters({ deviceId, onClose }: { deviceId: string; onClose: 
                     type="button"
                     onClick={() => handleToggleStar(letter.id)}
                     className={cn(
-                      "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs transition-colors",
+                      "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs transition-colors touch-manipulation active:scale-95 cursor-pointer",
                       letter.hasStarred
                         ? "bg-amber-500/15 text-amber-300 font-medium"
                         : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",

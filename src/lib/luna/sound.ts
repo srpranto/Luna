@@ -150,3 +150,26 @@ export function playLeaveTone(): void {
     return;
   }
 }
+
+export function triggerHaptic(type: "light" | "medium" | "heavy" | "selection" | "match" = "light"): void {
+  if (typeof window === "undefined" || !("vibrate" in navigator)) return;
+  try {
+    switch (type) {
+      case "light":
+        navigator.vibrate(8);
+        break;
+      case "medium":
+        navigator.vibrate(15);
+        break;
+      case "heavy":
+        navigator.vibrate(25);
+        break;
+      case "selection":
+        navigator.vibrate(5);
+        break;
+      case "match":
+        navigator.vibrate([15, 60, 20]);
+        break;
+    }
+  } catch {}
+}

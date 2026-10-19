@@ -1,4 +1,4 @@
-export type SafetySeverity = "clean" | "m_spam" | "sexual" | "severe";
+type SafetySeverity = "clean" | "m_spam" | "sexual" | "severe";
 
 export interface SafetyResult {
   allowed: boolean;
