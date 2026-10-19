@@ -159,8 +159,6 @@ const STREAM_EVENT_TYPES = [
   "presence_update",
   "message_edited",
   "message_deleted",
-  "banned",
-  "peer_banned",
 ];
 
 const RECONNECT_DELAYS_MS = [1000, 2000, 5000, 10000];

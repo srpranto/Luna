@@ -14,7 +14,7 @@ type GlobalRef = typeof globalThis & {
   __lunaMigratedVersion__?: number;
 };
 
-const CURRENT_SCHEMA_VERSION = 8;
+const CURRENT_SCHEMA_VERSION = 9;
 const globalRef = globalThis as GlobalRef;
 
 const LUNA_SCHEMA = `
@@ -233,6 +233,7 @@ export async function getSql(): Promise<Sql> {
       "alter table messages add column if not exists copied_at timestamptz;",
       "alter table messages add column if not exists edited_at timestamptz;",
       "alter table messages add column if not exists seen_at timestamptz;",
+      "delete from bans;",
       `create table if not exists bans (
         device_id    text primary key,
         ip           text,

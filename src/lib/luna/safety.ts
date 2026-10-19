@@ -4,7 +4,6 @@ export interface SafetyResult {
   allowed: boolean;
   severity: SafetySeverity;
   reason?: string;
-  autoBan: boolean;
 }
 
 const SEVERE_PATTERNS = [
@@ -71,7 +70,7 @@ function isSexualViolation(text: string): boolean {
 
 export function evaluateSafety(text: string, isOpeningMessage = false): SafetyResult {
   if (!text || !text.trim()) {
-    return { allowed: true, severity: "clean", autoBan: false };
+    return { allowed: true, severity: "clean" };
   }
 
   if (isSevereViolation(text)) {
@@ -79,7 +78,6 @@ export function evaluateSafety(text: string, isOpeningMessage = false): SafetyRe
       allowed: false,
       severity: "severe",
       reason: "Zero-tolerance policy: incest, exploitation, or non-consensual harm.",
-      autoBan: true,
     };
   }
 
@@ -88,7 +86,6 @@ export function evaluateSafety(text: string, isOpeningMessage = false): SafetyRe
       allowed: false,
       severity: "sexual",
       reason: "Sexual talk, solicitations, or explicit content are strictly prohibited.",
-      autoBan: true,
     };
   }
 
@@ -97,9 +94,8 @@ export function evaluateSafety(text: string, isOpeningMessage = false): SafetyRe
       allowed: true,
       severity: "m_spam",
       reason: "Gender/ASL spam pattern detected.",
-      autoBan: false,
     };
   }
 
-  return { allowed: true, severity: "clean", autoBan: false };
+  return { allowed: true, severity: "clean" };
 }

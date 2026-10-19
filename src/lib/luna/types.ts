@@ -62,8 +62,6 @@ export interface DeskView {
   queued: boolean;
   queuedInterests: string[];
   enteredAt: string | null;
-  banned?: boolean;
-  banReason?: string;
 }
 
 export interface QueueHeartbeatResult {

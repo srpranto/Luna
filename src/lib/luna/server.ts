@@ -557,139 +557,15 @@ async function loadMessagesPack(
   };
 }
 
-function isPrivateOrLocalIp(ip: string): boolean {
-  const clean = ip.trim();
-  return (
-    clean === "" ||
-    clean === "127.0.0.1" ||
-    clean === "::1" ||
-    clean === "localhost" ||
-    clean.startsWith("192.168.") ||
-    clean.startsWith("10.") ||
-    clean.startsWith("172.16.") ||
-    clean.startsWith("172.17.") ||
-    clean.startsWith("172.18.") ||
-    clean.startsWith("172.19.") ||
-    clean.startsWith("172.2") ||
-    clean.startsWith("172.30.") ||
-    clean.startsWith("172.31.")
-  );
-}
-
-async function getBanInfo(
-  deviceId: string,
-  ip?: string,
-): Promise<{ banned: boolean; reason?: string; violation?: string } | null> {
-  const sql = await getSql();
-  const cleanIp = ip?.trim() || "";
-  try {
-    const checkIp = cleanIp && !isPrivateOrLocalIp(cleanIp);
-    const rows = checkIp
-      ? await sql<{ device_id: string; ip: string; reason: string; violation: string }>`
-          select device_id, ip, reason, violation from bans
-          where device_id = ${deviceId} or ip = ${cleanIp}
-          limit 1
-        `
-      : await sql<{ device_id: string; ip: string; reason: string; violation: string }>`
-          select device_id, ip, reason, violation from bans
-          where device_id = ${deviceId}
-          limit 1
-        `;
-    if (rows[0]) {
-      return {
-        banned: true,
-        reason: rows[0].reason,
-        violation: rows[0].violation,
-      };
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
-
-async function banDevice(
-  deviceId: string,
-  ip: string,
-  reason: string,
-  violation: string,
-): Promise<void> {
-  const sql = await getSql();
-  const cleanIp = ip?.trim() || "";
-  try {
-    await sql`
-      insert into bans (device_id, ip, reason, violation, banned_at)
-      values (${deviceId}, ${cleanIp}, ${reason}, ${violation}, now())
-      on conflict (device_id) do update set reason = ${reason}, violation = ${violation}, banned_at = now()
-    `;
-  } catch {}
-
-  try {
-    await sql`delete from queue where device_id = ${deviceId}`;
-  } catch {}
-
-  try {
-    const activeSessions = await sql<SessionRow>`
-      select id, a_id, b_id, kind, interests, created_at, closed_at from sessions
-      where (a_id = ${deviceId} or b_id = ${deviceId}) and closed_at is null
-    `;
-
-    for (const s of activeSessions) {
-      await sql`update sessions set closed_at = now() where id = ${s.id}`;
-      const peerId = peerOf(s, deviceId);
-      emitToDevice(peerId, "peer_banned", {
-        sessionId: s.id,
-        reason: "The other user was removed and banned for violating community safety guidelines.",
-      });
-      emitToDevice(peerId, "session_ended", { sessionId: s.id });
-    }
-  } catch {}
-
-  emitToDevice(deviceId, "banned", {
-    reason,
-    violation,
-  });
-}
-
 export async function recordMSpamSession(
-  deviceId: string,
-  ip: string,
-  sessionId: string,
+  _deviceId: string,
+  _ip: string,
+  _sessionId: string,
 ): Promise<{ banned: boolean; count: number }> {
-  const sql = await getSql();
-  const cleanIp = ip?.trim() || "";
-  const id = newId();
-  try {
-    await sql`
-      insert into violation_logs (id, device_id, ip, violation, session_id, created_at)
-      values (${id}, ${deviceId}, ${cleanIp}, 'm_spam', ${sessionId}, now())
-    `;
-
-    const countRows = await sql<{ n: number }>`
-      select count(distinct session_id)::int as n
-      from violation_logs
-      where (device_id = ${deviceId} or (ip is not null and ip <> '' and ip = ${cleanIp}))
-        and violation = 'm_spam'
-    `;
-    const count = countRows[0]?.n ?? 1;
-
-    if (count >= 5) {
-      await banDevice(
-        deviceId,
-        cleanIp,
-        "Automated ban: Excessive 'M'/gender spam across 5 or more chats.",
-        "m_spam",
-      );
-      return { banned: true, count };
-    }
-
-    return { banned: false, count };
-  } catch {
-    return { banned: false, count: 1 };
-  }
+  return { banned: false, count: 0 };
 }
 
-export async function reportViolationRpc(input: {
+export async function reportViolationRpc(_input: {
   deviceId: string;
   peerId?: string;
   sessionId?: string;
@@ -697,23 +573,7 @@ export async function reportViolationRpc(input: {
   sample?: string;
   clientIp?: string;
 }): Promise<{ ok: boolean; banned: boolean }> {
-  const deviceId = requireDeviceId(input.deviceId);
-  const targetId = input.peerId ? requireDeviceId(input.peerId) : deviceId;
-  const sql = await getSql();
-
-  const ipRows = await sql<StationRow>`select ip from stations where device_id = ${targetId}`;
-  const targetIp = ipRows[0]?.ip ?? input.clientIp ?? "";
-
-  const reasonMap: Record<string, string> = {
-    severe: "Zero-tolerance violation: Incest, exploitation, or non-consensual content.",
-    sexual: "Prohibited content: Unsolicited sexual talk or harassment.",
-    m_spam: "Automated ban: Excessive 'M'/gender spam across 5 or more chats.",
-  };
-
-  const reason = reasonMap[input.violation] ?? "Violation of Luna safety policies.";
-
-  await banDevice(targetId, targetIp, reason, input.violation);
-  return { ok: true, banned: true };
+  return { ok: true, banned: false };
 }
 
 async function loadDesk(
@@ -721,21 +581,6 @@ async function loadDesk(
   clientIp?: string,
   publicKey?: string,
 ): Promise<DeskView> {
-  const ban = await getBanInfo(deviceId, clientIp);
-  if (ban?.banned) {
-    return {
-      station: { deviceId, callsign: "RESTRICTED" },
-      friends: [],
-      inboundQsl: [],
-      activeSession: null,
-      queued: false,
-      queuedInterests: [],
-      enteredAt: null,
-      banned: true,
-      banReason: ban.reason,
-    };
-  }
-
   const station = await touchStation(deviceId, clientIp, publicKey);
   const sql = await getSql();
   const [friendRows, inboundRows, activeSessionRow, queueRows] = await Promise.all([
@@ -935,11 +780,6 @@ export async function joinQueue(input: {
   publicKey?: string;
 }): Promise<QueueHeartbeatResult> {
   const deviceId = requireDeviceId(input.deviceId);
-  const ban = await getBanInfo(deviceId, input.clientIp);
-  if (ban?.banned) {
-    throw new Error(`Access restricted: ${ban.reason}`);
-  }
-
   const interests = sanitizeInterests(input.interests);
 
   await cleanup();
@@ -1097,20 +937,12 @@ export async function sendMessage(input: {
   body: string;
 }): Promise<MessagesPack> {
   const deviceId = requireDeviceId(input.deviceId);
-  const ban = await getBanInfo(deviceId);
-  if (ban?.banned) {
-    throw new Error(`Your device has been banned: ${ban.reason}`);
-  }
-
   const body = requireText(input.body, MAX_LINE_CHARS);
   const sql = await getSql();
 
   if (!body.startsWith("e2e:")) {
     const safety = evaluateSafety(body);
-    if (safety.autoBan) {
-      const ipRows = await sql<StationRow>`select ip from stations where device_id = ${deviceId}`;
-      const targetIp = ipRows[0]?.ip ?? "";
-      await banDevice(deviceId, targetIp, safety.reason ?? "Policy violation", safety.severity);
+    if (!safety.allowed) {
       throw new Error(`Message blocked: ${safety.reason}`);
     }
   }
@@ -1168,11 +1000,6 @@ export async function editMessage(input: {
   body: string;
 }): Promise<MessagesPack> {
   const deviceId = requireDeviceId(input.deviceId);
-  const ban = await getBanInfo(deviceId);
-  if (ban?.banned) {
-    throw new Error(`Your device has been banned: ${ban.reason}`);
-  }
-
   const body = requireText(input.body, MAX_LINE_CHARS);
   const sql = await getSql();
 
@@ -1502,19 +1329,13 @@ export async function castVoidLetter(input: {
   ip?: string;
 }): Promise<{ ok: boolean; letter?: VoidLetter; error?: string }> {
   const deviceId = requireDeviceId(input.deviceId);
-  const ban = await getBanInfo(deviceId);
-  if (ban?.banned) {
-    throw new Error(`Your device has been banned: ${ban.reason}`);
-  }
-
   const cleaned = input.text.trim().slice(0, 280);
   if (!cleaned) {
     return { ok: false, error: "Letter cannot be empty." };
   }
 
   const safety = evaluateSafety(cleaned, true);
-  if (safety.autoBan) {
-    await banDevice(deviceId, input.ip ?? "", safety.reason ?? "Policy violation", safety.severity);
+  if (!safety.allowed) {
     return { ok: false, error: safety.reason ?? "Message rejected by safety filter." };
   }
 

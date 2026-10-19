@@ -10,7 +10,6 @@ import { VoidLetters } from "@/components/luna/void-letters";
 import { WelcomeModal } from "@/components/luna/welcome-modal";
 import { BootView } from "@/components/luna/boot-view";
 import { ListeningView } from "@/components/luna/listening-view";
-import { BannedView } from "@/components/luna/banned-view";
 import { LineView } from "@/components/luna/line-view";
 import { NetworkBanner } from "@/components/luna/network-banner";
 import type { FloatingItem } from "@/components/luna/floating-reactions";
@@ -56,10 +55,7 @@ import {
   sendMessage,
   updateCallsign,
   subscribeDeskStream,
-  recordMSpam,
-  reportViolation,
 } from "@/lib/luna/client";
-import { evaluateSafety } from "@/lib/luna/safety";
 import {
   isSoundEnabled,
   playMatchChime,
@@ -191,8 +187,6 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [soundActive, setSoundActive] = useState(true);
   const [wireCutPrimed, setWireCutPrimed] = useState(false);
-  const [isBanned, setIsBanned] = useState(false);
-  const [banReason, setBanReason] = useState<string | null>(null);
   const [voidOpen, setVoidOpen] = useState(false);
   const [floatingReactions, setFloatingReactions] = useState<FloatingItem[]>([]);
   const [isAway, setIsAway] = useState(false);
@@ -336,19 +330,11 @@ export default function Home() {
       .then((pubKey) => registerStation({ deviceId, publicKey: pubKey ?? undefined }))
       .then(async (data) => {
         if (!cancelled) {
-          if (data.banned) {
-            setIsBanned(true);
-            setBanReason(data.banReason ?? null);
-          }
           const cachedName = getCachedCustomName();
           if (cachedName && cachedName !== data.station.callsign) {
             try {
               const updated = await updateCallsign({ deviceId, callsign: cachedName });
               if (!cancelled) {
-                if (updated.banned) {
-                  setIsBanned(true);
-                  setBanReason(updated.banReason ?? null);
-                }
                 setDesk(updated);
                 return;
               }
@@ -383,18 +369,6 @@ export default function Home() {
             pack.messages.map(async (m) => {
               if (m.body.startsWith("e2e:")) {
                 const plain = await decryptText(m.body, pack.session.id);
-                if (!m.mine && !m.system) {
-                  const peerSafety = evaluateSafety(plain, false);
-                  if (peerSafety.autoBan) {
-                    void reportViolation({
-                      deviceId,
-                      peerId: pack.session.peerId,
-                      sessionId: pack.session.id,
-                      violation: peerSafety.severity,
-                      sample: plain.slice(0, 100),
-                    });
-                  }
-                }
                 return { ...m, body: plain };
               }
               return m;
@@ -559,28 +533,9 @@ export default function Home() {
           setDesk(info.desk);
         }
         playLeaveTone();
-      } else if (eventType === "banned") {
-        const info = data as { reason?: string };
-        setIsBanned(true);
-        setBanReason(info.reason ?? "Access restricted.");
-        setSessionView(null);
-      } else if (eventType === "peer_banned") {
-        const info = data as { sessionId?: string; reason?: string };
-        if (!isEventForActiveSession(info.sessionId)) {
-          return;
-        }
-        setNote(
-          info.reason ??
-            "The other user was removed and banned for violating community safety guidelines.",
-        );
-        markActiveSessionClosed(info.sessionId);
       } else if (eventType === "desk_update" || eventType === "friend_request") {
         const refreshed = data as DeskView;
         if (refreshed && refreshed.station) {
-          if (refreshed.banned) {
-            setIsBanned(true);
-            setBanReason(refreshed.banReason ?? null);
-          }
           setDesk(refreshed);
         }
       }
@@ -596,10 +551,6 @@ export default function Home() {
       getDesk({ deviceId })
         .then((data) => {
           if (!cancelled) {
-            if (data.banned) {
-              setIsBanned(true);
-              setBanReason(data.banReason ?? null);
-            }
             setDesk(data);
           }
         })
@@ -1009,38 +960,6 @@ export default function Home() {
       textToSend = `> ${replyingTo.fromCallsign}: ${quoteSnippet}\n${rawText}`;
       setReplyingTo(null);
     }
-    const isFirst = messages.length === 0 || !messages.some((m) => m.mine);
-    const safety = evaluateSafety(textToSend, isFirst);
-
-    if (safety.autoBan) {
-      setDraft("");
-      setIsBanned(true);
-      setBanReason(safety.reason ?? "Policy violation");
-      try {
-        await reportViolation({
-          deviceId,
-          sessionId: activeSessionId,
-          violation: safety.severity,
-          sample: rawText.slice(0, 100),
-        });
-      } catch {}
-      return;
-    }
-
-    if (safety.severity === "m_spam") {
-      try {
-        const res = await recordMSpam({
-          deviceId,
-          sessionId: activeSessionId,
-        });
-        if (res.banned) {
-          setDraft("");
-          setIsBanned(true);
-          setBanReason("Automated ban: Excessive 'M'/gender spam across 5 or more chats.");
-          return;
-        }
-      } catch {}
-    }
 
     const tempId = `opt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const optimisticMsg: ChatMessage = {
@@ -1412,9 +1331,7 @@ export default function Home() {
       <NetworkBanner isOnline={isOnline} />
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {isBanned || desk?.banned ? (
-          <BannedView reason={banReason ?? desk?.banReason} />
-        ) : settingsOpen && desk ? (
+        {settingsOpen && desk ? (
           <SettingsPanel
             desk={desk}
             onClose={() => setSettingsOpen(false)}

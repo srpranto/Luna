@@ -8,8 +8,6 @@ export type LunaEventType =
   | "session_started"
   | "session_ended"
   | "friend_request"
-  | "banned"
-  | "peer_banned"
   | "ping";
 
 export interface LunaEvent<T = unknown> {
