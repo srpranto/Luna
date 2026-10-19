@@ -5,7 +5,6 @@ import { LogPanel } from "@/components/luna/log-panel";
 import { SettingsPanel } from "@/components/luna/settings-panel";
 import { PaperShell } from "@/components/luna/paper-shell";
 import { StatusHeader } from "@/components/luna/status-header";
-import { DynamicIsland } from "@/components/luna/dynamic-island";
 import { HistoryModal } from "@/components/luna/history-modal";
 import { VoidLetters } from "@/components/luna/void-letters";
 import { WelcomeModal } from "@/components/luna/welcome-modal";
@@ -17,7 +16,6 @@ import { NetworkBanner } from "@/components/luna/network-banner";
 import type { FloatingItem } from "@/components/luna/floating-reactions";
 import {
   IDLE_AWAY_THRESHOLD_MS,
-  INACTIVITY_DISCONNECT_MS,
   sanitizeInterests,
 } from "@/lib/luna/constants";
 import {
@@ -81,7 +79,6 @@ import type {
 const INTEREST_KEY = "luna.interests";
 const BLOCKED_KEY = "luna.blocked";
 const REACTION_REGEX = /^\[reaction:(🌙|✨)\]$/;
-const IDLE_WARNING_SECONDS = 120;
 
 function readSavedInterests(): string[] {
   if (typeof window === "undefined") {
@@ -199,11 +196,10 @@ export default function Home() {
   const [voidOpen, setVoidOpen] = useState(false);
   const [floatingReactions, setFloatingReactions] = useState<FloatingItem[]>([]);
   const [isAway, setIsAway] = useState(false);
-  const [remainingIdleSeconds, setRemainingIdleSeconds] = useState(240);
-  const [showDynamicIsland, setShowDynamicIsland] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historySessions, setHistorySessions] = useState<HistorySession[]>([]);
   const [replyingTo, setReplyingTo] = useState<{ id: string; fromCallsign: string; body: string } | null>(null);
+  const [resyncTick, setResyncTick] = useState(0);
   const isOnline = useSyncExternalStore(
     subscribeNetwork,
     getNetworkSnapshot,
@@ -232,7 +228,6 @@ export default function Home() {
   const sendQueueRef = useRef<Promise<void>>(Promise.resolve());
   const activeSessionRef = useRef<SessionView | null>(null);
   const leftSessionIdsRef = useRef<Set<string>>(new Set());
-  const [resyncTick, setResyncTick] = useState(0);
 
   const isEventForActiveSession = useCallback((sessionId: string | undefined) => {
     if (!sessionId || leftSessionIdsRef.current.has(sessionId)) {
@@ -283,7 +278,7 @@ export default function Home() {
   }, []);
 
   function triggerFloatingReaction(emoji: string) {
-    const id = `${Date.now()}-${Math.random()}`;
+    const id = crypto.randomUUID();
     const leftPercent = 20 + Math.random() * 60;
     setFloatingReactions((prev) => [...prev, { id, emoji, leftPercent }]);
   }
@@ -545,6 +540,11 @@ export default function Home() {
             .catch(() => {});
         }
         playMatchChime();
+        if (typeof window !== "undefined" && "vibrate" in navigator) {
+          try {
+            navigator.vibrate([15, 60, 20]);
+          } catch {}
+        }
       } else if (eventType === "session_ended") {
         const info = data as { sessionId: string; desk?: DeskView };
         if (!isEventForActiveSession(info.sessionId)) {
@@ -763,7 +763,6 @@ export default function Home() {
 
   const resetIdle = useCallback(() => {
     lastActivityRef.current = Date.now();
-    setShowDynamicIsland(false);
     if (isAwayRef.current) {
       setIsAway(false);
       if (deviceId && currentSession?.id) {
@@ -848,7 +847,6 @@ export default function Home() {
     const targetSessionId = currentSession?.id;
     setBusy(true);
     playLeaveTone();
-    setShowDynamicIsland(false);
     setIsAway(false);
     setReplyingTo(null);
     if (targetSessionId) {
@@ -879,7 +877,6 @@ export default function Home() {
     const targetSessionId = currentSession?.id;
     setBusy(true);
     playLeaveTone();
-    setShowDynamicIsland(false);
     setIsAway(false);
     setReplyingTo(null);
     if (targetSessionId) {
@@ -919,13 +916,7 @@ export default function Home() {
 
     function evaluateIdle() {
       const elapsed = Date.now() - lastActivityRef.current;
-      if (elapsed >= INACTIVITY_DISCONNECT_MS) {
-        setShowDynamicIsland(false);
-        void handleLeaveSession();
-      } else if (elapsed >= IDLE_AWAY_THRESHOLD_MS) {
-        const remaining = Math.max(0, Math.ceil((INACTIVITY_DISCONNECT_MS - elapsed) / 1000));
-        setRemainingIdleSeconds(remaining);
-        setShowDynamicIsland(remaining <= IDLE_WARNING_SECONDS);
+      if (elapsed >= IDLE_AWAY_THRESHOLD_MS) {
         if (!isAwayRef.current) {
           setIsAway(true);
           if (deviceId && currentSession?.id) {
@@ -933,7 +924,6 @@ export default function Home() {
           }
         }
       } else {
-        setShowDynamicIsland(false);
         if (isAwayRef.current) {
           setIsAway(false);
           if (deviceId && currentSession?.id) {
@@ -964,6 +954,7 @@ export default function Home() {
 
     function onFocus() {
       resetIdle();
+      setResyncTick((n) => n + 1);
     }
 
     const passiveCapture = { capture: true, passive: true } as const;
@@ -1404,12 +1395,6 @@ export default function Home() {
               }
             : undefined
         }
-      />
-
-      <DynamicIsland
-        show={showDynamicIsland && Boolean(currentSession?.id) && !currentSession?.closed}
-        remainingSeconds={remainingIdleSeconds}
-        onStayConnected={resetIdle}
       />
 
       <NetworkBanner isOnline={isOnline} />

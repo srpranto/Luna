@@ -48,6 +48,32 @@ interface RequestBody {
   letterId?: string;
 }
 
+interface RateLimitBucket {
+  count: number;
+  resetAt: number;
+}
+
+const rateLimitMap = new Map<string, RateLimitBucket>();
+
+function checkRateLimit(key: string, limit = 180, windowMs = 60000): boolean {
+  const now = Date.now();
+  const bucket = rateLimitMap.get(key);
+  if (!bucket || now > bucket.resetAt) {
+    rateLimitMap.set(key, { count: 1, resetAt: now + windowMs });
+    if (rateLimitMap.size > 10000) {
+      for (const [k, v] of rateLimitMap.entries()) {
+        if (now > v.resetAt) rateLimitMap.delete(k);
+      }
+    }
+    return true;
+  }
+  if (bucket.count >= limit) {
+    return false;
+  }
+  bucket.count += 1;
+  return true;
+}
+
 function extractClientIp(req: Request): string {
   const forwarded = req.headers.get("x-forwarded-for");
   if (forwarded) {
@@ -63,13 +89,41 @@ function extractClientIp(req: Request): string {
 
 export async function POST(req: Request) {
   try {
+    const clientIp = extractClientIp(req);
+    if (!checkRateLimit(clientIp)) {
+      return NextResponse.json(
+        { ok: false, error: "Too many requests. Please slow down." },
+        { status: 429, headers: { "Cache-Control": "no-store", "Retry-After": "5" } },
+      );
+    }
+
     const payload = (await req.json()) as RequestBody;
     const { action, deviceId } = payload;
-    const clientIp = extractClientIp(req);
 
     if (!deviceId) {
       return NextResponse.json(
         { ok: false, error: "Missing deviceId." },
+        { status: 400, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
+    if (payload.body && payload.body.length > 10000) {
+      return NextResponse.json(
+        { ok: false, error: "Message too long." },
+        { status: 400, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
+    if (payload.callsign && payload.callsign.length > 64) {
+      return NextResponse.json(
+        { ok: false, error: "Callsign too long." },
+        { status: 400, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
+    if (payload.text && payload.text.length > 5000) {
+      return NextResponse.json(
+        { ok: false, error: "Text too long." },
         { status: 400, headers: { "Cache-Control": "no-store" } },
       );
     }

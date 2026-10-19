@@ -1,4 +1,4 @@
-const CACHE_NAME = "luna-pwa-v1";
+const CACHE_NAME = "luna-pwa-v2";
 
 const PRECACHE_ASSETS = [
   "/offline.html",
@@ -49,6 +49,10 @@ self.addEventListener("fetch", (event) => {
         return caches.match("/offline.html").then((res) => res || caches.match("/"));
       })
     );
+    return;
+  }
+
+  if (request.headers.has("range")) {
     return;
   }
 

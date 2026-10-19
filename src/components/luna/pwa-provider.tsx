@@ -59,15 +59,38 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
 
     window.addEventListener("beforeinstallprompt", handleBeforeInstall);
 
+    let swRegistration: ServiceWorkerRegistration | null = null;
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && swRegistration) {
+        void swRegistration.update().catch(() => {});
+      }
+    };
+    const handleFocus = () => {
+      if (swRegistration) {
+        void swRegistration.update().catch(() => {});
+      }
+    };
+
     if ("serviceWorker" in navigator && process.env.NODE_ENV !== "test") {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("/sw.js").catch(() => {});
+        navigator.serviceWorker
+          .register("/sw.js", { updateViaCache: "none" })
+          .then((reg) => {
+            swRegistration = reg;
+            void reg.update().catch(() => {});
+          })
+          .catch(() => {});
       });
+
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+      window.addEventListener("focus", handleFocus);
     }
 
     return () => {
       mediaQuery.removeEventListener("change", handler);
       window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
     };
   }, []);
 

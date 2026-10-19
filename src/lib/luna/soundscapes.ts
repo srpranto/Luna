@@ -36,6 +36,8 @@ class SoundscapeEngine {
   private currentType: SoundscapeType = "off";
   private currentVolume = 0.35;
   private activeNodes: { stop?: () => void; disconnect: () => void }[] = [];
+  private rainAudio: HTMLAudioElement | null = null;
+  private rainFadeTimer: number | null = null;
   private rainInterval: number | null = null;
   private thunderTimeout: number | null = null;
   private vinylInterval: number | null = null;
@@ -66,6 +68,9 @@ class SoundscapeEngine {
   public setVolume(vol: number) {
     this.currentVolume = Math.max(0, Math.min(1, vol));
     saveVolume(this.currentVolume);
+    if (this.rainAudio && this.currentType === "rain") {
+      this.rainAudio.volume = this.currentVolume;
+    }
     if (this.masterGain && this.ctx) {
       this.masterGain.gain.setTargetAtTime(this.currentVolume, this.ctx.currentTime, 0.05);
     }
@@ -80,7 +85,7 @@ class SoundscapeEngine {
   }
 
   public play(type: SoundscapeType) {
-    if (this.currentType === type && this.activeNodes.length > 0) return;
+    if (this.currentType === type && (this.activeNodes.length > 0 || (this.rainAudio && !this.rainAudio.paused))) return;
     this.stopCurrent();
     this.currentType = type;
     saveSoundscape(type);
@@ -108,6 +113,16 @@ class SoundscapeEngine {
   }
 
   private stopCurrent() {
+    if (this.rainFadeTimer !== null) {
+      window.clearInterval(this.rainFadeTimer);
+      this.rainFadeTimer = null;
+    }
+    if (this.rainAudio) {
+      try {
+        this.rainAudio.pause();
+        this.rainAudio.currentTime = 0;
+      } catch {}
+    }
     if (this.rainInterval !== null) {
       window.clearInterval(this.rainInterval);
       this.rainInterval = null;
@@ -139,6 +154,50 @@ class SoundscapeEngine {
   }
 
   private startRain(ctx: AudioContext, destination: GainNode) {
+    if (typeof window !== "undefined") {
+      try {
+        if (!this.rainAudio) {
+          this.rainAudio = new Audio("/rain.mp3");
+          this.rainAudio.loop = true;
+          this.rainAudio.preload = "auto";
+        }
+        this.rainAudio.volume = 0;
+        this.rainAudio.currentTime = 0;
+        const playPromise = this.rainAudio.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              if (this.currentType !== "rain" || !this.rainAudio) return;
+              const target = this.currentVolume;
+              const step = Math.max(0.01, target / 15);
+              const fadeInterval = window.setInterval(() => {
+                if (!this.rainAudio || this.currentType !== "rain") {
+                  window.clearInterval(fadeInterval);
+                  return;
+                }
+                if (this.rainAudio.volume + step < target) {
+                  this.rainAudio.volume += step;
+                } else {
+                  this.rainAudio.volume = target;
+                  window.clearInterval(fadeInterval);
+                }
+              }, 20);
+              this.rainFadeTimer = fadeInterval;
+            })
+            .catch(() => {
+              this.startSyntheticRain(ctx, destination);
+            });
+        }
+        return;
+      } catch {
+        this.startSyntheticRain(ctx, destination);
+        return;
+      }
+    }
+    this.startSyntheticRain(ctx, destination);
+  }
+
+  private startSyntheticRain(ctx: AudioContext, destination: GainNode) {
     const bufferSize = ctx.sampleRate * 4;
 
     const brownBuffer = ctx.createBuffer(2, bufferSize, ctx.sampleRate);

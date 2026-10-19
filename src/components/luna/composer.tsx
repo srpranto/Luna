@@ -196,7 +196,7 @@ export function Composer({
               clearTypingTimer();
               onTyping?.(false);
             }}
-            className="min-h-[40px] max-h-[200px] w-full resize-none rounded-xl border border-zinc-800 bg-zinc-900/60 pl-3.5 pr-14 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-400 shadow-inner transition-colors focus:border-zinc-500 focus:outline-none disabled:opacity-40 leading-relaxed overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+            className="min-h-[40px] max-h-[200px] w-full resize-none rounded-xl border border-zinc-800 bg-zinc-900/60 pl-3.5 pr-14 py-2.5 text-base sm:text-sm text-zinc-100 placeholder:text-zinc-400 shadow-inner transition-colors focus:border-zinc-500 focus:outline-none disabled:opacity-40 leading-relaxed overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
           />
           {value.length > 0 && (
             <span className="absolute right-2.5 bottom-2 text-[10px] font-mono text-zinc-400 pointer-events-none bg-zinc-900/80 px-1 rounded">

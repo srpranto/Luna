@@ -124,7 +124,7 @@ export function SoundscapePopover({ soundFxEnabled, onToggleSoundFx }: Soundscap
               </div>
             </div>
 
-            <p className="text-[11px] text-zinc-400 mb-2">Procedural Ambient Audio</p>
+            <p className="text-[11px] text-zinc-400 mb-2">Ambient Audio & Soundscapes</p>
 
             <div className="grid grid-cols-2 gap-1.5 mb-3">
               <button
@@ -139,8 +139,8 @@ export function SoundscapePopover({ soundFxEnabled, onToggleSoundFx }: Soundscap
               >
                 <CloudRain className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
                 <div className="min-w-0">
-                  <div className="truncate font-medium">Rain & Thunder</div>
-                  <div className="text-[9px] text-zinc-500 truncate">Storm rumble</div>
+                  <div className="truncate font-medium">Rain</div>
+                  <div className="text-[9px] text-zinc-500 truncate">rain.mp3</div>
                 </div>
               </button>
 

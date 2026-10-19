@@ -60,7 +60,9 @@ export function ListeningView({
         </div>
 
         <p className="animate-fade-up stagger-3 mt-2 text-xs text-zinc-400">
-          Searching for someone with matching interests…
+          {waitMs < 4000 && interests.length > 0
+            ? "Searching for someone with matching interests…"
+            : "Broadening search to all night owls…"}
         </p>
 
         {interests.length > 0 && (
@@ -77,9 +79,9 @@ export function ListeningView({
           </div>
         )}
 
-        {waitMs >= 8000 && waitMs < 60000 && (
+        {waitMs >= 10000 && waitMs < 60000 && (
           <div className="animate-fade-up stagger-4 mt-3.5 max-w-xs sm:max-w-sm rounded-lg border border-white/5 bg-zinc-900/60 px-3 py-1.5 sm:py-2 text-[11px] sm:text-xs text-zinc-400 text-center leading-relaxed backdrop-blur-sm">
-            <span>Still looking for a match. Try changing, adding, or removing topics.</span>
+            <span>Traversing the midnight cosmos… Connecting you as soon as someone arrives.</span>
           </div>
         )}
 

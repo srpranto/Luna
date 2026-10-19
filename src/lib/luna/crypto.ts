@@ -216,9 +216,7 @@ export async function exportDevicePublicKeyHex(deviceId: string): Promise<string
 
   try {
     const raw = await crypto.subtle.exportKey("raw", keyPair.publicKey);
-    return Array.from(new Uint8Array(raw))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
+    return Array.from(new Uint8Array(raw), (b) => b.toString(16).padStart(2, "0")).join("");
   } catch {
     return null;
   }

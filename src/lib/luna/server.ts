@@ -294,9 +294,12 @@ async function reapAbandonedSessions(sql: Sql): Promise<void> {
       )
   `;
   for (const row of rows) {
-    const aGone = Boolean(row.a_gone) && !isDeviceConnected(row.a_id);
-    const bGone = Boolean(row.b_gone) && !isDeviceConnected(row.b_id);
-    if (!aGone && !bGone) {
+    if (isDeviceConnected(row.a_id) || isDeviceConnected(row.b_id)) {
+      continue;
+    }
+    const aGone = Boolean(row.a_gone);
+    const bGone = Boolean(row.b_gone);
+    if (!aGone || !bGone) {
       continue;
     }
     const ended = await endSessionOnce(sql, row);

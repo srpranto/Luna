@@ -199,8 +199,18 @@ export function Transcript({
   }, []);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages.length, peerTyping]);
+    const container = endRef.current?.closest(".overflow-y-auto") as HTMLElement | null;
+    const lastMsg = messages[messages.length - 1];
+    const isMine = lastMsg?.mine;
+    if (container) {
+      const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      if (isMine || distanceToBottom < 160) {
+        endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      }
+    } else {
+      endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+  }, [messages, peerTyping]);
 
   const [mountStamp] = useState(() => (now ? now.getTime() : Date.now()));
   const stamp = now ? now.getTime() : mountStamp;
