@@ -202,6 +202,7 @@ export function SettingsPanel({
               <Button
                 type="button"
                 onClick={async () => {
+                  triggerHaptic("medium");
                   await installApp();
                 }}
                 className="h-9 text-xs bg-white text-zinc-950 hover:bg-zinc-200 gap-2 font-medium cursor-pointer shadow-[0_0_20px_rgba(255,255,255,0.18)]"

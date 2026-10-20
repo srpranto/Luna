@@ -249,6 +249,22 @@
   will-change: transform, opacity;
 }
 
+@keyframes scale-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.95) translate3d(0, 4px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translate3d(0, 0, 0);
+  }
+}
+
+.animate-scale-in {
+  animation: scale-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity;
+}
+
 input[type="range"]::-webkit-slider-thumb {
   appearance: none;
   width: 18px;

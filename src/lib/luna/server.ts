@@ -130,6 +130,15 @@ async function callsignOf(deviceId: string): Promise<string> {
   return rows[0]?.callsign ?? "----";
 }
 
+async function callsignsOf(deviceIds: string[]): Promise<Map<string, string>> {
+  if (deviceIds.length === 0) return new Map();
+  const sql = await getSql();
+  const rows = await sql<{ device_id: string; callsign: string }>`
+    select device_id, callsign from stations where device_id = any(${deviceIds})
+  `;
+  return new Map(rows.map((r) => [r.device_id, r.callsign]));
+}
+
 async function findAvailableStrangerName(
   sql: Sql,
   clientIp: string,
@@ -163,23 +172,9 @@ async function touchStation(
 ): Promise<Station> {
   const ip = clientIp?.trim() || "127.0.0.1";
   const sql = await getSql();
-  let existing: StationRow[];
-  try {
-    existing = await sql<StationRow>`
-      select device_id, callsign, ip, is_custom, public_key from stations where device_id = ${deviceId}
-    `;
-  } catch (err: unknown) {
-    if (String(err).includes("public_key")) {
-      try {
-        await sql.query("alter table stations add column if not exists public_key text;");
-      } catch {}
-      existing = await sql<StationRow>`
-        select device_id, callsign, ip, is_custom, public_key from stations where device_id = ${deviceId}
-      `;
-    } else {
-      throw err;
-    }
-  }
+  const existing = await sql<StationRow>`
+    select device_id, callsign, ip, is_custom, public_key from stations where device_id = ${deviceId}
+  `;
 
   if (existing[0]) {
     const row = existing[0];
@@ -208,36 +203,11 @@ async function touchStation(
 
   const callsign = await findAvailableStrangerName(sql, ip);
   const keyToSave = publicKey ?? null;
-  try {
-    await sql`
-      insert into stations (device_id, callsign, ip, is_custom, last_seen, public_key)
-      values (${deviceId}, ${callsign}, ${ip}, false, now(), ${keyToSave})
-      on conflict (device_id) do update set last_seen = now(), ip = ${ip}, public_key = coalesce(${keyToSave}, stations.public_key)
-    `;
-    return { deviceId, callsign, publicKey: keyToSave ?? undefined };
-  } catch (insertErr) {
-    if (String(insertErr).includes("public_key")) {
-      try {
-        await sql.query("alter table stations add column if not exists public_key text;");
-        await sql`
-          insert into stations (device_id, callsign, ip, is_custom, last_seen, public_key)
-          values (${deviceId}, ${callsign}, ${ip}, false, now(), ${keyToSave})
-          on conflict (device_id) do update set last_seen = now(), ip = ${ip}, public_key = coalesce(${keyToSave}, stations.public_key)
-        `;
-        return { deviceId, callsign, publicKey: keyToSave ?? undefined };
-      } catch {}
-    }
-    const retry = await sql<StationRow>`
-      select device_id, callsign, public_key from stations where device_id = ${deviceId}
-    `;
-    if (retry[0]) {
-      return {
-        deviceId: retry[0].device_id,
-        callsign: retry[0].callsign,
-        publicKey: retry[0].public_key ?? undefined,
-      };
-    }
-  }
+  await sql`
+    insert into stations (device_id, callsign, ip, is_custom, last_seen, public_key)
+    values (${deviceId}, ${callsign}, ${ip}, false, now(), ${keyToSave})
+    on conflict (device_id) do update set last_seen = now(), ip = ${ip}, public_key = coalesce(${keyToSave}, stations.public_key)
+  `;
   return { deviceId, callsign, publicKey: keyToSave ?? undefined };
 }
 
@@ -320,37 +290,34 @@ async function loadSessionView(session: SessionRow, deviceId: string): Promise<S
   const peerId = peerOf(session, deviceId);
   const [left, right] = pairKey(deviceId, peerId);
   const sql = await getSql();
-  const [peerCallsign, outbound, inbound, friends, peerStationRows] = await Promise.all([
-    callsignOf(peerId),
+  const [friendReqs, friends, peerStationRows] = await Promise.all([
     sql<RequestRow>`
-        select id, from_id, to_id, session_id, status
-        from friend_requests
-        where from_id = ${deviceId} and to_id = ${peerId}
-        order by created_at desc
-        limit 1
-      `,
-    sql<RequestRow>`
-        select id, from_id, to_id, session_id, status
-        from friend_requests
-        where from_id = ${peerId} and to_id = ${deviceId}
-        order by created_at desc
-        limit 1
-      `,
+      select id, from_id, to_id, session_id, status
+      from friend_requests
+      where (from_id = ${deviceId} and to_id = ${peerId})
+         or (from_id = ${peerId} and to_id = ${deviceId})
+      order by created_at desc
+    `,
     sql<{ n: number }>`
-        select count(*)::int as n from friendships
-        where user_a = ${left} and user_b = ${right}
-      `,
+      select count(*)::int as n from friendships
+      where user_a = ${left} and user_b = ${right}
+    `,
     sql<{
+      callsign: string;
       last_seen: string;
       typing_until: string | null;
       public_key: string | null;
       is_away: boolean | null;
     }>`
-        select last_seen, typing_until, public_key, is_away from stations where device_id = ${peerId}
-      `,
+      select callsign, last_seen, typing_until, public_key, is_away from stations where device_id = ${peerId}
+    `,
   ]);
 
   const peerStation = peerStationRows[0];
+  const peerCallsign = peerStation?.callsign ?? "----";
+  const outbound = friendReqs.find((r) => r.from_id === deviceId);
+  const inbound = friendReqs.find((r) => r.to_id === deviceId);
+
   const nowMs = Date.now();
   const peerLastSeenMs = peerStation?.last_seen ? new Date(peerStation.last_seen).getTime() : 0;
   const peerLastSeen = peerStation?.last_seen ? asIso(peerStation.last_seen) : undefined;
@@ -375,8 +342,8 @@ async function loadSessionView(session: SessionRow, deviceId: string): Promise<S
     interests: parseInterests(session.interests),
     createdAt: asIso(session.created_at),
     closed: Boolean(session.closed_at),
-    outboundQsl: outbound[0]?.status ?? null,
-    inboundQsl: inbound[0] ? { id: inbound[0].id, status: inbound[0].status } : null,
+    outboundQsl: outbound?.status ?? null,
+    inboundQsl: inbound ? { id: inbound.id, status: inbound.status } : null,
     alreadyFriends: (friends[0]?.n ?? 0) > 0,
     peerTyping,
     peerLastSeen,
@@ -481,42 +448,14 @@ async function loadMessagesPack(
     }
   }
 
-  let rows: MessageRow[];
-  try {
-    rows = await sql<MessageRow>`
-      select id, session_id, from_id, body, created_at, expires_at, copied_at, edited_at, seen_at
-      from messages
-      where session_id = ${session.id}
-        and expires_at > now()
-      order by created_at asc
-      limit 200
-    `;
-  } catch (err) {
-    if (String(err).includes("seen_at")) {
-      try {
-        await sql.query("alter table messages add column if not exists seen_at timestamptz;");
-        rows = await sql<MessageRow>`
-          select id, session_id, from_id, body, created_at, expires_at, copied_at, edited_at, seen_at
-          from messages
-          where session_id = ${session.id}
-            and expires_at > now()
-          order by created_at asc
-          limit 200
-        `;
-      } catch {
-        rows = await sql<MessageRow>`
-          select id, session_id, from_id, body, created_at, expires_at, copied_at, edited_at
-          from messages
-          where session_id = ${session.id}
-            and expires_at > now()
-          order by created_at asc
-          limit 200
-        `;
-      }
-    } else {
-      throw err;
-    }
-  }
+  const rows = await sql<MessageRow>`
+    select id, session_id, from_id, body, created_at, expires_at, copied_at, edited_at, seen_at
+    from messages
+    where session_id = ${session.id}
+      and expires_at > now()
+    order by created_at asc
+    limit 200
+  `;
 
   const peerId = peerOf(session, deviceId);
   const [mine, theirs] = await Promise.all([callsignOf(deviceId), callsignOf(peerId)]);
@@ -557,24 +496,6 @@ async function loadMessagesPack(
   };
 }
 
-export async function recordMSpamSession(
-  _deviceId: string,
-  _ip: string,
-  _sessionId: string,
-): Promise<{ banned: boolean; count: number }> {
-  return { banned: false, count: 0 };
-}
-
-export async function reportViolationRpc(_input: {
-  deviceId: string;
-  peerId?: string;
-  sessionId?: string;
-  violation: string;
-  sample?: string;
-  clientIp?: string;
-}): Promise<{ ok: boolean; banned: boolean }> {
-  return { ok: true, banned: false };
-}
 
 async function loadDesk(
   deviceId: string,
@@ -602,24 +523,22 @@ async function loadDesk(
   ]);
 
   const friendIds = friendRows.map((row) => (row.user_a === deviceId ? row.user_b : row.user_a));
+  const neededIds = [...new Set([...friendIds, ...inboundRows.map((r) => r.from_id)])];
+  const stationLookup = await callsignsOf(neededIds);
 
-  const friends: FriendRow[] = await Promise.all(
-    friendIds.map(async (fid) => ({
-      deviceId: fid,
-      callsign: await callsignOf(fid),
-    })),
-  );
+  const friends: FriendRow[] = friendIds.map((fid) => ({
+    deviceId: fid,
+    callsign: stationLookup.get(fid) ?? "----",
+  }));
 
-  const inboundQsl: QslRow[] = await Promise.all(
-    inboundRows.map(async (row) => ({
-      id: row.id,
-      fromId: row.from_id,
-      fromCallsign: await callsignOf(row.from_id),
-      toId: row.to_id,
-      toCallsign: station.callsign,
-      status: row.status,
-    })),
-  );
+  const inboundQsl: QslRow[] = inboundRows.map((row) => ({
+    id: row.id,
+    fromId: row.from_id,
+    fromCallsign: stationLookup.get(row.from_id) ?? "----",
+    toId: row.to_id,
+    toCallsign: station.callsign,
+    status: row.status,
+  }));
 
   const activeSession = activeSessionRow ? await loadSessionView(activeSessionRow, deviceId) : null;
 
@@ -658,6 +577,7 @@ async function heartbeatQueueHandler(
   }
 
   await sql`update queue set last_beat = now() where device_id = ${deviceId}`;
+  await sql`update stations set last_seen = now() where device_id = ${deviceId}`;
 
   const waitMs = Date.now() - new Date(me.entered_at).getTime();
   const myInterests = parseInterests(me.interests);

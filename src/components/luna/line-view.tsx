@@ -78,24 +78,18 @@ export function LineView({
   onReply?: (target: { id: string; fromCallsign: string; body: string }) => void;
   onCancelReply?: () => void;
 }) {
-  const [lockRemainingSeconds, setLockRemainingSeconds] = useState(() => {
-    if (closed || !createdAt) return 0;
-    const diff = Date.now() - new Date(createdAt).getTime();
-    return diff < 2000 ? Math.max(0, 2 - Math.floor(diff / 1000)) : 0;
+  const [locked, setLocked] = useState(() => {
+    if (closed || !createdAt) return false;
+    return Date.now() - new Date(createdAt).getTime() < 600;
   });
 
   useEffect(() => {
-    if (closed || !createdAt) return;
-    const timer = window.setInterval(() => {
-      const diff = Date.now() - new Date(createdAt).getTime();
-      const rem = diff < 2000 ? Math.max(0, 2 - Math.floor(diff / 1000)) : 0;
-      setLockRemainingSeconds(rem);
-      if (rem <= 0) {
-        window.clearInterval(timer);
-      }
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [createdAt, closed]);
+    if (closed || !createdAt || !locked) return;
+    const diff = Date.now() - new Date(createdAt).getTime();
+    const delay = Math.max(0, 600 - diff);
+    const timer = window.setTimeout(() => setLocked(false), delay);
+    return () => window.clearTimeout(timer);
+  }, [createdAt, closed, locked]);
 
   const [resonance, setResonance] = useState(() => {
     if (!createdAt) return false;
@@ -186,7 +180,7 @@ export function LineView({
                 triggerHaptic("medium");
                 onNext();
               }}
-              disabled={busy || lockRemainingSeconds > 0}
+              disabled={busy || locked}
               aria-label={closed ? "Search for someone" : "Leave and find next stranger"}
               className={cn(
                 "h-7 sm:h-7.5 px-2 sm:px-2.5 gap-1 sm:gap-1.5 text-xs cursor-pointer transition-all touch-manipulation active:scale-95",
@@ -195,25 +189,15 @@ export function LineView({
                   : "text-zinc-100 hover:bg-zinc-800 disabled:opacity-50",
               )}
               title={
-                lockRemainingSeconds > 0
-                  ? `Unlocks in ${lockRemainingSeconds}s`
-                  : closed
-                    ? "Search for someone"
-                    : "Leave and find next stranger"
+                closed
+                  ? "Search for someone"
+                  : "Leave and find next stranger"
               }
             >
-              {lockRemainingSeconds > 0 ? (
-                <span className="font-mono text-[10px] sm:text-[11px] text-zinc-400">
-                  Lock {lockRemainingSeconds}s
-                </span>
-              ) : (
-                <>
-                  <span className="text-[11px] sm:text-xs font-medium">
-                    {closed ? "Next (Search)" : "Next"}
-                  </span>
-                  <ArrowRight className="h-3 w-3" />
-                </>
-              )}
+              <span className="text-[11px] sm:text-xs font-medium">
+                {closed ? "Next (Search)" : "Next"}
+              </span>
+              <ArrowRight className="h-3 w-3" />
             </Button>
           )}
 

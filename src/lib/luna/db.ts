@@ -37,28 +37,6 @@ alter table stations add column if not exists is_custom boolean default false;
 alter table stations add column if not exists public_key text;
 alter table stations add column if not exists is_away boolean default false;
 
-create table if not exists bans (
-  device_id    text primary key,
-  ip           text,
-  reason       text not null,
-  violation    text not null,
-  banned_at    timestamptz not null default now()
-);
-
-create index if not exists bans_ip_idx on bans (ip);
-
-create table if not exists violation_logs (
-  id           text primary key,
-  device_id    text not null,
-  ip           text,
-  violation    text not null,
-  session_id   text,
-  created_at   timestamptz not null default now()
-);
-
-create index if not exists violation_logs_device_idx on violation_logs (device_id, violation);
-create index if not exists violation_logs_ip_idx on violation_logs (ip, violation);
-
 create table if not exists queue (
   device_id  text primary key references stations(device_id) on delete cascade,
   interests  text not null default '[]',
@@ -233,25 +211,8 @@ export async function getSql(): Promise<Sql> {
       "alter table messages add column if not exists copied_at timestamptz;",
       "alter table messages add column if not exists edited_at timestamptz;",
       "alter table messages add column if not exists seen_at timestamptz;",
-      "delete from bans;",
-      `create table if not exists bans (
-        device_id    text primary key,
-        ip           text,
-        reason       text not null,
-        violation    text not null,
-        banned_at    timestamptz not null default now()
-      );`,
-      "create index if not exists bans_ip_idx on bans (ip);",
-      `create table if not exists violation_logs (
-        id           text primary key,
-        device_id    text not null,
-        ip           text,
-        violation    text not null,
-        session_id   text,
-        created_at   timestamptz not null default now()
-      );`,
-      "create index if not exists violation_logs_device_idx on violation_logs (device_id, violation);",
-      "create index if not exists violation_logs_ip_idx on violation_logs (ip, violation);",
+      "drop table if exists bans cascade;",
+      "drop table if exists violation_logs cascade;",
       `create table if not exists void_letters (
         id           text primary key,
         device_id    text not null,

@@ -7,6 +7,53 @@ import { cn } from "@/lib/utils";
 import { ArrowRight, Pencil, Trash2, Reply, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { triggerHaptic } from "@/lib/luna/sound";
+import { LinkPreviewCard } from "@/components/luna/link-preview-card";
+
+const URL_REGEX = /https?:\/\/[^\s<]+[^<.,:;"')\]\s]/i;
+
+function extractFirstUrl(text: string): string | null {
+  const match = text.match(URL_REGEX);
+  return match ? match[0] : null;
+}
+
+function renderTextWithLinks(text: string, isMine: boolean): (string | React.ReactNode)[] {
+  const urlRegex = /(https?:\/\/[^\s<]+[^<.,:;"')\]\s])/g;
+  const parts: (string | React.ReactNode)[] = [];
+  let lastIdx = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = urlRegex.exec(text)) !== null) {
+    if (match.index > lastIdx) {
+      parts.push(text.slice(lastIdx, match.index));
+    }
+    const url = match[0];
+    parts.push(
+      <a
+        key={match.index}
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => {
+          e.stopPropagation();
+          triggerHaptic("selection");
+        }}
+        className={cn(
+          "underline underline-offset-2 break-all font-medium transition-colors",
+          isMine
+            ? "text-blue-700 hover:text-blue-900 decoration-blue-500/40"
+            : "text-indigo-300 hover:text-indigo-200 decoration-indigo-400/40",
+        )}
+      >
+        {url}
+      </a>,
+    );
+    lastIdx = match.index + url.length;
+  }
+  if (lastIdx < text.length) {
+    parts.push(text.slice(lastIdx));
+  }
+  return parts.length > 0 ? parts : [text];
+}
 
 function renderFormattedBody(body: string, isMine: boolean) {
   const lines = body.split("\n");
@@ -22,7 +69,7 @@ function renderFormattedBody(body: string, isMine: boolean) {
 
     while ((match = regex.exec(content)) !== null) {
       if (match.index > lastIndex) {
-        parts.push(content.slice(lastIndex, match.index));
+        parts.push(...renderTextWithLinks(content.slice(lastIndex, match.index), isMine));
       }
       const token = match[0];
       if (token.startsWith("**") && token.endsWith("**") && token.length >= 4) {
@@ -52,13 +99,13 @@ function renderFormattedBody(body: string, isMine: boolean) {
           </code>,
         );
       } else {
-        parts.push(token);
+        parts.push(...renderTextWithLinks(token, isMine));
       }
       lastIndex = match.index + token.length;
     }
 
     if (lastIndex < content.length) {
-      parts.push(content.slice(lastIndex));
+      parts.push(...renderTextWithLinks(content.slice(lastIndex), isMine));
     }
 
     if (isQuote) {
@@ -434,6 +481,11 @@ export function Transcript({
                       title={formatClock(new Date(msg.createdAt))}
                     >
                       <div className="inline">{renderFormattedBody(msg.body, isMine)}</div>
+                      {(() => {
+                        const previewUrl = extractFirstUrl(msg.body);
+                        if (!previewUrl) return null;
+                        return <LinkPreviewCard url={previewUrl} isMine={isMine} />;
+                      })()}
                       <span className="inline-flex items-center gap-1 float-right mt-1.5 ml-2.5 text-[10px] font-mono select-none">
                         <span className="hidden group-hover:inline text-[10px] text-zinc-500 transition-opacity">
                           {formatClock(new Date(msg.createdAt))}

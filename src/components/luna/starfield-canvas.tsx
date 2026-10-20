@@ -29,35 +29,41 @@ export function StarfieldCanvas({
     if (!ctx) return;
 
     let animationId: number;
-    let width = (canvas.width = canvas.parentElement?.clientWidth ?? window.innerWidth);
-    let height = (canvas.height = canvas.parentElement?.clientHeight ?? window.innerHeight);
+    let cssWidth = canvas.parentElement?.clientWidth ?? window.innerWidth;
+    let cssHeight = canvas.parentElement?.clientHeight ?? window.innerHeight;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
-    const numStars = width < 640 ? 90 : 160;
+    const updateSize = () => {
+      if (!canvas.parentElement) return;
+      cssWidth = canvas.parentElement.clientWidth;
+      cssHeight = canvas.parentElement.clientHeight;
+      canvas.width = Math.floor(cssWidth * dpr);
+      canvas.height = Math.floor(cssHeight * dpr);
+      canvas.style.width = `${cssWidth}px`;
+      canvas.style.height = `${cssHeight}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+
+    updateSize();
+
+    const resizeObserver = new ResizeObserver(() => updateSize());
+    if (canvas.parentElement) {
+      resizeObserver.observe(canvas.parentElement);
+    }
+
+    const numStars = cssWidth < 640 ? 90 : 160;
     const maxDepth = 1000;
-    const stars: Star[] = [];
-
-    function initStar(): Star {
+    const stars: Star[] = Array.from({ length: numStars }, () => {
       const z = Math.random() * maxDepth + 1;
       return {
-        x: (Math.random() - 0.5) * width * 2,
-        y: (Math.random() - 0.5) * height * 2,
+        x: (Math.random() - 0.5) * cssWidth * 2,
+        y: (Math.random() - 0.5) * cssHeight * 2,
         z,
         pz: z,
         size: Math.random() * 1.5 + 0.6,
         brightness: Math.random() * 0.5 + 0.5,
       };
-    }
-
-    for (let i = 0; i < numStars; i++) {
-      stars.push(initStar());
-    }
-
-    const handleResize = () => {
-      if (!canvas || !canvas.parentElement) return;
-      width = canvas.width = canvas.parentElement.clientWidth;
-      height = canvas.height = canvas.parentElement.clientHeight;
-    };
-    window.addEventListener("resize", handleResize);
+    });
 
     const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let currentSpeed = speed;
@@ -72,13 +78,13 @@ export function StarfieldCanvas({
       currentSpeed += (targetSpeed - currentSpeed) * Math.min(0.05 * dt, 1);
 
       ctx.fillStyle = hyperspace ? "rgba(9, 9, 11, 0.25)" : "rgba(9, 9, 11, 0.4)";
-      ctx.fillRect(0, 0, width, height);
+      ctx.fillRect(0, 0, cssWidth, cssHeight);
 
-      const cx = width / 2;
-      const cy = height / 2;
+      const cx = cssWidth / 2;
+      const cy = cssHeight / 2;
 
       for (let i = 0; i < stars.length; i++) {
-        const star = stars[i];
+        const star = stars[i]!;
 
         if (!prefersReducedMotion) {
           star.pz = star.z;
@@ -87,8 +93,8 @@ export function StarfieldCanvas({
           if (star.z <= 0) {
             star.z = maxDepth;
             star.pz = maxDepth;
-            star.x = (Math.random() - 0.5) * width * 2;
-            star.y = (Math.random() - 0.5) * height * 2;
+            star.x = (Math.random() - 0.5) * cssWidth * 2;
+            star.y = (Math.random() - 0.5) * cssHeight * 2;
           }
         }
 
@@ -100,7 +106,7 @@ export function StarfieldCanvas({
         const prevX = star.x * pk + cx;
         const prevY = star.y * pk + cy;
 
-        if (px >= 0 && px <= width && py >= 0 && py <= height) {
+        if (px >= 0 && px <= cssWidth && py >= 0 && py <= cssHeight) {
           const depthRatio = 1 - star.z / maxDepth;
           const alpha = Math.min(
             1,
@@ -134,11 +140,22 @@ export function StarfieldCanvas({
       animationId = requestAnimationFrame(render);
     };
 
+    const handleVisibility = () => {
+      if (document.hidden) {
+        cancelAnimationFrame(animationId);
+      } else {
+        lastTime = performance.now();
+        animationId = requestAnimationFrame(render);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
     animationId = requestAnimationFrame(render);
 
     return () => {
       cancelAnimationFrame(animationId);
-      window.removeEventListener("resize", handleResize);
+      resizeObserver.disconnect();
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [speed, hyperspace]);
 

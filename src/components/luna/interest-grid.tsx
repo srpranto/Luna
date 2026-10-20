@@ -73,12 +73,13 @@ export function InterestGrid({ value, onChange }: InterestInputProps) {
 
   function handleToggleTag(tag: string) {
     triggerHaptic("selection");
-    if (value.includes(tag)) {
-      handleRemove(tag);
-    } else {
-      if (value.length < 10) {
-        onChange([...value, tag]);
-      }
+    const set = new Set(value);
+    if (set.has(tag)) {
+      set.delete(tag);
+      onChange([...set]);
+    } else if (set.size < 10) {
+      set.add(tag);
+      onChange([...set]);
     }
   }
 

@@ -14,27 +14,40 @@ interface BeforeInstallPromptEvent extends Event {
 interface PwaContextValue {
   showInstallButton: boolean;
   isStandalone: boolean;
+  canInstall: boolean;
   installApp: () => Promise<boolean>;
+  dismissBanner: () => void;
 }
 
 const PwaContext = createContext<PwaContextValue>({
   showInstallButton: false,
   isStandalone: false,
+  canInstall: false,
   installApp: async () => false,
+  dismissBanner: () => {},
 });
 
 export function PwaProvider({ children }: { children: React.ReactNode }) {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isStandalone, setIsStandalone] = useState(false);
-  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [bannerDismissed, setBannerDismissed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      const stored = localStorage.getItem("luna.pwa_dismissed");
+      if (!stored) return false;
+      const ts = Number(stored);
+      return Date.now() - ts < 86400000;
+    } catch {
+      return false;
+    }
+  });
 
-  useEffect(() => {
-    if (!deferredPrompt) return;
-    const timer = window.setTimeout(() => {
-      setBannerDismissed(true);
-    }, 30000);
-    return () => window.clearTimeout(timer);
-  }, [deferredPrompt]);
+  const dismissBanner = useCallback(() => {
+    setBannerDismissed(true);
+    try {
+      localStorage.setItem("luna.pwa_dismissed", Date.now().toString());
+    } catch {}
+  }, []);
 
   useEffect(() => {
     const checkStandalone = () => {
@@ -117,7 +130,9 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
       value={{
         showInstallButton: Boolean(deferredPrompt) && !isStandalone && !bannerDismissed,
         isStandalone,
+        canInstall: Boolean(deferredPrompt) && !isStandalone,
         installApp,
+        dismissBanner,
       }}
     >
       {children}

@@ -4,6 +4,20 @@ const CHAT_CACHE_PREFIX = "luna.chat";
 const HISTORY_INDEX_KEY = "luna.history.sessions";
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
+const bufferToHex = (buf: ArrayBuffer | Uint8Array): string =>
+  Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0")).join("");
+
+const hexToBytes = (hex: string): Uint8Array => {
+  const matches = hex.match(/.{1,2}/g);
+  if (!matches) return new Uint8Array(0);
+  const buffer = new ArrayBuffer(matches.length);
+  const view = new Uint8Array(buffer);
+  for (let i = 0; i < matches.length; i++) {
+    view[i] = parseInt(matches[i]!, 16);
+  }
+  return view;
+};
+
 interface CachedEnvelope {
   messages: ChatMessage[];
   savedAt: number;
@@ -23,10 +37,7 @@ function loadCachedMessages(sessionId: string): ChatMessage[] {
       }
       return env.messages;
     }
-    if (Array.isArray(parsed)) {
-      return parsed as ChatMessage[];
-    }
-    return [];
+    return Array.isArray(parsed) ? (parsed as ChatMessage[]) : [];
   } catch {
     return [];
   }
@@ -53,19 +64,17 @@ export function updateCachedMessage(sessionId: string, messageId: string, newBod
 
 export function deleteCachedMessage(sessionId: string, messageId: string): void {
   const msgs = loadCachedMessages(sessionId);
-  const filtered = msgs.filter((m) => m.id !== messageId);
-  saveCachedMessages(sessionId, filtered);
+  saveCachedMessages(
+    sessionId,
+    msgs.filter((m) => m.id !== messageId),
+  );
 }
-
 
 export function saveHistorySession(session: HistorySession): void {
   if (typeof window === "undefined") return;
   try {
     const existing = loadChatHistory();
-    const updated = [session, ...existing.filter((s) => s.sessionId !== session.sessionId)].slice(
-      0,
-      50,
-    );
+    const updated = [session, ...existing.filter((s) => s.sessionId !== session.sessionId)].slice(0, 50);
     localStorage.setItem(HISTORY_INDEX_KEY, JSON.stringify(updated));
   } catch {}
 }
@@ -75,20 +84,16 @@ export function loadChatHistory(): HistorySession[] {
   try {
     const raw = localStorage.getItem(HISTORY_INDEX_KEY);
     if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
+    const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     const now = Date.now();
-    const valid: HistorySession[] = [];
-    for (const item of parsed) {
+    const valid = parsed.filter((item): item is HistorySession => {
       if (item && typeof item === "object" && "sessionId" in item && "savedAt" in item) {
-        const h = item as HistorySession;
-        if (now - h.savedAt <= CACHE_TTL_MS) {
-          valid.push(h);
-        } else {
-          localStorage.removeItem(`${CHAT_CACHE_PREFIX}.${h.sessionId}`);
-        }
+        if (now - item.savedAt <= CACHE_TTL_MS) return true;
+        localStorage.removeItem(`${CHAT_CACHE_PREFIX}.${item.sessionId}`);
       }
-    }
+      return false;
+    });
     if (valid.length !== parsed.length) {
       localStorage.setItem(HISTORY_INDEX_KEY, JSON.stringify(valid));
     }
@@ -102,8 +107,7 @@ export function deleteHistorySession(sessionId: string): void {
   if (typeof window === "undefined") return;
   try {
     const existing = loadChatHistory();
-    const filtered = existing.filter((s) => s.sessionId !== sessionId);
-    localStorage.setItem(HISTORY_INDEX_KEY, JSON.stringify(filtered));
+    localStorage.setItem(HISTORY_INDEX_KEY, JSON.stringify(existing.filter((s) => s.sessionId !== sessionId)));
     localStorage.removeItem(`${CHAT_CACHE_PREFIX}.${sessionId}`);
   } catch {}
 }
@@ -111,8 +115,7 @@ export function deleteHistorySession(sessionId: string): void {
 export function clearAllChatHistory(): void {
   if (typeof window === "undefined") return;
   try {
-    const existing = loadChatHistory();
-    for (const s of existing) {
+    for (const s of loadChatHistory()) {
       localStorage.removeItem(`${CHAT_CACHE_PREFIX}.${s.sessionId}`);
     }
     localStorage.removeItem(HISTORY_INDEX_KEY);
@@ -127,21 +130,16 @@ export function sweepExpiredCaches(): void {
     const toRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && key.startsWith(`${CHAT_CACHE_PREFIX}.`)) {
-        const raw = localStorage.getItem(key);
-        if (raw) {
-          try {
-            const parsed = JSON.parse(raw) as CachedEnvelope;
-            if (parsed.savedAt && now - parsed.savedAt > CACHE_TTL_MS) {
-              toRemove.push(key);
-            }
-          } catch {}
-        }
+      if (key?.startsWith(`${CHAT_CACHE_PREFIX}.`)) {
+        try {
+          const parsed = JSON.parse(localStorage.getItem(key) ?? "");
+          if (parsed?.savedAt && now - parsed.savedAt > CACHE_TTL_MS) {
+            toRemove.push(key);
+          }
+        } catch {}
       }
     }
-    for (const k of toRemove) {
-      localStorage.removeItem(k);
-    }
+    for (const k of toRemove) localStorage.removeItem(k);
   } catch {}
 }
 
@@ -216,7 +214,7 @@ export async function exportDevicePublicKeyHex(deviceId: string): Promise<string
 
   try {
     const raw = await crypto.subtle.exportKey("raw", keyPair.publicKey);
-    return Array.from(new Uint8Array(raw), (b) => b.toString(16).padStart(2, "0")).join("");
+    return bufferToHex(raw);
   } catch {
     return null;
   }
@@ -232,12 +230,11 @@ export async function establishSharedKey(
   if (!keyPair) return null;
 
   try {
-    const hexMatches = peerPublicKeyHex.match(/.{1,2}/g);
-    if (!hexMatches) return null;
-    const bytes = new Uint8Array(hexMatches.map((byte) => parseInt(byte, 16)));
+    const bytes = hexToBytes(peerPublicKeyHex);
+    if (bytes.length === 0) return null;
     const peerKey = await crypto.subtle.importKey(
       "raw",
-      bytes,
+      bytes as unknown as BufferSource,
       { name: "ECDH", namedCurve: "P-256" },
       false,
       [],
@@ -286,9 +283,7 @@ async function deriveFallbackSessionKey(sessionId: string): Promise<CryptoKey> {
 }
 
 export async function encryptText(text: string, sessionId: string): Promise<string> {
-  if (typeof window === "undefined" || !crypto?.subtle) {
-    return text;
-  }
+  if (typeof window === "undefined" || !crypto?.subtle) return text;
   try {
     const entry = ecdhStore.get(sessionId);
     const key = entry?.sharedKey ?? (await deriveFallbackSessionKey(sessionId));
@@ -297,12 +292,9 @@ export async function encryptText(text: string, sessionId: string): Promise<stri
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const encoded = new TextEncoder().encode(text);
     const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encoded);
-    const ivHex = Array.from(iv)
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-    const dataHex = Array.from(new Uint8Array(encrypted))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
+
+    const ivHex = bufferToHex(iv);
+    const dataHex = bufferToHex(encrypted);
 
     return isEcdh ? `e2e:v2:${ivHex}:${dataHex}` : `e2e:${ivHex}:${dataHex}`;
   } catch {
@@ -329,18 +321,18 @@ export async function decryptText(payload: string, sessionId: string): Promise<s
       return payload;
     }
 
-    const ivMatches = ivHex.match(/.{1,2}/g);
-    const dataMatches = dataHex.match(/.{1,2}/g);
-    if (!ivMatches || !dataMatches) {
-      return payload;
-    }
-    const iv = new Uint8Array(ivMatches.map((byte) => parseInt(byte, 16)));
-    const encrypted = new Uint8Array(dataMatches.map((byte) => parseInt(byte, 16)));
+    const iv = hexToBytes(ivHex);
+    const encrypted = hexToBytes(dataHex);
+    if (iv.length === 0 || encrypted.length === 0) return payload;
 
     const entry = ecdhStore.get(sessionId);
     const key = entry?.sharedKey ?? (await deriveFallbackSessionKey(sessionId));
 
-    const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, encrypted);
+    const decrypted = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: iv as unknown as BufferSource },
+      key,
+      encrypted as unknown as BufferSource,
+    );
     return new TextDecoder().decode(decrypted);
   } catch {
     return payload;

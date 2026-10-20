@@ -67,8 +67,7 @@ export function Composer({
     }
   }, [replyingTo]);
 
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function doSubmit() {
     if (!disabled && value.trim()) {
       triggerHaptic("medium");
       clearTypingTimer();
@@ -80,6 +79,11 @@ export function Composer({
     }
   }
 
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    doSubmit();
+  }
+
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Escape" && replyingTo) {
       event.preventDefault();
@@ -88,15 +92,7 @@ export function Composer({
     }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      if (!disabled && value.trim()) {
-        triggerHaptic("medium");
-        clearTypingTimer();
-        onTyping?.(false);
-        onSend();
-        if (textareaRef.current) {
-          textareaRef.current.style.height = "40px";
-        }
-      }
+      doSubmit();
     }
   }
 

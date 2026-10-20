@@ -17,8 +17,6 @@ import {
   reportPresence,
   updateCallsign,
   deleteStation,
-  recordMSpamSession,
-  reportViolationRpc,
   listVoidLetters,
   castVoidLetter,
   starVoidLetter,
@@ -41,9 +39,6 @@ interface RequestBody {
   isAway?: boolean;
   callsign?: string;
   publicKey?: string;
-  peerId?: string;
-  violation?: string;
-  sample?: string;
   text?: string;
   letterId?: string;
 }
@@ -61,31 +56,108 @@ function checkRateLimit(key: string, limit = 180, windowMs = 60000): boolean {
   if (!bucket || now > bucket.resetAt) {
     rateLimitMap.set(key, { count: 1, resetAt: now + windowMs });
     if (rateLimitMap.size > 10000) {
-      for (const [k, v] of rateLimitMap.entries()) {
+      for (const [k, v] of rateLimitMap) {
         if (now > v.resetAt) rateLimitMap.delete(k);
       }
     }
     return true;
   }
-  if (bucket.count >= limit) {
-    return false;
-  }
+  if (bucket.count >= limit) return false;
   bucket.count += 1;
   return true;
 }
 
 function extractClientIp(req: Request): string {
   const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) {
-    const first = forwarded.split(",")[0]?.trim();
-    if (first) return first;
-  }
-  const realIp = req.headers.get("x-real-ip")?.trim();
-  if (realIp) return realIp;
-  const cfConnectingIp = req.headers.get("cf-connecting-ip")?.trim();
-  if (cfConnectingIp) return cfConnectingIp;
-  return "127.0.0.1";
+  return (
+    forwarded?.split(",")[0]?.trim() ||
+    req.headers.get("x-real-ip")?.trim() ||
+    req.headers.get("cf-connecting-ip")?.trim() ||
+    "127.0.0.1"
+  );
 }
+
+function requireFields<T extends RequestBody>(payload: T, ...fields: (keyof T)[]): void {
+  for (const field of fields) {
+    if (payload[field] === undefined || payload[field] === null || payload[field] === "") {
+      throw new Error(`Missing ${String(field)}.`);
+    }
+  }
+}
+
+type ActionHandler = (payload: RequestBody, clientIp: string) => Promise<unknown>;
+
+const actionHandlers: Record<string, ActionHandler> = {
+  registerStation: (p, ip) => registerStation({ deviceId: p.deviceId!, clientIp: ip, publicKey: p.publicKey }),
+  getDesk: (p, ip) => getDesk({ deviceId: p.deviceId!, clientIp: ip, publicKey: p.publicKey }),
+  joinQueue: (p, ip) =>
+    joinQueue({
+      deviceId: p.deviceId!,
+      interests: p.interests ?? [],
+      blockedIds: p.blockedIds ?? [],
+      clientIp: ip,
+      publicKey: p.publicKey,
+    }),
+  leaveQueue: (p) => leaveQueue({ deviceId: p.deviceId! }),
+  heartbeatQueue: (p, ip) =>
+    heartbeatQueue({ deviceId: p.deviceId!, blockedIds: p.blockedIds ?? [], clientIp: ip }),
+  reportTyping: (p) => {
+    requireFields(p, "sessionId");
+    return reportTyping({ deviceId: p.deviceId!, sessionId: p.sessionId!, isTyping: Boolean(p.isTyping) });
+  },
+  openFriendLine: (p) => {
+    requireFields(p, "friendId");
+    return openFriendLine({ deviceId: p.deviceId!, friendId: p.friendId! });
+  },
+  leaveSession: (p) => {
+    requireFields(p, "sessionId");
+    return leaveSession({ deviceId: p.deviceId!, sessionId: p.sessionId! });
+  },
+  listMessages: (p) => {
+    requireFields(p, "sessionId");
+    return listMessages({ deviceId: p.deviceId!, sessionId: p.sessionId! });
+  },
+  sendMessage: (p) => {
+    if (!p.sessionId || typeof p.body !== "string") throw new Error("Missing sessionId or message body.");
+    return sendMessage({ deviceId: p.deviceId!, sessionId: p.sessionId, body: p.body });
+  },
+  editMessage: (p) => {
+    if (!p.sessionId || !p.messageId || typeof p.body !== "string") {
+      throw new Error("Missing sessionId, messageId, or message body.");
+    }
+    return editMessage({ deviceId: p.deviceId!, sessionId: p.sessionId, messageId: p.messageId, body: p.body });
+  },
+  deleteMessage: (p) => {
+    requireFields(p, "sessionId", "messageId");
+    return deleteMessage({ deviceId: p.deviceId!, sessionId: p.sessionId!, messageId: p.messageId! });
+  },
+  reportPresence: (p) =>
+    reportPresence({ deviceId: p.deviceId!, sessionId: p.sessionId, isAway: Boolean(p.isAway) }),
+  offerQsl: (p) => {
+    requireFields(p, "sessionId");
+    return offerQsl({ deviceId: p.deviceId!, sessionId: p.sessionId! });
+  },
+  respondQsl: (p) => {
+    if (!p.requestId || typeof p.accept !== "boolean") throw new Error("Missing requestId or accept decision.");
+    return respondQsl({ deviceId: p.deviceId!, requestId: p.requestId, accept: p.accept });
+  },
+  updateCallsign: (p) => {
+    if (typeof p.callsign !== "string") throw new Error("Missing callsign.");
+    return updateCallsign({ deviceId: p.deviceId!, callsign: p.callsign });
+  },
+  deleteStation: (p) => deleteStation({ deviceId: p.deviceId! }),
+  listVoidLetters: (p) => listVoidLetters(p.deviceId!),
+  castVoidLetter: (p, ip) => {
+    requireFields(p, "text");
+    return castVoidLetter({ deviceId: p.deviceId!, text: p.text!, ip });
+  },
+  starVoidLetter: (p) => {
+    requireFields(p, "letterId");
+    return starVoidLetter({ deviceId: p.deviceId!, letterId: p.letterId! });
+  },
+};
+
+const NO_CACHE_HEADERS = { "Cache-Control": "no-store" } as const;
 
 export async function POST(req: Request) {
   try {
@@ -93,7 +165,7 @@ export async function POST(req: Request) {
     if (!checkRateLimit(clientIp)) {
       return NextResponse.json(
         { ok: false, error: "Too many requests. Please slow down." },
-        { status: 429, headers: { "Cache-Control": "no-store", "Retry-After": "5" } },
+        { status: 429, headers: { ...NO_CACHE_HEADERS, "Retry-After": "5" } },
       );
     }
 
@@ -101,244 +173,30 @@ export async function POST(req: Request) {
     const { action, deviceId } = payload;
 
     if (!deviceId) {
-      return NextResponse.json(
-        { ok: false, error: "Missing deviceId." },
-        { status: 400, headers: { "Cache-Control": "no-store" } },
-      );
+      return NextResponse.json({ ok: false, error: "Missing deviceId." }, { status: 400, headers: NO_CACHE_HEADERS });
     }
 
     if (payload.body && payload.body.length > 10000) {
-      return NextResponse.json(
-        { ok: false, error: "Message too long." },
-        { status: 400, headers: { "Cache-Control": "no-store" } },
-      );
+      return NextResponse.json({ ok: false, error: "Message too long." }, { status: 400, headers: NO_CACHE_HEADERS });
     }
 
     if (payload.callsign && payload.callsign.length > 64) {
-      return NextResponse.json(
-        { ok: false, error: "Callsign too long." },
-        { status: 400, headers: { "Cache-Control": "no-store" } },
-      );
+      return NextResponse.json({ ok: false, error: "Callsign too long." }, { status: 400, headers: NO_CACHE_HEADERS });
     }
 
     if (payload.text && payload.text.length > 5000) {
-      return NextResponse.json(
-        { ok: false, error: "Text too long." },
-        { status: 400, headers: { "Cache-Control": "no-store" } },
-      );
+      return NextResponse.json({ ok: false, error: "Text too long." }, { status: 400, headers: NO_CACHE_HEADERS });
     }
 
-    let data: unknown;
-
-    switch (action) {
-      case "registerStation":
-        data = await registerStation({ deviceId, clientIp, publicKey: payload.publicKey });
-        break;
-
-      case "getDesk":
-        data = await getDesk({ deviceId, clientIp, publicKey: payload.publicKey });
-        break;
-
-      case "joinQueue":
-        data = await joinQueue({
-          deviceId,
-          interests: payload.interests ?? [],
-          blockedIds: payload.blockedIds ?? [],
-          clientIp,
-          publicKey: payload.publicKey,
-        });
-        break;
-
-      case "leaveQueue":
-        data = await leaveQueue({ deviceId });
-        break;
-
-      case "heartbeatQueue":
-        data = await heartbeatQueue({
-          deviceId,
-          blockedIds: payload.blockedIds ?? [],
-          clientIp,
-        });
-        break;
-
-      case "reportTyping":
-        if (!payload.sessionId) {
-          throw new Error("Missing sessionId.");
-        }
-        data = await reportTyping({
-          deviceId,
-          sessionId: payload.sessionId,
-          isTyping: Boolean(payload.isTyping),
-        });
-        break;
-
-      case "openFriendLine":
-        if (!payload.friendId) {
-          throw new Error("Missing friendId.");
-        }
-        data = await openFriendLine({
-          deviceId,
-          friendId: payload.friendId,
-        });
-        break;
-
-      case "leaveSession":
-        if (!payload.sessionId) {
-          throw new Error("Missing sessionId.");
-        }
-        data = await leaveSession({
-          deviceId,
-          sessionId: payload.sessionId,
-        });
-        break;
-
-      case "listMessages":
-        if (!payload.sessionId) {
-          throw new Error("Missing sessionId.");
-        }
-        data = await listMessages({
-          deviceId,
-          sessionId: payload.sessionId,
-        });
-        break;
-
-      case "sendMessage":
-        if (!payload.sessionId || typeof payload.body !== "string") {
-          throw new Error("Missing sessionId or message body.");
-        }
-        data = await sendMessage({
-          deviceId,
-          sessionId: payload.sessionId,
-          body: payload.body,
-        });
-        break;
-
-      case "editMessage":
-        if (!payload.sessionId || !payload.messageId || typeof payload.body !== "string") {
-          throw new Error("Missing sessionId, messageId, or message body.");
-        }
-        data = await editMessage({
-          deviceId,
-          sessionId: payload.sessionId,
-          messageId: payload.messageId,
-          body: payload.body,
-        });
-        break;
-
-      case "deleteMessage":
-        if (!payload.sessionId || !payload.messageId) {
-          throw new Error("Missing sessionId or messageId.");
-        }
-        data = await deleteMessage({
-          deviceId,
-          sessionId: payload.sessionId,
-          messageId: payload.messageId,
-        });
-        break;
-
-      case "reportPresence":
-        data = await reportPresence({
-          deviceId,
-          sessionId: payload.sessionId,
-          isAway: Boolean(payload.isAway),
-        });
-        break;
-
-      case "offerQsl":
-        if (!payload.sessionId) {
-          throw new Error("Missing sessionId.");
-        }
-        data = await offerQsl({
-          deviceId,
-          sessionId: payload.sessionId,
-        });
-        break;
-
-      case "respondQsl":
-        if (!payload.requestId || typeof payload.accept !== "boolean") {
-          throw new Error("Missing requestId or accept decision.");
-        }
-        data = await respondQsl({
-          deviceId,
-          requestId: payload.requestId,
-          accept: payload.accept,
-        });
-        break;
-
-      case "updateCallsign":
-        if (typeof payload.callsign !== "string") {
-          throw new Error("Missing callsign.");
-        }
-        data = await updateCallsign({
-          deviceId,
-          callsign: payload.callsign,
-        });
-        break;
-
-      case "deleteStation":
-        data = await deleteStation({ deviceId });
-        break;
-
-      case "recordMSpam":
-        if (!payload.sessionId) {
-          throw new Error("Missing sessionId.");
-        }
-        data = await recordMSpamSession(deviceId, clientIp, payload.sessionId);
-        break;
-
-      case "reportViolation":
-        if (!payload.violation) {
-          throw new Error("Missing violation.");
-        }
-        data = await reportViolationRpc({
-          deviceId,
-          peerId: payload.peerId,
-          sessionId: payload.sessionId,
-          violation: payload.violation,
-          sample: payload.sample,
-          clientIp,
-        });
-        break;
-
-      case "listVoidLetters":
-        data = await listVoidLetters(deviceId);
-        break;
-
-      case "castVoidLetter":
-        if (!payload.text) {
-          throw new Error("Missing letter text.");
-        }
-        data = await castVoidLetter({
-          deviceId,
-          text: payload.text,
-          ip: clientIp,
-        });
-        break;
-
-      case "starVoidLetter":
-        if (!payload.letterId) {
-          throw new Error("Missing letterId.");
-        }
-        data = await starVoidLetter({
-          deviceId,
-          letterId: payload.letterId,
-        });
-        break;
-
-      default:
-        return NextResponse.json(
-          { ok: false, error: "Unknown action." },
-          { status: 400, headers: { "Cache-Control": "no-store" } },
-        );
+    const handler = action ? actionHandlers[action] : undefined;
+    if (!handler) {
+      return NextResponse.json({ ok: false, error: "Unknown action." }, { status: 400, headers: NO_CACHE_HEADERS });
     }
 
-    return NextResponse.json({ ok: true, data }, { headers: { "Cache-Control": "no-store" } });
+    const data = await handler(payload, clientIp);
+    return NextResponse.json({ ok: true, data }, { headers: NO_CACHE_HEADERS });
   } catch (error) {
-    const message =
-      error instanceof Error && error.message ? error.message : "Internal server error.";
-    return NextResponse.json(
-      { ok: false, error: message },
-      { status: 400, headers: { "Cache-Control": "no-store" } },
-    );
+    const message = error instanceof Error && error.message ? error.message : "Internal server error.";
+    return NextResponse.json({ ok: false, error: message }, { status: 400, headers: NO_CACHE_HEADERS });
   }
 }

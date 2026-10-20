@@ -12,35 +12,21 @@ import { BootView } from "@/components/luna/boot-view";
 import { ListeningView } from "@/components/luna/listening-view";
 import { LineView } from "@/components/luna/line-view";
 import { NetworkBanner } from "@/components/luna/network-banner";
-import type { FloatingItem } from "@/components/luna/floating-reactions";
+import { useLunaPresence } from "@/hooks/luna/use-luna-presence";
+import { useLunaMessages } from "@/hooks/luna/use-luna-messages";
+import { useLunaStream } from "@/hooks/luna/use-luna-stream";
+import { sanitizeInterests } from "@/lib/luna/constants";
+import { deskName, getCachedCustomName, getOrCreateDeviceId } from "@/lib/luna/identity";
 import {
-  IDLE_AWAY_THRESHOLD_MS,
-  sanitizeInterests,
-} from "@/lib/luna/constants";
-import {
-  deskName,
-  getCachedCustomName,
-  getOrCreateDeviceId,
-} from "@/lib/luna/identity";
-import {
-  decryptText,
-  encryptText,
-  saveCachedMessages,
-  updateCachedMessage,
-  deleteCachedMessage,
   sweepExpiredCaches,
   exportDevicePublicKeyHex,
   establishSharedKey,
-  saveHistorySession,
   loadChatHistory,
   deleteHistorySession,
   clearAllChatHistory,
   destroySessionKey,
 } from "@/lib/luna/crypto";
 import {
-  editMessage,
-  deleteMessage,
-  reportPresence,
   getDesk,
   heartbeatQueue,
   joinQueue,
@@ -52,69 +38,43 @@ import {
   registerStation,
   reportTyping,
   respondQsl,
-  sendMessage,
   updateCallsign,
-  subscribeDeskStream,
 } from "@/lib/luna/client";
 import {
   isSoundEnabled,
   playMatchChime,
-  playMessagePop,
-  playMessageReceived,
   playLeaveTone,
   setSoundEnabled,
 } from "@/lib/luna/sound";
-import type {
-  ChatMessage,
-  DeskView,
-  MessagesPack,
-  SessionView,
-  HistorySession,
-} from "@/lib/luna/types";
+import type { DeskView, MessagesPack, SessionView, HistorySession } from "@/lib/luna/types";
 
 const INTEREST_KEY = "luna.interests";
 const BLOCKED_KEY = "luna.blocked";
-const REACTION_REGEX = /^\[reaction:(🌙|✨)\]$/;
+const POPULAR_MIDNIGHT_TOPICS = ["quiet thoughts", "sleeplessness", "nostalgia", "music", "life questions"];
 
 function readSavedInterests(): string[] {
-  if (typeof window === "undefined") {
-    return [];
-  }
+  if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(`${INTEREST_KEY}.${deskName()}`);
-    if (!raw) {
-      return [];
-    }
-    const parsed = JSON.parse(raw) as unknown;
-    return sanitizeInterests(parsed);
+    return raw ? sanitizeInterests(JSON.parse(raw)) : [];
   } catch {
     return [];
   }
 }
 
 function readBlockedStations(): string[] {
-  if (typeof window === "undefined") {
-    return [];
-  }
+  if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(BLOCKED_KEY);
-    if (!raw) {
-      return [];
-    }
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-    return parsed.filter((item): item is string => typeof item === "string");
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
   } catch {
     return [];
   }
 }
 
 function saveBlockedStation(peerId: string): void {
-  if (typeof window === "undefined") {
-    return;
-  }
+  if (typeof window === "undefined") return;
   const current = readBlockedStations();
   if (!current.includes(peerId)) {
     localStorage.setItem(BLOCKED_KEY, JSON.stringify([...current, peerId]));
@@ -135,11 +95,7 @@ function errorMessage(error: unknown): string {
     ) {
       return "";
     }
-    if (
-      msg.includes("Failed to fetch") ||
-      msg.includes("NetworkError") ||
-      msg.includes("Load failed")
-    ) {
+    if (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("Load failed")) {
       return "No internet connection. Waiting for network...";
     }
     return msg;
@@ -147,22 +103,14 @@ function errorMessage(error: unknown): string {
   return "";
 }
 
-function subscribeNetwork(callback: () => void) {
-  window.addEventListener("online", callback);
-  window.addEventListener("offline", callback);
+const subscribeNetwork = (cb: () => void) => {
+  window.addEventListener("online", cb);
+  window.addEventListener("offline", cb);
   return () => {
-    window.removeEventListener("online", callback);
-    window.removeEventListener("offline", callback);
+    window.removeEventListener("online", cb);
+    window.removeEventListener("offline", cb);
   };
-}
-
-function getNetworkSnapshot(): boolean {
-  return navigator.onLine;
-}
-
-function getNetworkServerSnapshot(): boolean {
-  return true;
-}
+};
 
 let lastTypingReport = 0;
 
@@ -173,120 +121,99 @@ export default function Home() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [note, setNote] = useState<string | null>(null);
-
-  const notifyError = useCallback((err: unknown) => {
-    const msg = errorMessage(err);
-    if (msg) {
-      setNote(msg);
-    }
-  }, []);
-
   const [desk, setDesk] = useState<DeskView | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionView, setSessionView] = useState<SessionView | null>(null);
   const [busy, setBusy] = useState(false);
   const [soundActive, setSoundActive] = useState(true);
   const [wireCutPrimed, setWireCutPrimed] = useState(false);
   const [voidOpen, setVoidOpen] = useState(false);
-  const [floatingReactions, setFloatingReactions] = useState<FloatingItem[]>([]);
-  const [isAway, setIsAway] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historySessions, setHistorySessions] = useState<HistorySession[]>([]);
-  const [replyingTo, setReplyingTo] = useState<{ id: string; fromCallsign: string; body: string } | null>(null);
-  const [resyncTick, setResyncTick] = useState(0);
-  const isOnline = useSyncExternalStore(
-    subscribeNetwork,
-    getNetworkSnapshot,
-    getNetworkServerSnapshot,
-  );
+  const [, setResyncTick] = useState(0);
+
+  const isOnline = useSyncExternalStore(subscribeNetwork, () => navigator.onLine, () => true);
   const prevOnlineRef = useRef(isOnline);
 
+  const activeSessionRef = useRef<SessionView | null>(null);
+  const leftSessionIdsRef = useRef<Set<string>>(new Set());
+  const lastMatchChimeRef = useRef<string | null>(null);
+  const peerTypingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const notifyError = useCallback((err: unknown) => {
+    const msg = errorMessage(err);
+    if (msg) setNote(msg);
+  }, []);
+
+  const triggerResync = useCallback(() => setResyncTick((n) => n + 1), []);
+
+  const session = desk?.activeSession ?? null;
+  const currentSession = sessionView && (!session || session.id === sessionView.id) ? sessionView : session;
+  const listening = Boolean(desk?.queued) && !currentSession;
+
   useEffect(() => {
-    if (!prevOnlineRef.current && isOnline) {
-      if (deviceId) {
-        void getDesk({ deviceId }).then(setDesk).catch(() => {});
-      }
+    activeSessionRef.current = currentSession;
+  }, [currentSession]);
+
+  const { isAway, setIsAway, resetIdle } = useLunaPresence({
+    deviceId,
+    currentSession,
+    onResync: triggerResync,
+  });
+
+  const markSessionClosed = useCallback((sessionId: string | undefined) => {
+    setSessionView((prev) => {
+      const base = prev?.id === sessionId ? prev : activeSessionRef.current?.id === sessionId ? activeSessionRef.current : null;
+      return base ? { ...base, closed: true, peerPresence: "disconnected", peerTyping: false } : prev;
+    });
+  }, []);
+
+  const {
+    messages,
+    setMessages,
+    replyingTo,
+    setReplyingTo,
+    floatingReactions,
+    handleReactionFinished,
+    handleSendMessage: runSendMessage,
+    handleEditMessage: runEditMessage,
+    handleDeleteMessage: runDeleteMessage,
+    handleSendReaction: runSendReaction,
+    decryptPack,
+    mergeAndStoreMessages,
+    clearUnread,
+  } = useLunaMessages({
+    deviceId,
+    onActivity: resetIdle,
+    onHistoryUpdated: setHistorySessions,
+    onSessionEndedNotice: () => markSessionClosed(currentSession?.id),
+  });
+
+  // Re-fetch desk when returning online
+  useEffect(() => {
+    if (!prevOnlineRef.current && isOnline && deviceId) {
+      void getDesk({ deviceId }).then(setDesk).catch(() => {});
     }
     prevOnlineRef.current = isOnline;
   }, [isOnline, deviceId]);
 
-  const seenReactionsRef = useRef<Set<string>>(new Set());
-  const unreadRef = useRef(0);
-  const lastActivityRef = useRef<number>(0);
-  const isAwayRef = useRef(false);
+  // Window title notification reset
   useEffect(() => {
-    isAwayRef.current = isAway;
-  }, [isAway]);
-  const peerTypingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastMessageAtRef = useRef<number>(0);
-  const sendQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const activeSessionRef = useRef<SessionView | null>(null);
-  const leftSessionIdsRef = useRef<Set<string>>(new Set());
-  const lastMatchChimeRef = useRef<string | null>(null);
-
-  const isEventForActiveSession = useCallback((sessionId: string | undefined) => {
-    if (!sessionId || leftSessionIdsRef.current.has(sessionId)) {
-      return false;
-    }
-    return activeSessionRef.current?.id === sessionId;
-  }, []);
-
-  const markActiveSessionClosed = useCallback((sessionId: string | undefined) => {
-    setSessionView((prev) => {
-      const base =
-        prev && prev.id === sessionId
-          ? prev
-          : activeSessionRef.current?.id === sessionId
-            ? activeSessionRef.current
-            : null;
-      if (!base) {
-        return prev;
-      }
-      return { ...base, closed: true, peerPresence: "disconnected", peerTyping: false };
-    });
-  }, []);
-
-  const notifyUnread = useCallback((fromCallsign: string, text: string) => {
-    if (typeof document !== "undefined" && document.hidden) {
-      unreadRef.current += 1;
-      const clean = text
-        .replace(/[\r\n]+/g, " ")
-        .trim()
-        .slice(0, 32);
-      document.title = `(${unreadRef.current}) Luna — ${fromCallsign}: ${clean}`;
-    }
-  }, []);
-
-  useEffect(() => {
-    function onVisibilityChange() {
-      if (!document.hidden) {
-        unreadRef.current = 0;
-        document.title = "Luna — Late-Night Anonymous Chat";
-      }
-    }
+    const onVisibilityChange = () => {
+      if (!document.hidden) clearUnread();
+    };
     document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("focus", onVisibilityChange);
     return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("focus", onVisibilityChange);
     };
-  }, []);
+  }, [clearUnread]);
 
-  function triggerFloatingReaction(emoji: string) {
-    const id = crypto.randomUUID();
-    const leftPercent = 20 + Math.random() * 60;
-    setFloatingReactions((prev) => [...prev, { id, emoji, leftPercent }]);
-  }
-
-  function handleReactionFinished(id: string) {
-    setFloatingReactions((prev) => prev.filter((item) => item.id !== id));
-  }
-
+  // Initial device hydration & cache sweep
   useEffect(() => {
     const id = getOrCreateDeviceId();
     const saved = readSavedInterests();
     const initialSound = isSoundEnabled();
-    lastActivityRef.current = Date.now();
 
     const t = window.setTimeout(() => {
       setDeviceId(id);
@@ -296,290 +223,148 @@ export default function Home() {
       setHistorySessions(loadChatHistory());
     }, 0);
 
-    const sweepTimer = window.setInterval(() => {
-      sweepExpiredCaches();
-      setHistorySessions(loadChatHistory());
-    }, 3600000);
-
+    const sweepTimer = window.setInterval(sweepExpiredCaches, 3600000);
     return () => {
       window.clearTimeout(t);
       window.clearInterval(sweepTimer);
     };
   }, []);
 
-  function handleToggleSound() {
-    const next = !soundActive;
-    setSoundActive(next);
-    setSoundEnabled(next);
-  }
-
+  // Save interests changes
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
+    if (typeof window !== "undefined") {
+      localStorage.setItem(`${INTEREST_KEY}.${deskName()}`, JSON.stringify(interests));
     }
-    localStorage.setItem(`${INTEREST_KEY}.${deskName()}`, JSON.stringify(interests));
   }, [interests]);
 
+  // Register station and sync custom name
   useEffect(() => {
-    if (!deviceId) {
-      return;
-    }
+    if (!deviceId) return;
     let cancelled = false;
 
     exportDevicePublicKeyHex(deviceId)
       .then((pubKey) => registerStation({ deviceId, publicKey: pubKey ?? undefined }))
       .then(async (data) => {
-        if (!cancelled) {
-          const cachedName = getCachedCustomName();
-          if (cachedName && cachedName !== data.station.callsign) {
-            try {
-              const updated = await updateCallsign({ deviceId, callsign: cachedName });
-              if (!cancelled) {
-                setDesk(updated);
-                return;
-              }
-            } catch {}
-          }
-          setDesk(data);
+        if (cancelled) return;
+        const cachedName = getCachedCustomName();
+        if (cachedName && cachedName !== data.station.callsign) {
+          try {
+            const updated = await updateCallsign({ deviceId, callsign: cachedName });
+            if (!cancelled) {
+              setDesk(updated);
+              return;
+            }
+          } catch {}
         }
+        setDesk(data);
       })
       .catch((err) => {
-        if (!cancelled) {
-          notifyError(err);
-        }
+        if (!cancelled) notifyError(err);
       });
 
-    const unsubscribeStream = subscribeDeskStream(deviceId, async (eventType, data) => {
-      if (cancelled) return;
+    return () => {
+      cancelled = true;
+    };
+  }, [deviceId, notifyError]);
 
-      if (eventType === "message") {
+  // SSE Stream Event Handler
+  const handleStreamEvent = useCallback(
+    async (eventType: string, data: unknown) => {
+      if (eventType === "message" || eventType === "message_edited") {
         const pack = data as MessagesPack;
         const packId = pack.session?.id;
-        const acceptable =
-          isEventForActiveSession(packId) ||
-          (Boolean(packId) &&
-            activeSessionRef.current === null &&
-            !leftSessionIdsRef.current.has(packId) &&
-            !pack.session.closed);
-        if (packId && acceptable) {
-          if (pack.session.peerPublicKey) {
-            await establishSharedKey(deviceId, pack.session.id, pack.session.peerPublicKey);
-          }
-          const decrypted = await Promise.all(
-            pack.messages.map(async (m) => {
-              if (m.body.startsWith("e2e:")) {
-                const plain = await decryptText(m.body, pack.session.id);
-                return { ...m, body: plain };
-              }
-              return m;
-            }),
-          );
+        const isActive = packId && (packId === activeSessionRef.current?.id || (!activeSessionRef.current && !leftSessionIdsRef.current.has(packId) && !pack.session.closed));
 
-          const displayMsgs: ChatMessage[] = [];
-          for (const m of decrypted) {
-            const match = m.body.match(REACTION_REGEX);
-            if (match && match[1]) {
-              if (!m.mine && !seenReactionsRef.current.has(m.id)) {
-                seenReactionsRef.current.add(m.id);
-                triggerFloatingReaction(match[1]);
-              }
-            } else {
-              displayMsgs.push(m);
-            }
-          }
-
-          if (cancelled || leftSessionIdsRef.current.has(packId)) {
-            return;
-          }
-
-          setMessages((prev) => {
-            const map = new Map<string, ChatMessage>();
-            for (const m of displayMsgs) {
-              map.set(m.id, m);
-            }
-            for (const m of prev) {
-              if (m.id.startsWith("opt-") && !map.has(m.id)) {
-                map.set(m.id, m);
-              }
-            }
-            const merged = Array.from(map.values()).sort(
-              (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-            );
-            saveCachedMessages(pack.session.id, displayMsgs);
-            return merged;
-          });
-          setSessionView(pack.session);
-
-          if (displayMsgs.length > 0) {
-            const lastMsg = displayMsgs[displayMsgs.length - 1];
-            saveHistorySession({
-              sessionId: pack.session.id,
-              peerCallsign: pack.session.peerCallsign,
-              startedAt: new Date(pack.session.createdAt).getTime(),
-              savedAt: Date.now(),
-              messageCount: displayMsgs.length,
-              preview: lastMsg?.body ?? "",
-              interests: pack.session.interests,
-              messages: displayMsgs,
-            });
-            setHistorySessions(loadChatHistory());
-          }
-
-          const lastMsg = displayMsgs[displayMsgs.length - 1];
-          if (lastMsg && !lastMsg.mine && !lastMsg.system) {
-            if (!document.hidden) {
-              lastActivityRef.current = Date.now();
-            }
-            playMessageReceived();
-            notifyUnread(lastMsg.fromCallsign, lastMsg.body);
-          }
-        }
-      } else if (eventType === "message_edited") {
-        const pack = data as MessagesPack;
-        if (isEventForActiveSession(pack.session?.id)) {
-          const decrypted = await Promise.all(
-            pack.messages.map(async (m) => {
-              if (m.body.startsWith("e2e:")) {
-                const plain = await decryptText(m.body, pack.session.id);
-                return { ...m, body: plain };
-              }
-              return m;
-            }),
-          );
-          if (cancelled || !isEventForActiveSession(pack.session.id)) {
-            return;
-          }
-          const displayMsgs = decrypted.filter((m) => !REACTION_REGEX.test(m.body));
-          setMessages(displayMsgs);
-          saveCachedMessages(pack.session.id, displayMsgs);
-          if (displayMsgs.length > 0) {
-            const lastMsg = displayMsgs[displayMsgs.length - 1];
-            saveHistorySession({
-              sessionId: pack.session.id,
-              peerCallsign: pack.session.peerCallsign,
-              startedAt: new Date(pack.session.createdAt).getTime(),
-              savedAt: Date.now(),
-              messageCount: displayMsgs.length,
-              preview: lastMsg?.body ?? "",
-              interests: pack.session.interests,
-              messages: displayMsgs,
-            });
-            setHistorySessions(loadChatHistory());
+        if (isActive && deviceId) {
+          const displayMsgs = await decryptPack(pack, deviceId);
+          if (!leftSessionIdsRef.current.has(packId)) {
+            setSessionView(pack.session);
+            mergeAndStoreMessages(pack.session.id, pack.session, displayMsgs, eventType === "message");
           }
         }
       } else if (eventType === "message_deleted") {
         const info = data as { sessionId: string; messageId: string };
-        if (info.sessionId) {
-          deleteCachedMessage(info.sessionId, info.messageId);
-        }
-        if (isEventForActiveSession(info.sessionId)) {
+        if (info.sessionId === activeSessionRef.current?.id) {
           setMessages((prev) => prev.filter((m) => m.id !== info.messageId));
         }
       } else if (eventType === "presence_update") {
         const info = data as { sessionId: string; peerId: string; isAway: boolean };
-        setSessionView((prev) => {
-          if (!prev || prev.id !== info.sessionId) return prev;
-          return {
-            ...prev,
-            peerIsAway: info.isAway,
-            peerPresence: prev.closed ? "disconnected" : info.isAway ? "away" : "active",
-          };
-        });
+        setSessionView((prev) => (prev?.id === info.sessionId ? {
+          ...prev,
+          peerIsAway: info.isAway,
+          peerPresence: prev.closed ? "disconnected" : info.isAway ? "away" : "active",
+        } : prev));
       } else if (eventType === "typing") {
         const info = data as { sessionId?: string; isTyping: boolean };
-        if (!isEventForActiveSession(info.sessionId)) {
-          return;
-        }
-        setSessionView((prev) =>
-          prev && prev.id === info.sessionId ? { ...prev, peerTyping: info.isTyping } : prev,
-        );
-        if (peerTypingTimeoutRef.current) {
-          clearTimeout(peerTypingTimeoutRef.current);
-          peerTypingTimeoutRef.current = null;
-        }
-        if (info.isTyping) {
-          if (!document.hidden) {
-            lastActivityRef.current = Date.now();
+        if (info.sessionId === activeSessionRef.current?.id) {
+          setSessionView((prev) => (prev && prev.id === info.sessionId ? { ...prev, peerTyping: info.isTyping } : prev));
+          if (peerTypingTimeoutRef.current) clearTimeout(peerTypingTimeoutRef.current);
+          if (info.isTyping) {
+            peerTypingTimeoutRef.current = setTimeout(() => {
+              setSessionView((prev) => (prev ? { ...prev, peerTyping: false } : prev));
+            }, 3000);
           }
-          peerTypingTimeoutRef.current = setTimeout(() => {
-            setSessionView((prev) => (prev ? { ...prev, peerTyping: false } : prev));
-          }, 3000);
         }
       } else if (eventType === "session_started") {
         const info = data as { sessionId: string; desk?: DeskView };
-        if (info.desk) {
-          setDesk(info.desk);
-        } else {
-          getDesk({ deviceId })
-            .then((d) => !cancelled && setDesk(d))
-            .catch(() => {});
-        }
+        if (info.desk) setDesk(info.desk);
+        else if (deviceId) getDesk({ deviceId }).then(setDesk).catch(() => {});
+
         if (info.sessionId && lastMatchChimeRef.current !== info.sessionId) {
           lastMatchChimeRef.current = info.sessionId;
           playMatchChime();
           if (typeof window !== "undefined" && "vibrate" in navigator) {
-            try {
-              navigator.vibrate([15, 60, 20]);
-            } catch {}
+            try { navigator.vibrate([15, 60, 20]); } catch {}
           }
         }
       } else if (eventType === "session_ended") {
         const info = data as { sessionId: string; desk?: DeskView };
-        if (!isEventForActiveSession(info.sessionId)) {
-          return;
+        if (info.sessionId === activeSessionRef.current?.id) {
+          markSessionClosed(info.sessionId);
+          if (info.desk) setDesk(info.desk);
+          playLeaveTone();
         }
-        markActiveSessionClosed(info.sessionId);
-        if (info.desk) {
-          setDesk(info.desk);
-        }
-        playLeaveTone();
       } else if (eventType === "desk_update" || eventType === "friend_request") {
         const refreshed = data as DeskView;
-        if (refreshed && refreshed.station) {
-          setDesk(refreshed);
-        }
+        if (refreshed?.station) setDesk(refreshed);
       }
-    }, () => {
-      if (cancelled) return;
-      getDesk({ deviceId })
-        .then((d) => !cancelled && setDesk(d))
-        .catch(() => {});
-      setResyncTick((n) => n + 1);
-    });
+    },
+    [deviceId, decryptPack, mergeAndStoreMessages, setMessages, markSessionClosed],
+  );
 
-    const pollTimer = window.setInterval(() => {
-      getDesk({ deviceId })
-        .then((data) => {
-          if (!cancelled) {
-            setDesk(data);
-          }
+  useLunaStream({
+    deviceId,
+    onEvent: handleStreamEvent,
+    onDeskUpdate: setDesk,
+    onResync: triggerResync,
+  });
+
+  // Fetch / Sync active session messages periodically or on resync
+  useEffect(() => {
+    if (!deviceId || !currentSession?.id) return;
+    let cancelled = false;
+
+    const syncSessionMessages = () => {
+      listMessages({ deviceId, sessionId: currentSession.id })
+        .then(async (pack) => {
+          if (cancelled || leftSessionIdsRef.current.has(currentSession.id)) return;
+          const displayMsgs = await decryptPack(pack, deviceId);
+          if (cancelled) return;
+          setSessionView(pack.session);
+          mergeAndStoreMessages(currentSession.id, pack.session, displayMsgs, false);
         })
         .catch(() => {});
-    }, 15000);
+    };
 
+    syncSessionMessages();
+    const interval = window.setInterval(syncSessionMessages, 15000);
     return () => {
       cancelled = true;
-      unsubscribeStream();
-      window.clearInterval(pollTimer);
-      if (peerTypingTimeoutRef.current) {
-        clearTimeout(peerTypingTimeoutRef.current);
-      }
+      window.clearInterval(interval);
     };
-  }, [deviceId, notifyUnread, notifyError, isEventForActiveSession, markActiveSessionClosed]);
+  }, [deviceId, currentSession?.id, decryptPack, mergeAndStoreMessages]);
 
-  const session = desk?.activeSession ?? null;
-  const sessionViewIsCurrent = Boolean(sessionView && (!session || session.id === sessionView.id));
-  const currentSession = sessionViewIsCurrent ? sessionView : session;
-  const listening = Boolean(desk?.queued) && !currentSession;
-
-  useEffect(() => {
-    activeSessionRef.current = currentSession;
-  }, [currentSession]);
-
-  useEffect(() => {
-    lastMessageAtRef.current = Date.now();
-  }, [currentSession?.id, messages.length]);
-
+  // Session establishment sound and key negotiation
   useEffect(() => {
     if (currentSession?.id) {
       if (lastMatchChimeRef.current !== currentSession.id) {
@@ -592,125 +377,30 @@ export default function Home() {
     }
   }, [currentSession?.id, currentSession?.peerPublicKey, deviceId]);
 
+  // Queue Heartbeat polling while listening
   useEffect(() => {
-    if (!deviceId || !currentSession?.id) {
-      return;
-    }
-    let cancelled = false;
-
-    const fetchMessages = () => {
-      listMessages({ deviceId, sessionId: currentSession.id })
-        .then(async (pack) => {
-          if (cancelled) {
-            return;
-          }
-          if (pack.session.peerPublicKey) {
-            await establishSharedKey(deviceId, currentSession.id, pack.session.peerPublicKey);
-          }
-          const decrypted = await Promise.all(
-            pack.messages.map(async (m) => {
-              if (m.body.startsWith("e2e:")) {
-                const plain = await decryptText(m.body, currentSession.id);
-                return { ...m, body: plain };
-              }
-              return m;
-            }),
-          );
-
-          const displayDecrypted: ChatMessage[] = [];
-          for (const m of decrypted) {
-            const match = m.body.match(REACTION_REGEX);
-            if (match && match[1]) {
-              if (!m.mine && !seenReactionsRef.current.has(m.id)) {
-                seenReactionsRef.current.add(m.id);
-                triggerFloatingReaction(match[1]);
-              }
-            } else {
-              displayDecrypted.push(m);
-            }
-          }
-
-          if (cancelled || leftSessionIdsRef.current.has(currentSession.id)) {
-            return;
-          }
-
-          setMessages((prev) => {
-            const map = new Map<string, ChatMessage>();
-            for (const m of displayDecrypted) {
-              map.set(m.id, m);
-            }
-            for (const m of prev) {
-              if (m.id.startsWith("opt-") && !map.has(m.id)) {
-                map.set(m.id, m);
-              }
-            }
-            const merged = Array.from(map.values()).sort(
-              (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-            );
-            saveCachedMessages(currentSession.id, merged);
-            return merged;
-          });
-          setSessionView(pack.session);
-
-          if (displayDecrypted.length > 0) {
-            const lastMsg = displayDecrypted[displayDecrypted.length - 1];
-            saveHistorySession({
-              sessionId: currentSession.id,
-              peerCallsign: pack.session.peerCallsign,
-              startedAt: new Date(pack.session.createdAt).getTime(),
-              savedAt: Date.now(),
-              messageCount: displayDecrypted.length,
-              preview: lastMsg?.body ?? "",
-              interests: pack.session.interests,
-              messages: displayDecrypted,
-            });
-            setHistorySessions(loadChatHistory());
-          }
-        })
-        .catch(() => {});
-    };
-
-    fetchMessages();
-    const interval = window.setInterval(fetchMessages, 15000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, [deviceId, currentSession?.id, resyncTick]);
-
-  useEffect(() => {
-    if (!deviceId || !listening) {
-      return;
-    }
+    if (!deviceId || !listening) return;
     let cancelled = false;
 
     const tick = async () => {
       try {
         const blocked = readBlockedStations();
-        const result = await heartbeatQueue({ deviceId, blockedIds: blocked });
-        if (cancelled) {
-          return;
-        }
-        setDesk(result.desk);
-      } catch {
-        return;
-      }
+        const res = await heartbeatQueue({ deviceId, blockedIds: blocked });
+        if (!cancelled) setDesk(res.desk);
+      } catch {}
     };
 
     void tick();
-    const id = window.setInterval(() => void tick(), 2000);
-
+    const timer = window.setInterval(() => void tick(), 2000);
     return () => {
       cancelled = true;
-      window.clearInterval(id);
+      window.clearInterval(timer);
     };
   }, [deviceId, listening]);
 
+  // Wirecut banner auto-dismiss
   useEffect(() => {
-    if (!wireCutPrimed) {
-      return;
-    }
+    if (!wireCutPrimed) return;
     const timer = window.setTimeout(() => {
       setWireCutPrimed(false);
       setNote((prev) => (prev?.includes("Esc again") ? null : prev));
@@ -718,60 +408,45 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, [wireCutPrimed]);
 
+  const handleToggleSound = () => {
+    const next = !soundActive;
+    setSoundActive(next);
+    setSoundEnabled(next);
+  };
 
-  const resetIdle = useCallback(() => {
-    lastActivityRef.current = Date.now();
-    if (isAwayRef.current) {
-      setIsAway(false);
-      if (deviceId && currentSession?.id) {
-        void reportPresence({ deviceId, sessionId: currentSession.id, isAway: false });
-      }
+  const handleDraftChange = useCallback((next: string) => {
+    setDraft(next);
+    resetIdle();
+  }, [resetIdle]);
+
+  const handleJoinQueue = useCallback(async (overrideInterests?: unknown) => {
+    if (!deviceId || busy) return;
+    const finalInterests = Array.isArray(overrideInterests)
+      ? overrideInterests.filter((x): x is string => typeof x === "string")
+      : interests;
+    setBusy(true);
+    try {
+      setNote(null);
+      const blocked = readBlockedStations();
+      const pubKey = await exportDevicePublicKeyHex(deviceId);
+      const res = await joinQueue({
+        deviceId,
+        interests: finalInterests,
+        blockedIds: blocked,
+        publicKey: pubKey ?? undefined,
+      });
+      setDesk(res.desk);
+      setLogOpen(false);
+      setSettingsOpen(false);
+    } catch (err) {
+      notifyError(err);
+    } finally {
+      setBusy(false);
     }
-  }, [deviceId, currentSession]);
-
-  const handleDraftChange = useCallback(
-    (next: string) => {
-      setDraft(next);
-      resetIdle();
-    },
-    [resetIdle],
-  );
-
-  const handleJoinQueue = useCallback(
-    async (overrideInterests?: unknown) => {
-      if (!deviceId || busy) {
-        return;
-      }
-      const finalInterests = Array.isArray(overrideInterests)
-        ? overrideInterests.filter((x): x is string => typeof x === "string")
-        : interests;
-      setBusy(true);
-      try {
-        setNote(null);
-        const blocked = readBlockedStations();
-        const pubKey = await exportDevicePublicKeyHex(deviceId);
-        const res = await joinQueue({
-          deviceId,
-          interests: finalInterests,
-          blockedIds: blocked,
-          publicKey: pubKey ?? undefined,
-        });
-        setDesk(res.desk);
-        setLogOpen(false);
-        setSettingsOpen(false);
-      } catch (err) {
-        notifyError(err);
-      } finally {
-        setBusy(false);
-      }
-    },
-    [deviceId, busy, interests, notifyError],
-  );
+  }, [deviceId, busy, interests, notifyError]);
 
   const handleLeaveQueue = useCallback(async () => {
-    if (!deviceId || busy) {
-      return;
-    }
+    if (!deviceId || busy) return;
     setBusy(true);
     try {
       setNote(null);
@@ -784,51 +459,34 @@ export default function Home() {
     }
   }, [deviceId, busy, notifyError]);
 
-  const POPULAR_MIDNIGHT_TOPICS = [
-    "quiet thoughts",
-    "sleeplessness",
-    "nostalgia",
-    "music",
-    "life questions",
-  ];
-
-  function handleAddPopularTopics() {
-    const combined = Array.from(new Set([...interests, ...POPULAR_MIDNIGHT_TOPICS]));
-    setInterests(combined);
-    void handleJoinQueue(combined);
-  }
-
   const handleLeaveSession = useCallback(async () => {
-    if (!deviceId || busy) {
-      return;
-    }
+    if (!deviceId || busy) return;
     const targetSessionId = currentSession?.id;
     setBusy(true);
     playLeaveTone();
     setIsAway(false);
     setReplyingTo(null);
+    setMessages([]);
+    setSessionView(null);
+    setDesk((prev) => (prev ? { ...prev, activeSession: null } : null));
+    setHistorySessions(loadChatHistory());
+
     if (targetSessionId) {
       leftSessionIdsRef.current.add(targetSessionId);
       destroySessionKey(targetSessionId);
       try {
         setNote(null);
-        const next = await leaveSession({
-          deviceId,
-          sessionId: targetSessionId,
-        });
+        const next = await leaveSession({ deviceId, sessionId: targetSessionId });
         setDesk(next);
       } catch {
-        try {
-          const freshDesk = await getDesk({ deviceId });
-          setDesk(freshDesk);
-        } catch {}
+        if (deviceId) getDesk({ deviceId }).then(setDesk).catch(() => {});
+      } finally {
+        setBusy(false);
       }
+    } else {
+      setBusy(false);
     }
-    setMessages([]);
-    setSessionView(null);
-    setBusy(false);
-    setHistorySessions(loadChatHistory());
-  }, [deviceId, busy, currentSession?.id]);
+  }, [deviceId, busy, currentSession?.id, setIsAway, setReplyingTo, setMessages]);
 
   const handleNextStranger = useCallback(async () => {
     if (!deviceId || busy) return;
@@ -837,16 +495,17 @@ export default function Home() {
     playLeaveTone();
     setIsAway(false);
     setReplyingTo(null);
+    setMessages([]);
+    setSessionView(null);
+    setDesk((prev) => (prev ? { ...prev, activeSession: null, queued: true } : null));
+    setHistorySessions(loadChatHistory());
+
     if (targetSessionId) {
       leftSessionIdsRef.current.add(targetSessionId);
       destroySessionKey(targetSessionId);
-      try {
-        await leaveSession({ deviceId, sessionId: targetSessionId });
-      } catch {}
+      void leaveSession({ deviceId, sessionId: targetSessionId }).catch(() => {});
     }
-    setMessages([]);
-    setSessionView(null);
-    setHistorySessions(loadChatHistory());
+
     try {
       setNote(null);
       const blocked = readBlockedStations();
@@ -865,301 +524,32 @@ export default function Home() {
     } finally {
       setBusy(false);
     }
-  }, [deviceId, busy, currentSession?.id, interests, notifyError]);
+  }, [deviceId, busy, currentSession?.id, interests, setIsAway, setReplyingTo, setMessages, notifyError]);
 
-  useEffect(() => {
-    if (!currentSession?.id || currentSession.closed) {
-      return;
-    }
-
-    function evaluateIdle() {
-      const elapsed = Date.now() - lastActivityRef.current;
-      if (elapsed >= IDLE_AWAY_THRESHOLD_MS) {
-        if (!isAwayRef.current) {
-          setIsAway(true);
-          if (deviceId && currentSession?.id) {
-            void reportPresence({ deviceId, sessionId: currentSession.id, isAway: true }).catch(() => {});
-          }
-        }
-      } else {
-        if (isAwayRef.current) {
-          setIsAway(false);
-          if (deviceId && currentSession?.id) {
-            void reportPresence({ deviceId, sessionId: currentSession.id, isAway: false }).catch(() => {});
-          }
-        }
-      }
-    }
-
-    function onActivity() {
-      resetIdle();
-    }
-
-    function onVisibility() {
-      if (document.hidden) {
-        if (!isAwayRef.current) {
-          isAwayRef.current = true;
-          setIsAway(true);
-          if (deviceId && currentSession?.id) {
-            void reportPresence({ deviceId, sessionId: currentSession.id, isAway: true }).catch(() => {});
-          }
-        }
-        return;
-      }
-      resetIdle();
-      setResyncTick((n) => n + 1);
-    }
-
-    function onFocus() {
-      resetIdle();
-      setResyncTick((n) => n + 1);
-    }
-
-    const passiveCapture = { capture: true, passive: true } as const;
-
-    window.addEventListener("keydown", onActivity);
-    window.addEventListener("touchstart", onActivity, { passive: true });
-    window.addEventListener("pointerdown", onActivity);
-    window.addEventListener("click", onActivity);
-    window.addEventListener("wheel", onActivity, { passive: true });
-    document.addEventListener("scroll", onActivity, passiveCapture);
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisibility);
-
-    evaluateIdle();
-    const interval = window.setInterval(evaluateIdle, 1000);
-
-    return () => {
-      window.removeEventListener("keydown", onActivity);
-      window.removeEventListener("touchstart", onActivity);
-      window.removeEventListener("pointerdown", onActivity);
-      window.removeEventListener("click", onActivity);
-      window.removeEventListener("wheel", onActivity);
-      document.removeEventListener("scroll", onActivity, passiveCapture);
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisibility);
-      window.clearInterval(interval);
-    };
-  }, [currentSession?.id, currentSession?.closed, currentSession?.kind, deviceId, handleLeaveSession, handleNextStranger, resetIdle]);
-
-  async function handleSendMessage() {
+  const handleSendMessage = () => {
     if (!isOnline) {
       setNote("You're offline. Reconnect to send messages.");
       return;
     }
-    const activeSessionId = currentSession?.id;
-    if (!deviceId || !activeSessionId || !draft.trim() || currentSession?.closed) {
-      return;
+    if (currentSession) {
+      void runSendMessage(draft, currentSession, desk?.station.callsign ?? "You");
+      setDraft("");
     }
-    resetIdle();
-    lastMessageAtRef.current = Date.now();
-    const rawText = draft.trim();
-    let textToSend = rawText;
-    if (replyingTo) {
-      const quoteSnippet = replyingTo.body.replace(/[\r\n]+/g, " ").slice(0, 100);
-      textToSend = `> ${replyingTo.fromCallsign}: ${quoteSnippet}\n${rawText}`;
-      setReplyingTo(null);
-    }
+  };
 
-    const tempId = `opt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const optimisticMsg: ChatMessage = {
-      id: tempId,
-      fromId: deviceId,
-      fromCallsign: desk?.station.callsign ?? "You",
-      body: textToSend,
-      createdAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 86400000).toISOString(),
-      mine: true,
-      system: false,
-      copied: false,
-    };
-
-    setDraft("");
-    playMessagePop();
-    setMessages((prev) => [...prev, optimisticMsg]);
-
-    sendQueueRef.current = sendQueueRef.current.then(async () => {
-      try {
-        const bodyToSend = await encryptText(textToSend, activeSessionId);
-
-        const pack = await sendMessage({
-          deviceId,
-          sessionId: activeSessionId,
-          body: bodyToSend,
-        });
-        if (pack.session?.closed) {
-          setSessionView(pack.session);
-          return;
-        }
-        const decrypted = await Promise.all(
-          pack.messages.map(async (m) => {
-            if (m.body.startsWith("e2e:")) {
-              const plain = await decryptText(m.body, activeSessionId);
-              return { ...m, body: plain };
-            }
-            return m;
-          }),
-        );
-        const displayDecrypted: ChatMessage[] = [];
-        for (const m of decrypted) {
-          if (!REACTION_REGEX.test(m.body)) {
-            displayDecrypted.push(m);
-          }
-        }
-        setMessages((prev) => {
-          const map = new Map<string, ChatMessage>();
-          for (const m of displayDecrypted) {
-            map.set(m.id, m);
-          }
-          for (const m of prev) {
-            if (m.id.startsWith("opt-") && m.id !== tempId) {
-              if (!map.has(m.id)) {
-                map.set(m.id, m);
-              }
-            }
-          }
-          const merged = Array.from(map.values()).sort(
-            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-          );
-          saveCachedMessages(activeSessionId, merged);
-          return merged;
-        });
-        setSessionView(pack.session);
-
-        saveHistorySession({
-          sessionId: activeSessionId,
-          peerCallsign: pack.session.peerCallsign,
-          startedAt: new Date(pack.session.createdAt).getTime(),
-          savedAt: Date.now(),
-          messageCount: displayDecrypted.length,
-          preview: rawText,
-          interests: pack.session.interests,
-          messages: displayDecrypted,
-        });
-        setHistorySessions(loadChatHistory());
-      } catch (err) {
-        const msg = errorMessage(err);
-        if (msg.includes("ended") || msg.includes("closed") || msg.includes("not found")) {
-          setSessionView((prev) => (prev ? { ...prev, closed: true } : null));
-        } else {
-          setMessages((prev) => prev.filter((m) => m.id !== tempId));
-        }
-      }
-    });
-  }
-
-  async function handleEditMessage(messageId: string, newBody: string) {
-    const activeSessionId = currentSession?.id;
-    if (!deviceId || !activeSessionId || !newBody.trim()) return;
-    resetIdle();
-    try {
-      const encrypted = await encryptText(newBody.trim(), activeSessionId);
-      await editMessage({
-        deviceId,
-        sessionId: activeSessionId,
-        messageId,
-        body: encrypted,
-      });
-      const nowIso = new Date().toISOString();
-      const nextMsgs = messages.map((m) =>
-        m.id === messageId ? { ...m, body: newBody.trim(), editedAt: nowIso } : m,
-      );
-      setMessages(nextMsgs);
-      updateCachedMessage(activeSessionId, messageId, newBody.trim());
-
-      saveHistorySession({
-        sessionId: activeSessionId,
-        peerCallsign: currentSession?.peerCallsign ?? "Stranger",
-        startedAt: currentSession?.createdAt
-          ? new Date(currentSession.createdAt).getTime()
-          : Date.now(),
-        savedAt: Date.now(),
-        messageCount: nextMsgs.length,
-        preview: nextMsgs[nextMsgs.length - 1]?.body ?? "",
-        interests: currentSession?.interests ?? [],
-        messages: nextMsgs,
-      });
-      setHistorySessions(loadChatHistory());
-    } catch (err) {
-      notifyError(err);
-    }
-  }
-
-  async function handleDeleteMessage(messageId: string) {
-    const activeSessionId = currentSession?.id;
-    if (!deviceId || !activeSessionId) return;
-    resetIdle();
-    try {
-      await deleteMessage({
-        deviceId,
-        sessionId: activeSessionId,
-        messageId,
-      });
-      const nextMsgs = messages.filter((m) => m.id !== messageId);
-      setMessages(nextMsgs);
-      deleteCachedMessage(activeSessionId, messageId);
-
-      if (nextMsgs.length > 0) {
-        saveHistorySession({
-          sessionId: activeSessionId,
-          peerCallsign: currentSession?.peerCallsign ?? "Stranger",
-          startedAt: currentSession?.createdAt
-            ? new Date(currentSession.createdAt).getTime()
-            : Date.now(),
-          savedAt: Date.now(),
-          messageCount: nextMsgs.length,
-          preview: nextMsgs[nextMsgs.length - 1]?.body ?? "",
-          interests: currentSession?.interests ?? [],
-          messages: nextMsgs,
-        });
-      } else {
-        deleteHistorySession(activeSessionId);
-      }
-      setHistorySessions(loadChatHistory());
-    } catch (err) {
-      notifyError(err);
-    }
-  }
-
-  async function handleSendReaction(emoji: string) {
-    const activeSessionId = currentSession?.id;
-    if (!deviceId || !activeSessionId) return;
-    resetIdle();
-    triggerFloatingReaction(emoji);
-    try {
-      const bodyToSend = await encryptText(`[reaction:${emoji}]`, activeSessionId);
-      await sendMessage({
-        deviceId,
-        sessionId: activeSessionId,
-        body: bodyToSend,
-      });
-    } catch {}
-  }
-
-  async function handleSeverAndBlock() {
-    if (!deviceId || busy) {
-      return;
-    }
-    const peerId = currentSession?.peerId;
-    if (peerId) {
-      saveBlockedStation(peerId);
-    }
+  const handleSeverAndBlock = async () => {
+    if (!deviceId || busy) return;
+    if (currentSession?.peerId) saveBlockedStation(currentSession.peerId);
     await handleLeaveSession();
     setNote("Chat ended. You will not be matched with this stranger again.");
-  }
+  };
 
-  async function handleOfferQsl() {
-    const activeSessionId = currentSession?.id;
-    if (!deviceId || !activeSessionId || busy) {
-      return;
-    }
+  const handleOfferQsl = async () => {
+    if (!deviceId || !currentSession?.id || busy) return;
     setBusy(true);
     try {
       setNote(null);
-      const pack = await offerQsl({
-        deviceId,
-        sessionId: activeSessionId,
-      });
+      const pack = await offerQsl({ deviceId, sessionId: currentSession.id });
       setMessages(pack.messages);
       setSessionView(pack.session);
       const refreshed = await getDesk({ deviceId });
@@ -1169,22 +559,17 @@ export default function Home() {
     } finally {
       setBusy(false);
     }
-  }
+  };
 
-  async function handleRespondQsl(requestId: string, accept: boolean) {
-    if (!deviceId || busy) {
-      return;
-    }
+  const handleRespondQsl = async (requestId: string, accept: boolean) => {
+    if (!deviceId || busy) return;
     setBusy(true);
     try {
       setNote(null);
       const next = await respondQsl({ deviceId, requestId, accept });
       setDesk(next);
       if (currentSession?.id) {
-        const pack = await listMessages({
-          deviceId,
-          sessionId: currentSession.id,
-        });
+        const pack = await listMessages({ deviceId, sessionId: currentSession.id });
         setMessages(pack.messages);
         setSessionView(pack.session);
       }
@@ -1193,12 +578,10 @@ export default function Home() {
     } finally {
       setBusy(false);
     }
-  }
+  };
 
-  async function handleOpenFriendLine(friendId: string) {
-    if (!deviceId || busy) {
-      return;
-    }
+  const handleOpenFriendLine = async (friendId: string) => {
+    if (!deviceId || busy) return;
     setBusy(true);
     try {
       setNote(null);
@@ -1211,21 +594,17 @@ export default function Home() {
     } finally {
       setBusy(false);
     }
-  }
+  };
 
-  function handleTyping(isTyping: boolean) {
-    const activeSessionId = currentSession?.id;
-    if (!deviceId || !activeSessionId) {
-      return;
-    }
-    const current = Date.now();
-    if (isTyping && current - lastTypingReport < 1800) {
-      return;
-    }
-    lastTypingReport = isTyping ? current : 0;
-    void reportTyping({ deviceId, sessionId: activeSessionId, isTyping }).catch(() => {});
-  }
+  const handleTyping = (isTyping: boolean) => {
+    if (!deviceId || !currentSession?.id) return;
+    const now = Date.now();
+    if (isTyping && now - lastTypingReport < 1800) return;
+    lastTypingReport = isTyping ? now : 0;
+    void reportTyping({ deviceId, sessionId: currentSession.id, isTyping }).catch(() => {});
+  };
 
+  // Keyboard Navigation: Esc for wirecut / leave, Enter for queue join / next
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
@@ -1249,13 +628,11 @@ export default function Home() {
         if (currentSession?.closed) {
           e.preventDefault();
           void handleNextStranger();
-        } else if (!currentSession?.id && !desk?.queued) {
-          if (!busy && deviceId) {
-            const activeEl = document.activeElement;
-            if (activeEl?.tagName !== "BUTTON" && activeEl?.tagName !== "INPUT") {
-              e.preventDefault();
-              void handleJoinQueue();
-            }
+        } else if (!currentSession?.id && !desk?.queued && !busy && deviceId) {
+          const tag = document.activeElement?.tagName;
+          if (tag !== "BUTTON" && tag !== "INPUT") {
+            e.preventDefault();
+            void handleJoinQueue();
           }
         }
       }
@@ -1276,8 +653,6 @@ export default function Home() {
     handleNextStranger,
   ]);
 
-  const inboundOnLine = currentSession?.inboundQsl;
-
   const meta = !isOnline
     ? "offline"
     : currentSession
@@ -1295,7 +670,7 @@ export default function Home() {
         meta={meta}
         logOpen={logOpen}
         onToggleLog={() => {
-          setLogOpen((open) => !open);
+          setLogOpen((o) => !o);
           setSettingsOpen(false);
           setHistoryOpen(false);
         }}
@@ -1303,15 +678,15 @@ export default function Home() {
         onToggleSound={handleToggleSound}
         settingsOpen={settingsOpen}
         onToggleSettings={() => {
-          setSettingsOpen((open) => !open);
+          setSettingsOpen((o) => !o);
           setLogOpen(false);
           setHistoryOpen(false);
         }}
-        onToggleVoid={() => setVoidOpen((open) => !open)}
+        onToggleVoid={() => setVoidOpen((o) => !o)}
         hasHistory={historySessions.length > 0}
         historyOpen={historyOpen}
         onToggleHistory={() => {
-          setHistoryOpen((open) => !open);
+          setHistoryOpen((o) => !o);
           setLogOpen(false);
           setSettingsOpen(false);
         }}
@@ -1335,7 +710,7 @@ export default function Home() {
           <SettingsPanel
             desk={desk}
             onClose={() => setSettingsOpen(false)}
-            onCallsignUpdated={(updated) => setDesk(updated)}
+            onCallsignUpdated={setDesk}
             onStationReset={() => {
               const newDid = getOrCreateDeviceId();
               setDeviceId(newDid);
@@ -1343,9 +718,7 @@ export default function Home() {
               setReplyingTo(null);
               setMessages([]);
               setSessionView(null);
-              void registerStation({ deviceId: newDid })
-                .then(setDesk)
-                .catch(() => {});
+              void registerStation({ deviceId: newDid }).then(setDesk).catch(() => {});
             }}
           />
         ) : logOpen && desk ? (
@@ -1381,27 +754,23 @@ export default function Home() {
               currentSession.outboundQsl !== "accepted"
             }
             qslState={currentSession.outboundQsl}
-            inbound={inboundOnLine ?? null}
+            inbound={currentSession.inboundQsl}
             onQsl={handleOfferQsl}
             onAcceptInbound={() => {
-              if (inboundOnLine?.id) {
-                void handleRespondQsl(inboundOnLine.id, true);
-              }
+              if (currentSession.inboundQsl?.id) void handleRespondQsl(currentSession.inboundQsl.id, true);
             }}
             onDeclineInbound={() => {
-              if (inboundOnLine?.id) {
-                void handleRespondQsl(inboundOnLine.id, false);
-              }
+              if (currentSession.inboundQsl?.id) void handleRespondQsl(currentSession.inboundQsl.id, false);
             }}
             onLeave={handleLeaveSession}
             onNext={handleNextStranger}
             onBlock={handleSeverAndBlock}
             busy={busy}
-            onReaction={handleSendReaction}
+            onReaction={(emoji) => runSendReaction(emoji, currentSession)}
             floatingReactions={floatingReactions}
             onReactionFinished={handleReactionFinished}
-            onEditMessage={handleEditMessage}
-            onDeleteMessage={handleDeleteMessage}
+            onEditMessage={(mid, body) => runEditMessage(mid, body, currentSession)}
+            onDeleteMessage={(mid) => runDeleteMessage(mid, currentSession)}
           />
         ) : listening ? (
           <ListeningView
@@ -1409,7 +778,11 @@ export default function Home() {
             enteredAt={desk?.enteredAt ?? null}
             interests={desk?.queuedInterests ?? interests}
             onStop={handleLeaveQueue}
-            onAddPopular={handleAddPopularTopics}
+            onAddPopular={() => {
+              const combined = Array.from(new Set([...interests, ...POPULAR_MIDNIGHT_TOPICS]));
+              setInterests(combined);
+              void handleJoinQueue(combined);
+            }}
             busy={busy}
           />
         ) : (
@@ -1424,16 +797,9 @@ export default function Home() {
       </div>
 
       {note && (
-        <div
-          className="border-t border-white/10 bg-zinc-950/90 px-4 py-2 text-xs text-zinc-300 flex items-center justify-between"
-          role="status"
-        >
+        <div className="border-t border-white/10 bg-zinc-950/90 px-4 py-2 text-xs text-zinc-300 flex items-center justify-between" role="status">
           <span>{note}</span>
-          <button
-            type="button"
-            onClick={() => setNote(null)}
-            className="text-zinc-500 hover:text-zinc-200 text-xs ml-2 cursor-pointer"
-          >
+          <button type="button" onClick={() => setNote(null)} className="text-zinc-500 hover:text-zinc-200 text-xs ml-2 cursor-pointer">
             dismiss
           </button>
         </div>
@@ -1462,4 +828,3 @@ export default function Home() {
     </PaperShell>
   );
 }
-

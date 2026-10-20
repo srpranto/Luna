@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
         } catch {
           clearInterval(pingInterval);
         }
-      }, 10000);
+      }, 5000);
 
       req.signal.addEventListener("abort", () => {
         clearInterval(pingInterval);

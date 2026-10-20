@@ -7,27 +7,15 @@ export const FRIEND_TTL_DAYS = 7;
 
 export function sanitizeInterests(input: unknown): string[] {
   if (!input) return [];
-  const rawList: string[] = [];
-  if (Array.isArray(input)) {
-    for (const item of input) {
-      if (typeof item === "string") {
-        const parts = item.split(",");
-        for (const p of parts) rawList.push(p);
-      }
-    }
-  } else if (typeof input === "string") {
-    const parts = input.split(",");
-    for (const p of parts) rawList.push(p);
-  }
-  const next: string[] = [];
-  for (const item of rawList) {
-    const clean = item.trim().toLowerCase();
-    if (clean && !next.includes(clean)) {
-      next.push(clean);
-    }
-    if (next.length >= 10) break;
-  }
-  return next;
+  const items = Array.isArray(input) ? input : typeof input === "string" ? [input] : [];
+  return [
+    ...new Set(
+      items
+        .flatMap((i) => (typeof i === "string" ? i.split(",") : []))
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ].slice(0, 10);
 }
 
 export function parseInterests(raw: unknown): string[] {
@@ -35,8 +23,7 @@ export function parseInterests(raw: unknown): string[] {
   if (Array.isArray(raw)) return sanitizeInterests(raw);
   if (typeof raw === "string") {
     try {
-      const value = JSON.parse(raw) as unknown;
-      return sanitizeInterests(value);
+      return sanitizeInterests(JSON.parse(raw));
     } catch {
       return sanitizeInterests(raw);
     }
@@ -45,28 +32,17 @@ export function parseInterests(raw: unknown): string[] {
 }
 
 export function sharedInterests(a: string[], b: string[]): string[] {
-  return a.filter((item) => b.includes(item));
+  const bSet = new Set(b);
+  return a.filter((item) => bSet.has(item));
 }
 
-export function minSharedForWait(waitMs: number): number {
-  if (waitMs >= 4000) {
-    return 0;
-  }
-  return 1;
-}
+export const minSharedForWait = (waitMs: number): number => (waitMs >= 4000 ? 0 : 1);
 
-export function newId(): string {
-  return crypto.randomUUID();
-}
+export const newId = (): string => crypto.randomUUID();
 
-export function pairKey(a: string, b: string): [string, string] {
-  return a < b ? [a, b] : [b, a];
-}
+export const pairKey = (a: string, b: string): [string, string] => (a < b ? [a, b] : [b, a]);
 
-export function friendSessionId(a: string, b: string): string {
-  const [x, y] = pairKey(a, b);
-  return `qsl:${x}:${y}`;
-}
+export const friendSessionId = (a: string, b: string): string => `qsl:${pairKey(a, b).join(":")}`;
 
 export const STRANGER_NAMES = [
   "Rainy-Soul",
@@ -101,12 +77,9 @@ export function hashIp(ip: string): number {
   return Math.abs(hash);
 }
 
-export function isDeviceId(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
-  );
-}
+export const isDeviceId = (value: unknown): value is string =>
+  typeof value === "string" &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
 export function mintCallsign(ip?: string, offset = 0): string {
   if (ip) {
