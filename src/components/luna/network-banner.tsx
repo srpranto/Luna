@@ -36,7 +36,7 @@ export function NetworkBanner({ isOnline }: { isOnline: boolean }) {
           "flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-medium shadow-lg backdrop-blur-xl border transition-colors",
           !isOnline
             ? "bg-zinc-950/95 border-rose-500/30 text-rose-300 shadow-rose-950/30"
-            : "bg-zinc-950/95 border-emerald-500/30 text-emerald-300 shadow-emerald-950/30",
+            : "bg-zinc-950/95 border-white/20 text-zinc-100 shadow-[0_4px_20px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.1)]",
         )}
       >
         {!isOnline ? (
@@ -51,9 +51,9 @@ export function NetworkBanner({ isOnline }: { isOnline: boolean }) {
         ) : (
           <>
             <span className="relative flex h-2 w-2">
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-white shadow-[0_0_6px_rgba(255,255,255,0.8)]" />
             </span>
-            <Wifi className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+            <Wifi className="h-3.5 w-3.5 text-zinc-100 shrink-0" />
             <span>Back online. Reconnected.</span>
           </>
         )}

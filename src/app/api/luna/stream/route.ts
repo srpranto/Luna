@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
-import { subscribeDevice, type LunaEvent } from "@/lib/luna/events";
+import { subscribeDevice, type LunaEvent, SERVER_INSTANCE_ID } from "@/lib/luna/events";
 import { touchLastSeen } from "@/lib/luna/server";
+import { getSql } from "@/lib/luna/db";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,17 @@ export async function GET(req: NextRequest) {
   }
 
   const encoder = new TextEncoder();
+  let lastEventId = 0;
+
+  try {
+    const sql = await getSql();
+    const rows = await sql<{ max_id: number | null }>`
+      select max(id) as max_id from device_events where device_id = ${deviceId}
+    `;
+    if (rows[0]?.max_id) {
+      lastEventId = Number(rows[0].max_id);
+    }
+  } catch {}
 
   const stream = new ReadableStream({
     start(controller) {
@@ -35,6 +47,37 @@ export async function GET(req: NextRequest) {
 
       void touchLastSeen(deviceId).catch(() => {});
 
+      // Cross-instance polling loop: polls for events dispatched by other server instances
+      const pollInterval = setInterval(async () => {
+        try {
+          const sql = await getSql();
+          const rows = await sql<{ id: number; type: string; data: string }>`
+            select id, type, data from device_events
+            where device_id = ${deviceId}
+              and id > ${lastEventId}
+              and (instance_id is null or instance_id <> ${SERVER_INSTANCE_ID})
+            order by id asc
+            limit 25
+          `;
+          for (const row of rows) {
+            lastEventId = Math.max(lastEventId, Number(row.id));
+            try {
+              controller.enqueue(
+                encoder.encode(`event: ${row.type}\ndata: ${row.data}\n\n`),
+              );
+            } catch {
+              clearInterval(pollInterval);
+              return;
+            }
+          }
+
+          // Opportunistic cleanup of stale events (> 2 min)
+          if (Math.random() < 0.05) {
+            void sql`delete from device_events where created_at < now() - interval '2 minutes'`.catch(() => {});
+          }
+        } catch {}
+      }, 1000);
+
       const pingInterval = setInterval(() => {
         try {
           controller.enqueue(
@@ -47,6 +90,7 @@ export async function GET(req: NextRequest) {
       }, 5000);
 
       req.signal.addEventListener("abort", () => {
+        clearInterval(pollInterval);
         clearInterval(pingInterval);
         unsubscribe();
         try {

@@ -20,6 +20,8 @@ import {
   listVoidLetters,
   castVoidLetter,
   starVoidLetter,
+  blockUser,
+  reportUser,
 } from "@/lib/luna/server";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +43,9 @@ interface RequestBody {
   publicKey?: string;
   text?: string;
   letterId?: string;
+  clientMsgId?: string;
+  targetId?: string;
+  reason?: string;
 }
 
 interface RateLimitBucket {
@@ -119,7 +124,7 @@ const actionHandlers: Record<string, ActionHandler> = {
   },
   sendMessage: (p) => {
     if (!p.sessionId || typeof p.body !== "string") throw new Error("Missing sessionId or message body.");
-    return sendMessage({ deviceId: p.deviceId!, sessionId: p.sessionId, body: p.body });
+    return sendMessage({ deviceId: p.deviceId!, sessionId: p.sessionId, body: p.body, clientMsgId: p.clientMsgId });
   },
   editMessage: (p) => {
     if (!p.sessionId || !p.messageId || typeof p.body !== "string") {
@@ -154,6 +159,14 @@ const actionHandlers: Record<string, ActionHandler> = {
   starVoidLetter: (p) => {
     requireFields(p, "letterId");
     return starVoidLetter({ deviceId: p.deviceId!, letterId: p.letterId! });
+  },
+  blockUser: (p) => {
+    requireFields(p, "targetId");
+    return blockUser({ deviceId: p.deviceId!, targetId: p.targetId! });
+  },
+  reportUser: (p) => {
+    requireFields(p, "targetId", "reason");
+    return reportUser({ deviceId: p.deviceId!, targetId: p.targetId!, reason: p.reason! });
   },
 };
 

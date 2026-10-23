@@ -34,6 +34,8 @@ export interface ChatMessage {
   copied: boolean;
   editedAt?: string;
   seenAt?: string;
+  clientMsgId?: string;
+  status?: "sending" | "sent" | "delivered" | "seen" | "failed";
 }
 
 export interface SessionView {

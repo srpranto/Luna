@@ -3,20 +3,20 @@ import type { ButtonHTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 text-sm font-medium transition-all duration-120 ease-out disabled:pointer-events-none disabled:opacity-40 select-none cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-400 touch-manipulation active:scale-[0.97]",
+  "inline-flex items-center justify-center gap-2 text-sm font-medium transition-all duration-200 cubic-bezier(0.16, 1, 0.3, 1) disabled:pointer-events-none disabled:opacity-40 select-none cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-400 touch-manipulation active:scale-[0.96]",
   {
     variants: {
       variant: {
-        default: "bg-zinc-50 text-zinc-950 hover:bg-zinc-200 shadow-sm",
+        default: "bg-zinc-100 text-zinc-950 hover:bg-white shadow-[0_0_20px_rgba(255,255,255,0.15)] font-medium",
         destructive:
-          "bg-red-500/15 text-red-400 border border-red-500/20 hover:bg-red-500/25",
+          "bg-rose-950/40 text-rose-300 border border-rose-500/30 hover:bg-rose-950/60",
         outline:
-          "border border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100",
+          "border border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100 hover:border-zinc-700",
         secondary:
-          "bg-zinc-900 text-zinc-200 border border-white/10 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] hover:bg-zinc-800 hover:text-white",
-        ghost: "bg-transparent text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-100",
+          "bg-zinc-900 text-zinc-100 border border-white/10 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] hover:bg-zinc-850 hover:border-white/20 hover:text-white",
+        ghost: "bg-transparent text-zinc-400 hover:bg-zinc-850 hover:text-zinc-100",
         success:
-          "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/25",
+          "bg-white/10 text-zinc-100 border border-white/20 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] hover:bg-white/15",
       },
       size: {
         default: "min-h-[38px] px-4 py-2 rounded-xl",

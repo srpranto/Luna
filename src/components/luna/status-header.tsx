@@ -64,6 +64,34 @@ const STELLAR_STARS = [
   { top: "26%", left: "72%", size: 1, duration: "4.0s", delay: "0.9s" },
 ];
 
+export interface ActiveChatProps {
+  peerCallsign: string;
+  sessionAgeMs?: number;
+  sessionCreatedAt?: string;
+  sessionKind?: "stranger" | "friend";
+  peerPresence?: "active" | "away" | "disconnected";
+  peerTyping?: boolean;
+  matchedTopic?: string;
+  interests?: string[];
+}
+
+export interface StatusHeaderProps {
+  callsign?: string;
+  meta?: string;
+  onToggleLog: () => void;
+  logOpen: boolean;
+  soundEnabled?: boolean;
+  onToggleSound?: () => void;
+  settingsOpen?: boolean;
+  onToggleSettings?: () => void;
+  voidOpen?: boolean;
+  onToggleVoid?: () => void;
+  hasHistory?: boolean;
+  historyOpen?: boolean;
+  onToggleHistory?: () => void;
+  activeChat?: ActiveChatProps;
+}
+
 export function StatusHeader({
   callsign,
   meta,
@@ -73,37 +101,17 @@ export function StatusHeader({
   onToggleSound,
   settingsOpen = false,
   onToggleSettings,
+  voidOpen = false,
   onToggleVoid,
   hasHistory = false,
   historyOpen = false,
   onToggleHistory,
   activeChat,
-}: {
-  callsign?: string;
-  meta?: string;
-  onToggleLog: () => void;
-  logOpen: boolean;
-  soundEnabled?: boolean;
-  onToggleSound?: () => void;
-  settingsOpen?: boolean;
-  onToggleSettings?: () => void;
-  onToggleVoid?: () => void;
-  hasHistory?: boolean;
-  historyOpen?: boolean;
-  onToggleHistory?: () => void;
-  activeChat?: {
-    peerCallsign: string;
-    sessionAgeMs?: number;
-    sessionCreatedAt?: string;
-    sessionKind?: "stranger" | "friend";
-    peerPresence?: "active" | "away" | "disconnected";
-    peerTyping?: boolean;
-  };
-}) {
+}: StatusHeaderProps) {
   return (
     <header className="relative z-40 flex items-center justify-between border-b border-white/10 bg-zinc-950/60 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:px-6 backdrop-blur-md">
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-        <div className="absolute inset-0 bg-radial-[ellipse_80%_60%_at_50%_40%] from-indigo-950/15 via-transparent to-transparent opacity-60" />
+        <div className="absolute inset-0 bg-radial-[ellipse_80%_60%_at_50%_40%] from-white/[0.02] via-transparent to-transparent opacity-60" />
         <div className="hidden sm:block">
           {STELLAR_STARS.map((star, idx) => (
             <span
@@ -134,7 +142,7 @@ export function StatusHeader({
               <>
                 <span className="text-xs text-zinc-600 hidden sm:inline">•</span>
                 <div className="hidden sm:flex items-center gap-1.5">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400/80" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.7)]" />
                   <span className="text-xs font-mono text-zinc-400 font-medium">
                     {callsign ?? "connecting…"}
                   </span>
@@ -159,10 +167,10 @@ export function StatusHeader({
               className={cn(
                 "h-2 w-2 rounded-full shrink-0",
                 activeChat.peerPresence === "away"
-                  ? "bg-amber-400"
+                  ? "bg-zinc-400"
                   : activeChat.peerPresence === "disconnected"
-                    ? "bg-zinc-500"
-                    : "bg-emerald-400 animate-pulse",
+                    ? "bg-zinc-600"
+                    : "bg-white animate-pulse shadow-[0_0_8px_rgba(255,255,255,0.8)]",
               )}
               title={
                 activeChat.peerPresence === "away"
@@ -176,7 +184,7 @@ export function StatusHeader({
               {activeChat.peerCallsign}
             </span>
             {activeChat.peerPresence === "away" && (
-              <span className="text-[10px] font-mono text-amber-400/90 shrink-0">(away)</span>
+              <span className="text-[10px] font-mono text-zinc-400 shrink-0">(away)</span>
             )}
             {activeChat.peerTyping && (
               <span className="text-[10px] font-mono text-zinc-400 animate-pulse hidden sm:inline shrink-0">
@@ -184,6 +192,42 @@ export function StatusHeader({
               </span>
             )}
           </div>
+          {(() => {
+            const rawTopic =
+              activeChat.matchedTopic ||
+              (activeChat.interests && activeChat.interests.length > 0
+                ? activeChat.interests[0]
+                : undefined);
+            if (!rawTopic || !rawTopic.trim()) return null;
+            const topic = rawTopic.trim().startsWith("#")
+              ? rawTopic.trim().slice(1)
+              : rawTopic.trim();
+            if (!topic) return null;
+            const displayTopic = topic.length > 20 ? `${topic.slice(0, 18)}…` : topic;
+            const additionalCount =
+              activeChat.interests && activeChat.interests.length > 1
+                ? activeChat.interests.length - 1
+                : 0;
+
+            return (
+              <Badge
+                variant="secondary"
+                className="h-5 sm:h-5.5 px-1.5 sm:px-2 py-0 text-[10px] sm:text-[11px] font-mono font-medium border border-white/15 bg-white/5 text-zinc-200 hover:bg-white/10 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] shrink-0 max-w-[110px] xs:max-w-[130px] sm:max-w-[160px] truncate"
+                title={
+                  activeChat.interests && activeChat.interests.length > 1
+                    ? activeChat.interests.map((t) => (t.startsWith("#") ? t : `#${t}`)).join(", ")
+                    : `#${topic}`
+                }
+              >
+                <span className="truncate">#{displayTopic}</span>
+                {additionalCount > 0 && (
+                  <span className="ml-1 text-[9px] text-zinc-400 font-normal shrink-0">
+                    +{additionalCount}
+                  </span>
+                )}
+              </Badge>
+            );
+          })()}
           <SessionElapsedBadge
             createdAt={activeChat.sessionCreatedAt}
             fallbackAgeMs={activeChat.sessionAgeMs}
@@ -251,17 +295,22 @@ export function StatusHeader({
           {!activeChat && onToggleVoid && (
             <Button
               type="button"
-              variant="ghost"
+              variant={voidOpen ? "secondary" : "ghost"}
               size="icon"
               onClick={() => {
                 triggerHaptic("light");
                 onToggleVoid();
               }}
-              aria-label="The Void (24h Orbit Letters)"
-              title="The Void (24h Orbit Letters)"
-              className="h-8.5 w-8.5 sm:h-8 sm:w-8 text-indigo-400 hover:text-indigo-200 hover:bg-zinc-800/80 touch-manipulation"
+              aria-label={voidOpen ? "Close The Void" : "The Void (24h Orbit Letters)"}
+              title={voidOpen ? "Close The Void" : "The Void (24h Orbit Letters)"}
+              className={cn(
+                "h-8.5 w-8.5 sm:h-8 sm:w-8 touch-manipulation cursor-pointer",
+                voidOpen
+                  ? "text-zinc-100 bg-zinc-800"
+                  : "text-zinc-300 hover:text-white hover:bg-zinc-800/80",
+              )}
             >
-              <BlackHoleIcon className="h-4 w-4" />
+              {voidOpen ? <X className="h-4 w-4" /> : <BlackHoleIcon className="h-4 w-4" />}
             </Button>
           )}
 

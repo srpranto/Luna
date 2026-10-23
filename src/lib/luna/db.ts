@@ -14,7 +14,7 @@ type GlobalRef = typeof globalThis & {
   __lunaMigratedVersion__?: number;
 };
 
-const CURRENT_SCHEMA_VERSION = 9;
+const CURRENT_SCHEMA_VERSION = 10;
 const globalRef = globalThis as GlobalRef;
 
 const LUNA_SCHEMA = `
@@ -93,6 +93,36 @@ create table if not exists friendships (
   primary key (user_a, user_b),
   check (user_a < user_b)
 );
+
+create table if not exists blocks (
+  blocker_id  text not null,
+  blocked_id  text not null,
+  created_at  timestamptz not null default now(),
+  primary key (blocker_id, blocked_id)
+);
+
+create index if not exists blocks_blocker_idx on blocks (blocker_id);
+create index if not exists blocks_blocked_idx on blocks (blocked_id);
+
+create table if not exists abuse_reports (
+  id          text primary key,
+  reporter_id text not null,
+  reported_id text not null,
+  reason      text not null,
+  created_at  timestamptz not null default now()
+);
+
+create table if not exists device_events (
+  id          bigserial primary key,
+  device_id   text not null,
+  type        text not null,
+  data        text not null,
+  instance_id text,
+  created_at  timestamptz not null default now()
+);
+
+alter table device_events add column if not exists instance_id text;
+create index if not exists device_events_device_idx on device_events (device_id, id);
 
 create table if not exists void_letters (
   id           text primary key,
@@ -228,6 +258,31 @@ export async function getSql(): Promise<Sql> {
         created_at   timestamptz not null default now(),
         primary key (letter_id, device_id)
       );`,
+      `create table if not exists blocks (
+        blocker_id  text not null,
+        blocked_id  text not null,
+        created_at  timestamptz not null default now(),
+        primary key (blocker_id, blocked_id)
+      );`,
+      "create index if not exists blocks_blocker_idx on blocks (blocker_id);",
+      "create index if not exists blocks_blocked_idx on blocks (blocked_id);",
+      `create table if not exists abuse_reports (
+        id          text primary key,
+        reporter_id text not null,
+        reported_id text not null,
+        reason      text not null,
+        created_at  timestamptz not null default now()
+      );`,
+      `create table if not exists device_events (
+        id          bigserial primary key,
+        device_id   text not null,
+        type        text not null,
+        data        text not null,
+        instance_id text,
+        created_at  timestamptz not null default now()
+      );`,
+      "alter table device_events add column if not exists instance_id text;",
+      "create index if not exists device_events_device_idx on device_events (device_id, id);",
     ];
 
     for (const stmt of migrationStatements) {

@@ -9,6 +9,7 @@ interface UseLunaStreamOptions {
   onEvent: (eventType: string, data: unknown) => void;
   onDeskUpdate: (desk: DeskView) => void;
   onResync: () => void;
+  isListening?: boolean;
 }
 
 export function useLunaStream({
@@ -16,15 +17,18 @@ export function useLunaStream({
   onEvent,
   onDeskUpdate,
   onResync,
+  isListening = false,
 }: UseLunaStreamOptions) {
   const onEventRef = useRef(onEvent);
   const onDeskUpdateRef = useRef(onDeskUpdate);
   const onResyncRef = useRef(onResync);
+  const isListeningRef = useRef(isListening);
 
   useEffect(() => {
     onEventRef.current = onEvent;
     onDeskUpdateRef.current = onDeskUpdate;
     onResyncRef.current = onResync;
+    isListeningRef.current = isListening;
   });
 
   useEffect(() => {
@@ -40,16 +44,25 @@ export function useLunaStream({
       () => {
         if (cancelled) return;
         getDesk({ deviceId })
-          .then((d) => !cancelled && onDeskUpdateRef.current(d))
+          .then((d) => {
+            if (!cancelled && !isListeningRef.current) {
+              onDeskUpdateRef.current(d);
+            }
+          })
           .catch(() => {});
         onResyncRef.current();
       },
     );
 
     const pollTimer = window.setInterval(() => {
+      // While listening in queue, heartbeatQueue already handles real-time desk synchronization
+      if (isListeningRef.current) return;
+
       getDesk({ deviceId })
         .then((data) => {
-          if (!cancelled) onDeskUpdateRef.current(data);
+          if (!cancelled && !isListeningRef.current) {
+            onDeskUpdateRef.current(data);
+          }
         })
         .catch(() => {});
     }, 15000);

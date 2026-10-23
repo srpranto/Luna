@@ -140,6 +140,13 @@ export function StarfieldCanvas({
       animationId = requestAnimationFrame(render);
     };
 
+    if (prefersReducedMotion) {
+      render(performance.now());
+      return () => {
+        resizeObserver.disconnect();
+      };
+    }
+
     const handleVisibility = () => {
       if (document.hidden) {
         cancelAnimationFrame(animationId);

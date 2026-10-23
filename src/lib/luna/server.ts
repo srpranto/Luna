@@ -10,7 +10,6 @@ import {
   friendSessionId,
   hashIp,
   isDeviceId,
-  minSharedForWait,
   newId,
   pairKey,
   parseInterests,
@@ -32,6 +31,7 @@ import type {
 } from "./types";
 import { emitToDevice, isDeviceConnected } from "./events";
 import { evaluateSafety } from "./safety";
+import { checkMessageRateLimit, checkMatchmakerRateLimit } from "./rate-limit";
 
 interface StationRow {
   device_id: string;
@@ -59,6 +59,26 @@ interface SessionRow {
   interests: unknown;
   created_at: Date | string;
   closed_at: Date | string | null;
+}
+
+interface SessionWithStationsRow {
+  id: string;
+  a_id: string;
+  b_id: string;
+  kind: SessionKind;
+  interests: unknown;
+  created_at: Date | string;
+  closed_at: Date | string | null;
+  a_callsign: string | null;
+  a_public_key: string | null;
+  a_is_away: boolean | null;
+  a_last_seen: Date | string | null;
+  a_typing_until: Date | string | null;
+  b_callsign: string | null;
+  b_public_key: string | null;
+  b_is_away: boolean | null;
+  b_last_seen: Date | string | null;
+  b_typing_until: Date | string | null;
 }
 
 interface MessageRow {
@@ -93,14 +113,17 @@ function requireText(value: unknown, max: number): string {
   if (typeof value !== "string") {
     throw new Error("Message cannot be empty.");
   }
-  const body = value.replace(/\s+/g, " ").trim();
-  if (!body) {
+  // Normalize CRLF to LF and preserve intentional newlines and whitespace
+  const normalized = value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const trimmed = normalized.trim();
+  if (!trimmed) {
     throw new Error("Message cannot be empty.");
   }
-  if (body.length > max) {
+  if (trimmed.length > max) {
     throw new Error(`Line too long (${max} max).`);
   }
-  return body;
+  // Clamp excessive consecutive blank lines to at most 2
+  return trimmed.replace(/\n{4,}/g, "\n\n\n");
 }
 
 function asIso(value: string | Date): string {
@@ -217,6 +240,14 @@ async function cleanup(sql?: Sql): Promise<void> {
   }
   const stale = `${QUEUE_STALE_SECONDS} seconds`;
   await sql`delete from queue where last_beat < now() - ${stale}::interval`;
+  await sql`
+    delete from queue
+    where device_id in (
+      select a_id from sessions where closed_at is null
+      union
+      select b_id from sessions where closed_at is null
+    )
+  `;
   await sql`delete from messages where expires_at < now()`;
   await reapAbandonedSessions(sql);
 }
@@ -319,14 +350,16 @@ async function loadSessionView(session: SessionRow, deviceId: string): Promise<S
   const inbound = friendReqs.find((r) => r.to_id === deviceId);
 
   const nowMs = Date.now();
+  const sessionAgeMs = nowMs - new Date(session.created_at).getTime();
+  const isFreshSession = sessionAgeMs < 15000;
   const peerLastSeenMs = peerStation?.last_seen ? new Date(peerStation.last_seen).getTime() : 0;
   const peerLastSeen = peerStation?.last_seen ? asIso(peerStation.last_seen) : undefined;
   const peerTyping = Boolean(
     peerStation?.typing_until && new Date(peerStation.typing_until).getTime() > nowMs,
   );
-  const recentlySeen = peerLastSeenMs > 0 && nowMs - peerLastSeenMs < 25000;
-  const peerOnline = isDeviceConnected(peerId) || recentlySeen;
-  const peerIsAway = Boolean(peerStation?.is_away) || !peerOnline;
+  const recentlySeen = peerLastSeenMs > 0 && nowMs - peerLastSeenMs < 45000;
+  const peerOnline = isDeviceConnected(peerId) || recentlySeen || isFreshSession;
+  const peerIsAway = !isFreshSession && (Boolean(peerStation?.is_away) || !peerOnline);
   const peerPresence: "active" | "away" | "disconnected" = session.closed_at
     ? "disconnected"
     : peerIsAway
@@ -542,7 +575,11 @@ async function loadDesk(
 
   const activeSession = activeSessionRow ? await loadSessionView(activeSessionRow, deviceId) : null;
 
-  const queuedRow = queueRows[0];
+  if (activeSession) {
+    await sql`delete from queue where device_id = ${deviceId}`;
+  }
+
+  const queuedRow = activeSession ? undefined : queueRows[0];
 
   return {
     station,
@@ -560,99 +597,208 @@ async function heartbeatQueueHandler(
   blockedIds: string[] = [],
   clientIp?: string,
 ): Promise<QueueHeartbeatResult> {
-  await cleanup();
+  const rateCheck = checkMatchmakerRateLimit(deviceId);
+  if (!rateCheck.allowed) {
+    return {
+      status: "waiting",
+      desk: await loadDesk(deviceId, clientIp),
+    };
+  }
+
   const sql = await getSql();
   const open = await openSessionFor(deviceId);
   if (open) {
+    await sql`delete from queue where device_id = ${deviceId}`;
     return { status: "matched", desk: await loadDesk(deviceId, clientIp) };
   }
 
-  const meRows = await sql<QueueRow>`
-    select device_id, interests, entered_at, last_beat
-    from queue where device_id = ${deviceId}
-  `;
-  const me = meRows[0];
-  if (!me) {
-    return { status: "idle", desk: await loadDesk(deviceId, clientIp) };
-  }
-
+  // Update heartbeats immediately so active users are never pruned by cleanup
   await sql`update queue set last_beat = now() where device_id = ${deviceId}`;
   await sql`update stations set last_seen = now() where device_id = ${deviceId}`;
 
-  const waitMs = Date.now() - new Date(me.entered_at).getTime();
-  const myInterests = parseInterests(me.interests);
-  const minShared = myInterests.length === 0 ? 0 : minSharedForWait(Number.isFinite(waitMs) ? waitMs : 0);
-
-  const others = await sql<QueueRow>`
-    select q.device_id, q.interests, q.entered_at, q.last_beat
-    from queue q
-    inner join stations s on s.device_id = q.device_id
-    where q.device_id <> ${deviceId}
-      and q.last_beat > now() - interval '6 seconds'
-      and s.last_seen > now() - interval '8 seconds'
-      and not exists (
-        select 1 from sessions ses
-        where ses.closed_at is null
-          and (ses.a_id = q.device_id or ses.b_id = q.device_id)
-      )
+  // Enforce server-side blocks: query permanent blocks recorded on server
+  const serverBlocks = await sql<{ peer_id: string }>`
+    select blocked_id as peer_id from blocks where blocker_id = ${deviceId}
+    union
+    select blocker_id as peer_id from blocks where blocked_id = ${deviceId}
   `;
+  const blockedSet = new Set([...blockedIds, ...serverBlocks.map((b) => b.peer_id)]);
 
-  let best: { row: QueueRow; shared: string[] } | null = null;
-  for (const row of others) {
-    if (blockedIds.includes(row.device_id)) {
-      continue;
-    }
-    const shared = sharedInterests(myInterests, parseInterests(row.interests));
-    if (shared.length < minShared) {
-      continue;
-    }
-    if (
-      !best ||
-      shared.length > best.shared.length ||
-      (shared.length === best.shared.length && row.entered_at < best.row.entered_at)
-    ) {
-      best = { row, shared };
-    }
-  }
+  await cleanup(sql);
 
-  if (!best) {
-    return {
-      status: "waiting",
-      desk: await loadDesk(deviceId, clientIp),
-    };
-  }
+  for (let matchAttempt = 0; matchAttempt < 4; matchAttempt++) {
+    const openNow = await openSessionFor(deviceId);
+    if (openNow) {
+      await sql`delete from queue where device_id = ${deviceId}`;
+      return { status: "matched", desk: await loadDesk(deviceId, clientIp) };
+    }
 
-  const removed = await sql<{ device_id: string }>`
-    delete from queue
-    where device_id = ${deviceId} or device_id = ${best.row.device_id}
-    returning device_id
-  `;
-  if (removed.length < 2) {
-    const payload = JSON.stringify(myInterests);
-    await sql`
-      insert into queue (device_id, interests, entered_at, last_beat)
-      values (${deviceId}, ${payload}, ${me.entered_at}, now())
-      on conflict (device_id) do update set last_beat = now()
+    const meRows = await sql<QueueRow>`
+      select device_id, interests, entered_at, last_beat
+      from queue where device_id = ${deviceId}
     `;
-    return {
-      status: "waiting",
-      desk: await loadDesk(deviceId, clientIp),
-    };
+    const me = meRows[0];
+    if (!me) {
+      let openAfterMe = await openSessionFor(deviceId);
+      if (!openAfterMe) {
+        for (let attempt = 0; attempt < 5; attempt++) {
+          await new Promise((r) => setTimeout(r, 20));
+          openAfterMe = await openSessionFor(deviceId);
+          if (openAfterMe) break;
+        }
+      }
+      if (openAfterMe) {
+        await sql`delete from queue where device_id = ${deviceId}`;
+        return { status: "matched", desk: await loadDesk(deviceId, clientIp) };
+      }
+      return { status: "idle", desk: await loadDesk(deviceId, clientIp) };
+    }
+
+    const myInterests = parseInterests(me.interests);
+
+    const others = await sql<QueueRow>`
+      select q.device_id, q.interests, q.entered_at, q.last_beat
+      from queue q
+      inner join stations s on s.device_id = q.device_id
+      where q.device_id <> ${deviceId}
+        and q.last_beat > now() - interval '30 seconds'
+        and s.last_seen > now() - interval '45 seconds'
+        and not exists (
+          select 1 from sessions ses
+          where ses.closed_at is null
+            and (ses.a_id = q.device_id or ses.b_id = q.device_id)
+        )
+    `;
+
+    let best: { row: QueueRow; shared: string[] } | null = null;
+    for (const row of others) {
+      if (blockedSet.has(row.device_id)) {
+        continue;
+      }
+      const theirInterests = parseInterests(row.interests);
+
+      if (myInterests.length === 0) {
+        // Untagged client: can only match other untagged clients.
+        // Prevent untagged clients from stealing tagged clients from the queue.
+        if (theirInterests.length > 0) {
+          continue;
+        }
+        const shared: string[] = [];
+        if (!best || row.entered_at < best.row.entered_at) {
+          best = { row, shared };
+        }
+      } else {
+        // Tagged client: match immediately if strangers share >= 1 topic without broadening stalls.
+        const shared = sharedInterests(myInterests, theirInterests);
+        if (shared.length < 1) {
+          continue;
+        }
+        if (
+          !best ||
+          shared.length > best.shared.length ||
+          (shared.length === best.shared.length && row.entered_at < best.row.entered_at)
+        ) {
+          best = { row, shared };
+        }
+      }
+    }
+
+    if (!best) {
+      return {
+        status: "waiting",
+        desk: await loadDesk(deviceId, clientIp),
+      };
+    }
+
+    const removed = await sql<{ device_id: string }>`
+      delete from queue
+      where device_id = ${deviceId} or device_id = ${best.row.device_id}
+      returning device_id
+    `;
+
+    if (removed.length < 2) {
+      let alreadyMatched = await openSessionFor(deviceId);
+      if (!alreadyMatched && !removed.some((r) => r.device_id === deviceId)) {
+        for (let attempt = 0; attempt < 5; attempt++) {
+          await new Promise((r) => setTimeout(r, 20));
+          alreadyMatched = await openSessionFor(deviceId);
+          if (alreadyMatched) break;
+        }
+      }
+
+      if (alreadyMatched) {
+        await sql`delete from queue where device_id = ${deviceId}`;
+        return {
+          status: "matched",
+          desk: await loadDesk(deviceId, clientIp),
+        };
+      }
+
+      // Defensive restore: if we deleted best without deleting ourselves, restore best
+      for (const r of removed) {
+        if (r.device_id !== deviceId) {
+          const targetRow = others.find((o) => o.device_id === r.device_id);
+          if (targetRow) {
+            const tPayload = JSON.stringify(parseInterests(targetRow.interests));
+            await sql`
+              insert into queue (device_id, interests, entered_at, last_beat)
+              values (${targetRow.device_id}, ${tPayload}, ${targetRow.entered_at}, now())
+              on conflict (device_id) do update set last_beat = now()
+            `;
+          }
+        }
+      }
+
+      const payload = JSON.stringify(myInterests);
+      await sql`
+        insert into queue (device_id, interests, entered_at, last_beat)
+        values (${deviceId}, ${payload}, ${me.entered_at}, now())
+        on conflict (device_id) do update set last_beat = now()
+      `;
+
+      const desk = await loadDesk(deviceId, clientIp);
+      if (desk.activeSession) {
+        await sql`delete from queue where device_id = ${deviceId}`;
+        return { status: "matched", desk };
+      }
+
+      continue;
+    }
+
+    const activeCheck = await sql<{ id: string }>`
+      select id from sessions
+      where closed_at is null
+        and (a_id in (${deviceId}, ${best.row.device_id}) or b_id in (${deviceId}, ${best.row.device_id}))
+      limit 1
+    `;
+    if (activeCheck.length > 0) {
+      await sql`delete from queue where device_id = ${deviceId} or device_id = ${best.row.device_id}`;
+      return { status: "matched", desk: await loadDesk(deviceId, clientIp) };
+    }
+
+    const sessionId = newId();
+    const shared = JSON.stringify(best.shared);
+    await sql`
+      insert into sessions (id, a_id, b_id, kind, interests)
+      values (${sessionId}, ${deviceId}, ${best.row.device_id}, 'stranger', ${shared})
+    `;
+    await sql`
+      delete from queue
+      where device_id = ${deviceId} or device_id = ${best.row.device_id}
+    `;
+
+    const deskA = await loadDesk(deviceId, clientIp);
+    const deskB = await loadDesk(best.row.device_id);
+    emitToDevice(deviceId, "session_started", { sessionId, desk: deskA });
+    emitToDevice(best.row.device_id, "session_started", { sessionId, desk: deskB });
+
+    return { status: "matched", desk: deskA };
   }
 
-  const sessionId = newId();
-  const shared = JSON.stringify(best.shared);
-  await sql`
-    insert into sessions (id, a_id, b_id, kind, interests)
-    values (${sessionId}, ${deviceId}, ${best.row.device_id}, 'stranger', ${shared})
-  `;
-
-  const deskA = await loadDesk(deviceId, clientIp);
-  const deskB = await loadDesk(best.row.device_id);
-  emitToDevice(deviceId, "session_started", { sessionId, desk: deskA });
-  emitToDevice(best.row.device_id, "session_started", { sessionId, desk: deskB });
-
-  return { status: "matched", desk: deskA };
+  return {
+    status: "waiting",
+    desk: await loadDesk(deviceId, clientIp),
+  };
 }
 
 async function acceptQslPair(fromId: string, toId: string, requestId: string): Promise<void> {
@@ -707,6 +853,13 @@ export async function joinQueue(input: {
   const sql = await getSql();
   const existing = await openSessionFor(deviceId);
   if (existing) {
+    const ageMs = Date.now() - new Date(existing.created_at).getTime();
+    if (ageMs < 4000) {
+      // Just matched within last 4s - do not destroy the fresh match
+      await sql`delete from queue where device_id = ${deviceId}`;
+      return { status: "matched", desk: await loadDesk(deviceId, input.clientIp) };
+    }
+
     const ended = await endSessionOnce(sql, existing);
     if (ended) {
       const peerId = peerOf(existing, deviceId);
@@ -835,6 +988,11 @@ export async function leaveSession(input: {
 
   const peerId = peerOf(session, deviceId);
   const ended = await endSessionOnce(sql, session);
+  await sql`
+    delete from queue
+    where (device_id = ${deviceId} or device_id = ${peerId})
+      and entered_at <= ${session.created_at}
+  `;
   const desk = await loadDesk(deviceId);
   if (ended) {
     const peerDesk = await loadDesk(peerId);
@@ -855,8 +1013,14 @@ export async function sendMessage(input: {
   deviceId: string;
   sessionId: string;
   body: string;
+  clientMsgId?: string;
 }): Promise<MessagesPack> {
   const deviceId = requireDeviceId(input.deviceId);
+  const rateCheck = checkMessageRateLimit(deviceId);
+  if (!rateCheck.allowed) {
+    throw new Error(`Rate limit exceeded. Please wait ${Math.ceil(rateCheck.retryAfterMs / 1000)}s.`);
+  }
+
   const body = requireText(input.body, MAX_LINE_CHARS);
   const sql = await getSql();
 
@@ -867,14 +1031,34 @@ export async function sendMessage(input: {
     }
   }
 
-  const sessions = await sql<SessionRow>`
-    select id, a_id, b_id, kind, interests, created_at, closed_at
-    from sessions
-    where id = ${input.sessionId}
-      and (a_id = ${deviceId} or b_id = ${deviceId})
+  // 1 query to fetch session and station metadata (callsigns, public keys, presence, is_away)
+  const rows = await sql<SessionWithStationsRow>`
+    select
+      s.id,
+      s.a_id,
+      s.b_id,
+      s.kind,
+      s.interests,
+      s.created_at,
+      s.closed_at,
+      sa.callsign as a_callsign,
+      sa.public_key as a_public_key,
+      sa.is_away as a_is_away,
+      sa.last_seen as a_last_seen,
+      sa.typing_until as a_typing_until,
+      sb.callsign as b_callsign,
+      sb.public_key as b_public_key,
+      sb.is_away as b_is_away,
+      sb.last_seen as b_last_seen,
+      sb.typing_until as b_typing_until
+    from sessions s
+    left join stations sa on sa.device_id = s.a_id
+    left join stations sb on sb.device_id = s.b_id
+    where s.id = ${input.sessionId}
+      and (s.a_id = ${deviceId} or s.b_id = ${deviceId})
   `;
-  const session = sessions[0];
-  if (!session) {
+  const row = rows[0];
+  if (!row) {
     return {
       session: {
         id: input.sessionId,
@@ -893,24 +1077,167 @@ export async function sendMessage(input: {
       messages: [],
     };
   }
-  if (session.closed_at) {
-    return loadMessagesPack(deviceId, session.id, true);
+
+  const isA = row.a_id === deviceId;
+  const peerId = isA ? row.b_id : row.a_id;
+  const senderCallsign = (isA ? row.a_callsign : row.b_callsign) ?? "----";
+  const peerCallsign = (isA ? row.b_callsign : row.a_callsign) ?? "----";
+  const senderPublicKey = (isA ? row.a_public_key : row.b_public_key) ?? undefined;
+  const peerPublicKey = (isA ? row.b_public_key : row.a_public_key) ?? undefined;
+
+  if (row.closed_at) {
+    return {
+      session: {
+        id: row.id,
+        kind: row.kind,
+        peerId,
+        peerCallsign,
+        peerPublicKey,
+        interests: parseInterests(row.interests),
+        createdAt: asIso(row.created_at),
+        closed: true,
+        outboundQsl: null,
+        inboundQsl: null,
+        alreadyFriends: row.kind === "friend",
+        peerTyping: false,
+        peerPresence: "disconnected",
+        peerIsAway: true,
+      },
+      messages: [],
+    };
   }
 
-  const ttl = ttlInterval(session.kind);
-  await sql`
+  // 1 query to insert message RETURNING id, created_at, expires_at
+  const ttl = ttlInterval(row.kind);
+  const messageId = input.clientMsgId || newId();
+  const insertedRows = await sql<{
+    id: string;
+    created_at: Date | string;
+    expires_at: Date | string;
+  }>`
     insert into messages (id, session_id, from_id, body, expires_at)
-    values (${newId()}, ${session.id}, ${deviceId}, ${body}, now() + ${ttl}::interval)
+    values (${messageId}, ${row.id}, ${deviceId}, ${body}, now() + ${ttl}::interval)
+    on conflict (id) do update set id = messages.id
+    returning id, created_at, expires_at
   `;
+  const inserted = insertedRows[0] ?? {
+    id: messageId,
+    created_at: new Date(),
+    expires_at: new Date(Date.now() + 86400000),
+  };
 
-  const peerId = peerOf(session, deviceId);
-  const peerPack = await loadMessagesPack(peerId, session.id, true);
-  const pack = await loadMessagesPack(deviceId, session.id, true);
+  const nowMs = Date.now();
+  const sessionAgeMs = nowMs - new Date(row.created_at).getTime();
+  const isFreshSession = sessionAgeMs < 15000;
 
-  emitToDevice(peerId, "message", peerPack);
-  emitToDevice(deviceId, "message", pack);
+  const peerLastSeenRaw = isA ? row.b_last_seen : row.a_last_seen;
+  const peerTypingUntilRaw = isA ? row.b_typing_until : row.a_typing_until;
+  const peerIsAwayRaw = isA ? row.b_is_away : row.a_is_away;
 
-  return pack;
+  const senderLastSeenRaw = isA ? row.a_last_seen : row.b_last_seen;
+  const senderTypingUntilRaw = isA ? row.a_typing_until : row.b_typing_until;
+  const senderIsAwayRaw = isA ? row.a_is_away : row.b_is_away;
+
+  // Peer presence for sender's view
+  const peerLastSeenMs = peerLastSeenRaw ? new Date(peerLastSeenRaw).getTime() : 0;
+  const peerLastSeen = peerLastSeenRaw ? asIso(peerLastSeenRaw) : undefined;
+  const peerTyping = Boolean(
+    peerTypingUntilRaw && new Date(peerTypingUntilRaw).getTime() > nowMs,
+  );
+  const peerRecentlySeen = peerLastSeenMs > 0 && nowMs - peerLastSeenMs < 45000;
+  const peerOnline = isDeviceConnected(peerId) || peerRecentlySeen || isFreshSession;
+  const peerIsAway = !isFreshSession && (Boolean(peerIsAwayRaw) || !peerOnline);
+  const peerPresence: "active" | "away" | "disconnected" = peerIsAway ? "away" : "active";
+
+  // Sender presence for peer's view
+  const senderLastSeenMs = senderLastSeenRaw ? new Date(senderLastSeenRaw).getTime() : 0;
+  const senderLastSeen = senderLastSeenRaw ? asIso(senderLastSeenRaw) : undefined;
+  const senderTyping = Boolean(
+    senderTypingUntilRaw && new Date(senderTypingUntilRaw).getTime() > nowMs,
+  );
+  const senderRecentlySeen = senderLastSeenMs > 0 && nowMs - senderLastSeenMs < 45000;
+  const senderOnline = isDeviceConnected(deviceId) || senderRecentlySeen || isFreshSession;
+  const senderIsAway = !isFreshSession && (Boolean(senderIsAwayRaw) || !senderOnline);
+  const senderPresence: "active" | "away" | "disconnected" = senderIsAway ? "away" : "active";
+
+  const interests = parseInterests(row.interests);
+
+  const mySessionView: SessionView = {
+    id: row.id,
+    kind: row.kind,
+    peerId,
+    peerCallsign,
+    peerPublicKey,
+    interests,
+    createdAt: asIso(row.created_at),
+    closed: false,
+    outboundQsl: null,
+    inboundQsl: null,
+    alreadyFriends: row.kind === "friend",
+    peerTyping,
+    peerLastSeen,
+    peerPresence,
+    peerIsAway,
+  };
+
+  const peerSessionView: SessionView = {
+    id: row.id,
+    kind: row.kind,
+    peerId: deviceId,
+    peerCallsign: senderCallsign,
+    peerPublicKey: senderPublicKey,
+    interests,
+    createdAt: asIso(row.created_at),
+    closed: false,
+    outboundQsl: null,
+    inboundQsl: null,
+    alreadyFriends: row.kind === "friend",
+    peerTyping: senderTyping,
+    peerLastSeen: senderLastSeen,
+    peerPresence: senderPresence,
+    peerIsAway: senderIsAway,
+  };
+
+  const messageCreatedAt = asIso(inserted.created_at);
+  const messageExpiresAt = asIso(inserted.expires_at);
+
+  const peerMessage: ChatMessage = {
+    id: inserted.id,
+    clientMsgId: input.clientMsgId,
+    fromId: deviceId,
+    fromCallsign: senderCallsign,
+    body,
+    createdAt: messageCreatedAt,
+    expiresAt: messageExpiresAt,
+    mine: false,
+    system: false,
+    copied: false,
+    status: "delivered",
+  };
+
+  const myMessage: ChatMessage = {
+    id: inserted.id,
+    clientMsgId: input.clientMsgId,
+    fromId: deviceId,
+    fromCallsign: senderCallsign,
+    body,
+    createdAt: messageCreatedAt,
+    expiresAt: messageExpiresAt,
+    mine: true,
+    system: false,
+    copied: false,
+    status: "sent",
+  };
+
+  emitToDevice(peerId, "message", {
+    session: peerSessionView,
+    messages: [peerMessage],
+  });
+
+  return {
+    session: mySessionView,
+    messages: [myMessage],
+  };
 }
 
 export async function editMessage(input: {
@@ -1325,4 +1652,45 @@ export async function starVoidLetter(input: {
     }>`select stars from void_letters where id = ${letterId}`;
     return { ok: true, stars: Number(countRes[0]?.stars ?? 1), hasStarred: true };
   }
+}
+
+export async function blockUser(input: {
+  deviceId: string;
+  targetId: string;
+}): Promise<{ ok: boolean }> {
+  const deviceId = requireDeviceId(input.deviceId);
+  const targetId = requireDeviceId(input.targetId);
+  const sql = await getSql();
+  await sql`
+    insert into blocks (blocker_id, blocked_id)
+    values (${deviceId}, ${targetId})
+    on conflict do nothing
+  `;
+  return { ok: true };
+}
+
+export async function reportUser(input: {
+  deviceId: string;
+  targetId: string;
+  reason: string;
+}): Promise<{ ok: boolean }> {
+  const deviceId = requireDeviceId(input.deviceId);
+  const targetId = requireDeviceId(input.targetId);
+  const reason = requireText(input.reason, 200);
+  const sql = await getSql();
+
+  // Privacy-respecting abuse reporting: stores only reporter, target, and category reason
+  // Never stores message content, plaintext, or encryption keys
+  await sql`
+    insert into abuse_reports (id, reporter_id, reported_id, reason)
+    values (${newId()}, ${deviceId}, ${targetId}, ${reason})
+  `;
+
+  // Automatically enforce server-side block so they cannot be matched again
+  await sql`
+    insert into blocks (blocker_id, blocked_id)
+    values (${deviceId}, ${targetId})
+    on conflict do nothing
+  `;
+  return { ok: true };
 }

@@ -169,7 +169,7 @@ export function InterestGrid({ value, onChange }: InterestInputProps) {
           }}
           className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer min-h-[36px] py-1.5 touch-manipulation"
         >
-          <Sparkles className="h-3 w-3 text-indigo-400" />
+          <Sparkles className="h-3 w-3 text-zinc-300" />
           <span>Browse popular topics</span>
           <ChevronDown
             className={cn(

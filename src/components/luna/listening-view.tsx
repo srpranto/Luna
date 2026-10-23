@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StarfieldCanvas } from "@/components/luna/starfield-canvas";
@@ -22,15 +22,30 @@ export function ListeningView({
   onAddPopular: () => void;
   busy: boolean;
 }) {
-  const [waitMs, setWaitMs] = useState(() => {
-    return enteredAt ? Math.max(0, Date.now() - new Date(enteredAt).getTime()) : 0;
-  });
+  const localStartRef = useRef<number | null>(null);
+  const [waitMs, setWaitMs] = useState(0);
 
   useEffect(() => {
-    if (!enteredAt) return;
+    if (localStartRef.current === null) {
+      localStartRef.current = Date.now();
+    }
+
+    const calcElapsed = () => {
+      const now = Date.now();
+      const serverStart = enteredAt ? new Date(enteredAt).getTime() : NaN;
+      const start = localStartRef.current ?? now;
+      const effectiveStart =
+        Number.isFinite(serverStart) && serverStart <= now
+          ? Math.min(serverStart, start)
+          : start;
+      return Math.max(0, now - effectiveStart);
+    };
+
+    setWaitMs(calcElapsed());
     const timer = window.setInterval(() => {
-      setWaitMs(Math.max(0, Date.now() - new Date(enteredAt).getTime()));
-    }, 1000);
+      setWaitMs(calcElapsed());
+    }, 250);
+
     return () => window.clearInterval(timer);
   }, [enteredAt]);
 
@@ -53,10 +68,10 @@ export function ListeningView({
       />
 
       <div className="animate-fade-up relative z-10 flex items-center justify-center w-40 h-40 sm:w-60 sm:h-60 my-2 sm:my-4">
-        <div className="absolute inset-0 rounded-full border border-indigo-500/20 bg-indigo-500/5 radar-ring" />
+        <div className="absolute inset-0 rounded-full border border-white/20 bg-white/[0.03] radar-ring" />
         <div className="absolute inset-0 rounded-full border border-white/10 bg-zinc-900/10 radar-ring-delayed" />
-        <div className="relative flex h-20 w-20 sm:h-28 sm:w-28 items-center justify-center rounded-full border border-indigo-400/30 bg-zinc-950/90 shadow-[0_0_50px_rgba(99,102,241,0.25),inset_0_1px_0_0_rgba(255,255,255,0.2)] backdrop-blur-md overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-b from-indigo-500/15 to-transparent pointer-events-none" />
+        <div className="relative flex h-20 w-20 sm:h-28 sm:w-28 items-center justify-center rounded-full border border-white/25 bg-zinc-950/90 shadow-[0_0_50px_rgba(255,255,255,0.15),inset_0_1px_0_0_rgba(255,255,255,0.2)] backdrop-blur-md overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
           <LunaMoon className="h-8 w-8 sm:h-10 sm:w-10 text-zinc-100 animate-pulse drop-shadow-[0_0_15px_rgba(255,255,255,0.7)]" glow />
         </div>
       </div>
@@ -67,7 +82,7 @@ export function ListeningView({
         </p>
 
         <div className="animate-fade-up stagger-2 mt-2.5 inline-flex items-center gap-2 rounded-full bg-zinc-900/95 border border-white/15 px-3 py-1 text-xs font-mono text-zinc-200 shadow-inner">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
+          <span className="h-1.5 w-1.5 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)] animate-ping" />
           <span>{formatElapsed(waitMs)}</span>
         </div>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { History, X, Trash2, ChevronRight, ArrowLeft, Clock, MessageSquare } from "lucide-react";
 import type { HistorySession } from "@/lib/luna/types";
 import { Button } from "@/components/ui/button";
@@ -41,12 +41,37 @@ export function HistoryModal({
 }) {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        if (selectedSessionId) {
+          setSelectedSessionId(null);
+        } else {
+          onClose();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, selectedSessionId, onClose]);
+
   if (!isOpen) return null;
 
   const activeSession = sessions.find((s) => s.sessionId === selectedSessionId) ?? null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 bg-black/80 backdrop-blur-xl animate-in fade-in duration-200">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="history-modal-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 bg-black/80 backdrop-blur-xl animate-in fade-in duration-200"
+    >
       <div className="relative w-full max-w-lg max-h-[90vh] sm:max-h-[85vh] flex flex-col rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 bg-zinc-950/95 shadow-2xl overflow-hidden animate-sheet-up sm:animate-none pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-0">
         <div className="w-10 h-1 bg-zinc-700/60 rounded-full mx-auto my-2.5 sm:hidden" />
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 sm:px-6 sm:py-4 bg-zinc-900/40">
@@ -70,7 +95,7 @@ export function HistoryModal({
               </div>
             )}
             <div className="min-w-0">
-              <h2 className="text-sm sm:text-base font-semibold text-zinc-100 truncate">
+              <h2 id="history-modal-title" className="text-sm sm:text-base font-semibold text-zinc-100 truncate">
                 {activeSession ? activeSession.peerCallsign : "24-Hour Chat History"}
               </h2>
               <p className="text-[11px] text-zinc-500 font-mono">
@@ -180,7 +205,7 @@ export function HistoryModal({
                   <div className="mt-2 flex items-center gap-2 text-[10px] text-zinc-500 font-mono">
                     <span>{formatRelativeTime(item.savedAt)}</span>
                     <span>•</span>
-                    <span className="flex items-center gap-1 text-amber-400/90">
+                    <span className="flex items-center gap-1 text-zinc-300">
                       <Clock className="h-2.5 w-2.5" />
                       <span>{formatHoursRemaining(item.savedAt)}</span>
                     </span>
@@ -196,7 +221,7 @@ export function HistoryModal({
                       triggerHaptic("light");
                       onDeleteSession(item.sessionId);
                     }}
-                    className="h-8 w-8 text-zinc-500 hover:text-red-400 hover:bg-red-950/30 cursor-pointer touch-manipulation active:scale-95"
+                    className="h-8 w-8 text-zinc-500 hover:text-rose-300 hover:bg-rose-950/20 cursor-pointer touch-manipulation active:scale-95"
                     title="Delete this history entry"
                   >
                     <Trash2 className="h-3.5 w-3.5" />

@@ -45,7 +45,7 @@ export function WelcomeModal() {
         </div>
 
         <div className="animate-fade-up stagger-1 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-zinc-900/80 px-3 py-1 text-xs font-mono text-zinc-300 mb-3">
-          <Sparkles className="h-3 w-3 text-indigo-400" />
+          <Sparkles className="h-3 w-3 text-zinc-300" />
           <span>Welcome to Luna</span>
         </div>
 
@@ -63,11 +63,11 @@ export function WelcomeModal() {
 
         <div className="animate-fade-up stagger-4 mt-5 rounded-xl border border-white/5 bg-zinc-900/40 p-3.5 text-xs text-zinc-400 space-y-2 text-left">
           <div className="flex items-center gap-2 text-zinc-300">
-            <Lock className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+            <Lock className="h-3.5 w-3.5 text-zinc-100 shrink-0" />
             <span>End-to-end encrypted in your browser</span>
           </div>
           <div className="flex items-center gap-2 text-zinc-300">
-            <ShieldCheck className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
+            <ShieldCheck className="h-3.5 w-3.5 text-zinc-100 shrink-0" />
             <span>Messages disappear permanently when either leaves</span>
           </div>
         </div>

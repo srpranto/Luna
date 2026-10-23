@@ -9,10 +9,10 @@ const badgeVariants = cva(
       variant: {
         default: "border-transparent bg-zinc-100 text-zinc-900 shadow-sm",
         secondary:
-          "border-white/10 bg-zinc-900 text-zinc-300 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]",
-        destructive: "border-red-500/20 bg-red-500/10 text-red-400",
-        outline: "border-zinc-800 text-zinc-300 bg-zinc-950/50",
-        success: "border-emerald-500/20 bg-emerald-500/10 text-emerald-400",
+          "border-white/10 bg-zinc-900 text-zinc-200 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]",
+        destructive: "border-rose-500/20 bg-rose-500/10 text-rose-300",
+        outline: "border-zinc-800 text-zinc-300 bg-zinc-950/60",
+        success: "border-white/20 bg-white/10 text-zinc-100 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]",
       },
     },
     defaultVariants: {

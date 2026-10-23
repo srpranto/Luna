@@ -39,6 +39,8 @@ import {
   reportTyping,
   respondQsl,
   updateCallsign,
+  blockUser,
+  reportUser,
 } from "@/lib/luna/client";
 import {
   isSoundEnabled,
@@ -129,6 +131,7 @@ export default function Home() {
   const [voidOpen, setVoidOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historySessions, setHistorySessions] = useState<HistorySession[]>([]);
+  const hasAutoQueuedRef = useRef(false);
   const [, setResyncTick] = useState(0);
 
   const isOnline = useSyncExternalStore(subscribeNetwork, () => navigator.onLine, () => true);
@@ -147,7 +150,13 @@ export default function Home() {
   const triggerResync = useCallback(() => setResyncTick((n) => n + 1), []);
 
   const session = desk?.activeSession ?? null;
-  const currentSession = sessionView && (!session || session.id === sessionView.id) ? sessionView : session;
+  const currentSession = session
+    ? sessionView && sessionView.id === session.id
+      ? sessionView
+      : session
+    : sessionView && !sessionView.closed
+      ? sessionView
+      : null;
   const listening = Boolean(desk?.queued) && !currentSession;
 
   useEffect(() => {
@@ -161,6 +170,7 @@ export default function Home() {
   });
 
   const markSessionClosed = useCallback((sessionId: string | undefined) => {
+    if (!sessionId) return;
     setSessionView((prev) => {
       const base = prev?.id === sessionId ? prev : activeSessionRef.current?.id === sessionId ? activeSessionRef.current : null;
       return base ? { ...base, closed: true, peerPresence: "disconnected", peerTyping: false } : prev;
@@ -175,6 +185,7 @@ export default function Home() {
     floatingReactions,
     handleReactionFinished,
     handleSendMessage: runSendMessage,
+    handleRetryMessage: runRetryMessage,
     handleEditMessage: runEditMessage,
     handleDeleteMessage: runDeleteMessage,
     handleSendReaction: runSendReaction,
@@ -221,6 +232,13 @@ export default function Home() {
       setSoundActive(initialSound);
       sweepExpiredCaches();
       setHistorySessions(loadChatHistory());
+
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("action") === "void") {
+        setVoidOpen(true);
+      } else if (params.get("action") === "chat") {
+        hasAutoQueuedRef.current = true;
+      }
     }, 0);
 
     const sweepTimer = window.setInterval(sweepExpiredCaches, 3600000);
@@ -307,6 +325,9 @@ export default function Home() {
         }
       } else if (eventType === "session_started") {
         const info = data as { sessionId: string; desk?: DeskView };
+        setSessionView(null);
+        setMessages([]);
+        setIsAway(false);
         if (info.desk) setDesk(info.desk);
         else if (deviceId) getDesk({ deviceId }).then(setDesk).catch(() => {});
 
@@ -319,7 +340,7 @@ export default function Home() {
         }
       } else if (eventType === "session_ended") {
         const info = data as { sessionId: string; desk?: DeskView };
-        if (info.sessionId === activeSessionRef.current?.id) {
+        if (info.sessionId && info.sessionId === activeSessionRef.current?.id) {
           markSessionClosed(info.sessionId);
           if (info.desk) setDesk(info.desk);
           playLeaveTone();
@@ -329,7 +350,7 @@ export default function Home() {
         if (refreshed?.station) setDesk(refreshed);
       }
     },
-    [deviceId, decryptPack, mergeAndStoreMessages, setMessages, markSessionClosed],
+    [deviceId, decryptPack, mergeAndStoreMessages, setMessages, markSessionClosed, setIsAway],
   );
 
   useLunaStream({
@@ -337,6 +358,7 @@ export default function Home() {
     onEvent: handleStreamEvent,
     onDeskUpdate: setDesk,
     onResync: triggerResync,
+    isListening: listening,
   });
 
   // Fetch / Sync active session messages periodically or on resync
@@ -345,13 +367,20 @@ export default function Home() {
     let cancelled = false;
 
     const syncSessionMessages = () => {
-      listMessages({ deviceId, sessionId: currentSession.id })
+      const targetSessionId = currentSession.id;
+      listMessages({ deviceId, sessionId: targetSessionId })
         .then(async (pack) => {
-          if (cancelled || leftSessionIdsRef.current.has(currentSession.id)) return;
+          if (
+            cancelled ||
+            leftSessionIdsRef.current.has(targetSessionId) ||
+            activeSessionRef.current?.id !== targetSessionId
+          ) {
+            return;
+          }
           const displayMsgs = await decryptPack(pack, deviceId);
-          if (cancelled) return;
+          if (cancelled || activeSessionRef.current?.id !== targetSessionId) return;
           setSessionView(pack.session);
-          mergeAndStoreMessages(currentSession.id, pack.session, displayMsgs, false);
+          mergeAndStoreMessages(targetSessionId, pack.session, displayMsgs, false);
         })
         .catch(() => {});
     };
@@ -386,7 +415,14 @@ export default function Home() {
       try {
         const blocked = readBlockedStations();
         const res = await heartbeatQueue({ deviceId, blockedIds: blocked });
-        if (!cancelled) setDesk(res.desk);
+        if (!cancelled) {
+          if (res.status === "matched") {
+            setSessionView(null);
+            setMessages([]);
+            setIsAway(false);
+          }
+          setDesk(res.desk);
+        }
       } catch {}
     };
 
@@ -396,7 +432,7 @@ export default function Home() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [deviceId, listening]);
+  }, [deviceId, listening, setIsAway, setMessages]);
 
   // Wirecut banner auto-dismiss
   useEffect(() => {
@@ -425,8 +461,15 @@ export default function Home() {
       ? overrideInterests.filter((x): x is string => typeof x === "string")
       : interests;
     setBusy(true);
+    setNote(null);
+    setIsAway(false);
+    setReplyingTo(null);
+    setMessages([]);
+    setSessionView(null);
+    leftSessionIdsRef.current.clear();
+    setDesk((prev) => (prev ? { ...prev, activeSession: null, queued: true, enteredAt: new Date().toISOString() } : null));
+
     try {
-      setNote(null);
       const blocked = readBlockedStations();
       const pubKey = await exportDevicePublicKeyHex(deviceId);
       const res = await joinQueue({
@@ -440,14 +483,26 @@ export default function Home() {
       setSettingsOpen(false);
     } catch (err) {
       notifyError(err);
+      if (deviceId) {
+        void getDesk({ deviceId }).then(setDesk).catch(() => {});
+      }
     } finally {
       setBusy(false);
     }
-  }, [deviceId, busy, interests, notifyError]);
+  }, [deviceId, busy, interests, notifyError, setIsAway, setMessages, setReplyingTo]);
+
+  // Auto-enqueue if requested via PWA action=chat shortcut
+  useEffect(() => {
+    if (hasAutoQueuedRef.current && deviceId && desk && !desk.activeSession && !desk.queued && !busy) {
+      hasAutoQueuedRef.current = false;
+      void handleJoinQueue();
+    }
+  }, [deviceId, desk, busy, handleJoinQueue]);
 
   const handleLeaveQueue = useCallback(async () => {
     if (!deviceId || busy) return;
     setBusy(true);
+    setDesk((prev) => (prev ? { ...prev, queued: false, enteredAt: null } : null));
     try {
       setNote(null);
       const next = await leaveQueue({ deviceId });
@@ -497,7 +552,7 @@ export default function Home() {
     setReplyingTo(null);
     setMessages([]);
     setSessionView(null);
-    setDesk((prev) => (prev ? { ...prev, activeSession: null, queued: true } : null));
+    setDesk((prev) => (prev ? { ...prev, activeSession: null, queued: true, enteredAt: new Date().toISOString() } : null));
     setHistorySessions(loadChatHistory());
 
     if (targetSessionId) {
@@ -521,6 +576,9 @@ export default function Home() {
       setSettingsOpen(false);
     } catch (err) {
       notifyError(err);
+      if (deviceId) {
+        void getDesk({ deviceId }).then(setDesk).catch(() => {});
+      }
     } finally {
       setBusy(false);
     }
@@ -539,9 +597,22 @@ export default function Home() {
 
   const handleSeverAndBlock = async () => {
     if (!deviceId || busy) return;
-    if (currentSession?.peerId) saveBlockedStation(currentSession.peerId);
+    if (currentSession?.peerId) {
+      saveBlockedStation(currentSession.peerId);
+      void blockUser({ deviceId, targetId: currentSession.peerId }).catch(() => {});
+    }
     await handleLeaveSession();
     setNote("Chat ended. You will not be matched with this stranger again.");
+  };
+
+  const handleReportAndBlock = async (reason: string) => {
+    if (!deviceId || busy) return;
+    if (currentSession?.peerId) {
+      saveBlockedStation(currentSession.peerId);
+      void reportUser({ deviceId, targetId: currentSession.peerId, reason }).catch(() => {});
+    }
+    await handleLeaveSession();
+    setNote("Report submitted. You will not be matched with this user again.");
   };
 
   const handleOfferQsl = async () => {
@@ -608,6 +679,15 @@ export default function Home() {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
+        if (settingsOpen || logOpen || voidOpen || historyOpen) {
+          e.preventDefault();
+          setSettingsOpen(false);
+          setLogOpen(false);
+          setVoidOpen(false);
+          setHistoryOpen(false);
+          return;
+        }
+
         if (currentSession?.id) {
           e.preventDefault();
           if (currentSession.closed) {
@@ -625,12 +705,16 @@ export default function Home() {
           void handleLeaveQueue();
         }
       } else if (e.key === "Enter") {
+        if (settingsOpen || logOpen || voidOpen || historyOpen) {
+          return;
+        }
+
         if (currentSession?.closed) {
           e.preventDefault();
           void handleNextStranger();
         } else if (!currentSession?.id && !desk?.queued && !busy && deviceId) {
           const tag = document.activeElement?.tagName;
-          if (tag !== "BUTTON" && tag !== "INPUT") {
+          if (tag !== "BUTTON" && tag !== "INPUT" && tag !== "TEXTAREA") {
             e.preventDefault();
             void handleJoinQueue();
           }
@@ -641,6 +725,10 @@ export default function Home() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
+    settingsOpen,
+    logOpen,
+    voidOpen,
+    historyOpen,
     currentSession,
     wireCutPrimed,
     listening,
@@ -673,6 +761,7 @@ export default function Home() {
           setLogOpen((o) => !o);
           setSettingsOpen(false);
           setHistoryOpen(false);
+          setVoidOpen(false);
         }}
         soundEnabled={soundActive}
         onToggleSound={handleToggleSound}
@@ -681,14 +770,22 @@ export default function Home() {
           setSettingsOpen((o) => !o);
           setLogOpen(false);
           setHistoryOpen(false);
+          setVoidOpen(false);
         }}
-        onToggleVoid={() => setVoidOpen((o) => !o)}
+        voidOpen={voidOpen}
+        onToggleVoid={() => {
+          setVoidOpen((o) => !o);
+          setLogOpen(false);
+          setSettingsOpen(false);
+          setHistoryOpen(false);
+        }}
         hasHistory={historySessions.length > 0}
         historyOpen={historyOpen}
         onToggleHistory={() => {
           setHistoryOpen((o) => !o);
           setLogOpen(false);
           setSettingsOpen(false);
+          setVoidOpen(false);
         }}
         activeChat={
           currentSession
@@ -698,6 +795,8 @@ export default function Home() {
                 sessionKind: currentSession.kind,
                 peerPresence: currentSession.peerPresence,
                 peerTyping: currentSession.peerTyping,
+                matchedTopic: currentSession.interests?.[0],
+                interests: currentSession.interests,
               }
             : undefined
         }
@@ -727,6 +826,7 @@ export default function Home() {
             busy={busy}
             onOpenFriend={handleOpenFriendLine}
             onRespond={handleRespondQsl}
+            onClose={() => setLogOpen(false)}
           />
         ) : currentSession ? (
           <LineView
@@ -765,6 +865,8 @@ export default function Home() {
             onLeave={handleLeaveSession}
             onNext={handleNextStranger}
             onBlock={handleSeverAndBlock}
+            onReport={handleReportAndBlock}
+            onRetryMessage={(mid) => currentSession && runRetryMessage(mid, currentSession)}
             busy={busy}
             onReaction={(emoji) => runSendReaction(emoji, currentSession)}
             floatingReactions={floatingReactions}

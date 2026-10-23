@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { HeartHandshake, Check, X, MessageSquare } from "lucide-react";
 import type { DeskView } from "@/lib/luna/types";
 import { Button } from "@/components/ui/button";
@@ -12,18 +13,37 @@ export function LogPanel({
   desk,
   onOpenFriend,
   onRespond,
+  onClose,
   busy,
 }: {
   desk: DeskView;
   onOpenFriend: (friendId: string) => void;
   onRespond: (requestId: string, accept: boolean) => void;
+  onClose?: () => void;
   busy?: boolean;
 }) {
   const empty = desk.friends.length === 0 && desk.inboundQsl.length === 0;
 
+  useEffect(() => {
+    if (!onClose) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   return (
-    <section className="flex min-h-0 flex-1 flex-col gap-6 p-4 sm:p-6 overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-      <div className="animate-fade-up">
+    <section
+      role="region"
+      aria-label="Connections & Notes"
+      className="flex min-h-0 flex-1 flex-col gap-6 p-4 sm:p-6 overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))]"
+    >
+      <div className="animate-fade-up flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]">
             <HeartHandshake className="h-4 w-4 text-zinc-100" />
@@ -35,6 +55,22 @@ export function LogPanel({
             <p className="text-xs text-zinc-400">Strangers who passed you a note. Chat anytime.</p>
           </div>
         </div>
+        {onClose && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              triggerHaptic("light");
+              onClose();
+            }}
+            aria-label="Close connections"
+            title="Close"
+            className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 cursor-pointer touch-manipulation"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        )}
       </div>
 
       {desk.inboundQsl.length > 0 && (
@@ -125,7 +161,10 @@ export function LogPanel({
                     <span className="text-sm font-semibold font-mono text-zinc-100">
                       {friend.callsign}
                     </span>
-                    <span className="block text-[11px] text-emerald-400">● available</span>
+                    <span className="flex items-center gap-1.5 text-[11px] text-zinc-300 font-mono">
+                      <span className="h-1.5 w-1.5 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.7)]" />
+                      <span>available</span>
+                    </span>
                   </div>
                 </div>
                 <Button

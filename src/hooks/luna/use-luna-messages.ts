@@ -101,38 +101,91 @@ export function useLunaMessages({
   const mergeAndStoreMessages = useCallback(
     (sessionId: string, session: SessionView, incoming: ChatMessage[], isSoundNotification = false) => {
       setMessages((prev) => {
-        const map = new Map<string, ChatMessage>();
+        // Build lookup maps of incoming messages by ID and clientMsgId
+        const incomingById = new Map<string, ChatMessage>();
+        const incomingByClientMsgId = new Map<string, ChatMessage>();
         for (const m of incoming) {
-          map.set(m.id, m);
-        }
-        for (const m of prev) {
-          if (m.id.startsWith("opt-") && !map.has(m.id)) {
-            map.set(m.id, m);
+          incomingById.set(m.id, m);
+          if (m.clientMsgId) {
+            incomingByClientMsgId.set(m.clientMsgId, m);
           }
         }
-        const merged = Array.from(map.values()).sort(
+
+        // Match incoming confirmed messages with optimistic messages in prev.
+        const matchedOptIds = new Set<string>();
+        const optToConfirmed = new Map<string, ChatMessage>();
+
+        for (const inc of incoming) {
+          const isMine = inc.mine || (deviceId && inc.fromId === deviceId);
+          if (isMine) {
+            const matchingOpt = prev.find(
+              (p) =>
+                (p.clientMsgId && p.clientMsgId === inc.clientMsgId) ||
+                p.id === inc.clientMsgId ||
+                p.id === inc.id ||
+                (p.id.startsWith("opt-") && p.mine && p.body === inc.body && !matchedOptIds.has(p.id)),
+            );
+            if (matchingOpt) {
+              matchedOptIds.add(matchingOpt.id);
+              optToConfirmed.set(matchingOpt.id, inc);
+            }
+          }
+        }
+
+        // Assemble merged messages without losing prior confirmed messages
+        const resultMap = new Map<string, ChatMessage>();
+
+        // 1. Process prev messages
+        for (const m of prev) {
+          if (matchedOptIds.has(m.id)) {
+            const confirmed = optToConfirmed.get(m.id);
+            if (confirmed) {
+              resultMap.set(confirmed.id, confirmed);
+            }
+          } else if (incomingById.has(m.id)) {
+            // Incoming has updated version of this message (e.g. seen receipt or edit)
+            resultMap.set(m.id, incomingById.get(m.id)!);
+          } else if (m.clientMsgId && incomingByClientMsgId.has(m.clientMsgId)) {
+            const confirmed = incomingByClientMsgId.get(m.clientMsgId)!;
+            resultMap.set(confirmed.id, confirmed);
+          } else {
+            // Retain existing message (both prior confirmed messages and pending opt- messages)
+            resultMap.set(m.id, m);
+          }
+        }
+
+        // 2. Add any remaining incoming messages not already in resultMap
+        for (const inc of incoming) {
+          if (!resultMap.has(inc.id)) {
+            resultMap.set(inc.id, inc);
+          }
+        }
+
+        const merged = Array.from(resultMap.values()).sort(
           (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
         );
+
         saveCachedMessages(sessionId, merged);
+
+        if (merged.length > 0 && session) {
+          const lastMsg = merged[merged.length - 1];
+          saveHistorySession({
+            sessionId,
+            peerCallsign: session.peerCallsign ?? "Stranger",
+            startedAt: session.createdAt ? new Date(session.createdAt).getTime() : Date.now(),
+            savedAt: Date.now(),
+            messageCount: merged.length,
+            preview: lastMsg?.body ?? "",
+            interests: session.interests,
+            messages: merged,
+          });
+          queueMicrotask(() => onHistoryUpdated?.(loadChatHistory()));
+        }
+
         return merged;
       });
 
-      if (incoming.length > 0) {
-        const lastMsg = incoming[incoming.length - 1];
-        saveHistorySession({
-          sessionId,
-          peerCallsign: session.peerCallsign,
-          startedAt: new Date(session.createdAt).getTime(),
-          savedAt: Date.now(),
-          messageCount: incoming.length,
-          preview: lastMsg?.body ?? "",
-          interests: session.interests,
-          messages: incoming,
-        });
-        onHistoryUpdated?.(loadChatHistory());
-      }
-
-      if (isSoundNotification) {
+      if (isSoundNotification && incoming.length > 0) {
         const lastMsg = incoming[incoming.length - 1];
         if (lastMsg && !lastMsg.mine && !lastMsg.system) {
           onActivity?.();
@@ -141,7 +194,7 @@ export function useLunaMessages({
         }
       }
     },
-    [notifyUnread, onActivity, onHistoryUpdated],
+    [deviceId, notifyUnread, onActivity, onHistoryUpdated],
   );
 
   const handleSendMessage = useCallback(
@@ -157,9 +210,10 @@ export function useLunaMessages({
         setReplyingTo(null);
       }
 
-      const tempId = `opt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const clientMsgId = crypto.randomUUID();
       const optimisticMsg: ChatMessage = {
-        id: tempId,
+        id: clientMsgId,
+        clientMsgId,
         fromId: deviceId,
         fromCallsign: senderCallsign,
         body: textToSend,
@@ -168,38 +222,99 @@ export function useLunaMessages({
         mine: true,
         system: false,
         copied: false,
+        status: "sending",
       };
 
       playMessagePop();
       setMessages((prev) => [...prev, optimisticMsg]);
 
-      sendQueueRef.current = sendQueueRef.current.then(async () => {
-        try {
-          const bodyToSend = await encryptText(textToSend, currentSession.id);
-          const pack = await apiSendMessage({
-            deviceId,
-            sessionId: currentSession.id,
-            body: bodyToSend,
-          });
+      sendQueueRef.current = sendQueueRef.current
+        .catch(() => {})
+        .then(async () => {
+          try {
+            const bodyToSend = await encryptText(textToSend, currentSession.id);
+            const pack = await apiSendMessage({
+              deviceId,
+              sessionId: currentSession.id,
+              body: bodyToSend,
+              clientMsgId,
+            });
 
-          if (pack.session?.closed) {
-            onSessionEndedNotice?.();
-            return;
-          }
+            if (pack.session?.closed) {
+              onSessionEndedNotice?.();
+              return;
+            }
 
-          const displayMsgs = await decryptPack(pack, deviceId);
-          mergeAndStoreMessages(currentSession.id, pack.session, displayMsgs, false);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : "";
-          if (msg.includes("ended") || msg.includes("closed") || msg.includes("not found")) {
-            onSessionEndedNotice?.();
-          } else {
-            setMessages((prev) => prev.filter((m) => m.id !== tempId));
+            const displayMsgs = await decryptPack(pack, deviceId);
+            mergeAndStoreMessages(currentSession.id, pack.session, displayMsgs, false);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "";
+            if (msg.includes("ended") || msg.includes("closed") || msg.includes("not found")) {
+              onSessionEndedNotice?.();
+            } else {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === clientMsgId || m.clientMsgId === clientMsgId
+                    ? { ...m, status: "failed" }
+                    : m,
+                ),
+              );
+            }
           }
-        }
-      });
+        });
     },
     [deviceId, replyingTo, onActivity, decryptPack, mergeAndStoreMessages, onSessionEndedNotice],
+  );
+
+  const handleRetryMessage = useCallback(
+    async (messageId: string, currentSession: SessionView) => {
+      const target = messages.find((m) => m.id === messageId || m.clientMsgId === messageId);
+      if (!target || !deviceId || !currentSession.id || currentSession.closed) return;
+
+      const clientMsgId = target.clientMsgId || target.id;
+      const textToSend = target.body;
+
+      // Set status to sending
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === target.id ? { ...m, status: "sending" } : m,
+        ),
+      );
+
+      sendQueueRef.current = sendQueueRef.current
+        .catch(() => {})
+        .then(async () => {
+          try {
+            const bodyToSend = await encryptText(textToSend, currentSession.id);
+            const pack = await apiSendMessage({
+              deviceId,
+              sessionId: currentSession.id,
+              body: bodyToSend,
+              clientMsgId,
+            });
+
+            if (pack.session?.closed) {
+              onSessionEndedNotice?.();
+              return;
+            }
+
+            const displayMsgs = await decryptPack(pack, deviceId);
+            mergeAndStoreMessages(currentSession.id, pack.session, displayMsgs, false);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "";
+            if (msg.includes("ended") || msg.includes("closed") || msg.includes("not found")) {
+              onSessionEndedNotice?.();
+            } else {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === target.id ? { ...m, status: "failed" } : m,
+                ),
+              );
+            }
+          }
+        });
+    },
+    [deviceId, messages, decryptPack, mergeAndStoreMessages, onSessionEndedNotice],
   );
 
   const handleEditMessage = useCallback(
@@ -295,6 +410,7 @@ export function useLunaMessages({
     triggerFloatingReaction,
     handleReactionFinished,
     handleSendMessage,
+    handleRetryMessage,
     handleEditMessage,
     handleDeleteMessage,
     handleSendReaction,

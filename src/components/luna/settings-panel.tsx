@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import {
   Settings,
   Trash2,
@@ -20,6 +20,7 @@ import { setCachedCustomName, clearCachedCustomName } from "@/lib/luna/identity"
 import { triggerHaptic } from "@/lib/luna/sound";
 import { usePwa } from "@/components/luna/pwa-provider";
 import type { DeskView } from "@/lib/luna/types";
+import { cn } from "@/lib/utils";
 
 interface SettingsPanelProps {
   desk: DeskView;
@@ -47,6 +48,34 @@ export function SettingsPanel({
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  const [linkPreviews, setLinkPreviews] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("luna_link_previews_enabled") !== "false";
+    }
+    return true;
+  });
+
+  const toggleLinkPreviews = () => {
+    triggerHaptic("selection");
+    const next = !linkPreviews;
+    setLinkPreviews(next);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("luna_link_previews_enabled", String(next));
+    }
+  };
 
   async function handleSaveHandle(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -129,8 +158,8 @@ export function SettingsPanel({
       </div>
 
       {status && (
-        <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3.5 py-2 text-xs text-emerald-400">
-          <Check className="h-4 w-4 shrink-0" />
+        <div className="flex items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-3.5 py-2 text-xs text-zinc-100 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]">
+          <Check className="h-4 w-4 shrink-0 text-white" />
           <p>{status}</p>
         </div>
       )}
@@ -179,13 +208,13 @@ export function SettingsPanel({
         <div className="rounded-xl border border-white/10 bg-zinc-900/40 p-4 flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Smartphone className="h-4 w-4 text-indigo-400" />
+              <Smartphone className="h-4 w-4 text-zinc-200" />
               <span className="text-xs font-semibold text-zinc-200">
                 {isStandalone ? "Installed on this device" : "Install as App"}
               </span>
             </div>
             {isStandalone && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+              <span className="inline-flex items-center gap-1 text-[11px] font-mono text-zinc-200 bg-white/5 px-2 py-0.5 rounded-full border border-white/10">
                 <CheckCircle2 className="h-3 w-3" /> Standalone
               </span>
             )}
@@ -212,6 +241,45 @@ export function SettingsPanel({
               </Button>
             </div>
           )}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3 pt-3 border-t border-white/5">
+        <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400 font-mono">
+          Privacy & Security
+        </span>
+        <div className="rounded-xl border border-white/10 bg-zinc-900/40 p-4 flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-xs font-semibold text-zinc-200">
+                Rich Link Previews
+              </span>
+              <span className="text-[11px] text-zinc-400">
+                Generate title and card previews when URLs are shared
+              </span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={linkPreviews}
+              aria-label="Toggle rich link previews"
+              onClick={toggleLinkPreviews}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400",
+                linkPreviews ? "bg-zinc-100" : "bg-zinc-800",
+              )}
+            >
+              <span
+                className={cn(
+                  "pointer-events-none inline-block h-5 w-5 transform rounded-full shadow-lg ring-0 transition duration-200 ease-in-out",
+                  linkPreviews ? "translate-x-5 bg-zinc-950" : "translate-x-0 bg-zinc-400",
+                )}
+              />
+            </button>
+          </div>
+          <p className="text-[11px] text-zinc-500 leading-relaxed border-t border-white/5 pt-2">
+            Notice: When enabled, preview metadata is fetched by the Luna preview proxy for the requested URL. Disabling prevents any link preview requests.
+          </p>
         </div>
       </div>
 

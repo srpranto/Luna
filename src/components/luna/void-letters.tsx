@@ -47,6 +47,18 @@ export function VoidLetters({ deviceId, onClose }: { deviceId: string; onClose: 
     };
   }, [deviceId]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   async function handleCast() {
     if (!draft.trim() || submitting) return;
     triggerHaptic("medium");
@@ -102,16 +114,24 @@ export function VoidLetters({ deviceId, onClose }: { deviceId: string; onClose: 
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="void-modal-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+    >
       <div className="relative flex flex-col w-full max-w-xl max-h-[92dvh] sm:max-h-[85vh] rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 bg-zinc-950/95 shadow-2xl overflow-hidden animate-sheet-up sm:animate-none pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-0">
         <div className="w-10 h-1 bg-zinc-700/60 rounded-full mx-auto my-2.5 sm:hidden" />
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 sm:px-5 sm:py-4 bg-zinc-900/40">
           <div className="flex items-center gap-2 sm:gap-2.5">
-            <div className="flex h-7.5 w-7.5 sm:h-8 sm:w-8 items-center justify-center rounded-lg border border-indigo-500/20 bg-indigo-950/40 text-indigo-300 shrink-0">
+            <div className="flex h-7.5 w-7.5 sm:h-8 sm:w-8 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 text-zinc-100 shrink-0">
               <BlackHoleIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </div>
             <div>
-              <h2 className="text-xs sm:text-sm font-semibold text-zinc-100 flex items-center gap-1.5 sm:gap-2">
+              <h2 id="void-modal-title" className="text-xs sm:text-sm font-semibold text-zinc-100 flex items-center gap-1.5 sm:gap-2">
                 <span>The Midnight Void</span>
                 <span className="text-[10px] sm:text-[11px] font-mono text-zinc-500">
                   24h Orbit
@@ -139,10 +159,16 @@ export function VoidLetters({ deviceId, onClose }: { deviceId: string; onClose: 
             <textarea
               value={draft}
               onChange={(e) => setDraft(e.target.value.slice(0, 280))}
-              placeholder="Cast a quiet midnight thought into the void…"
+              onKeyDown={(e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                  e.preventDefault();
+                  void handleCast();
+                }
+              }}
+              placeholder="Cast a quiet midnight thought into the void… (Ctrl+Enter to cast)"
               rows={2}
               maxLength={280}
-              className="w-full resize-none rounded-xl border border-white/10 bg-zinc-900/60 p-3 text-base sm:text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-indigo-500/50 focus:outline-none transition-colors"
+              className="w-full resize-none rounded-xl border border-white/10 bg-zinc-900/60 p-3 text-base sm:text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-white/30 focus:ring-1 focus:ring-white/20 focus:outline-none transition-colors"
             />
             <div className="mt-2 flex items-center justify-between">
               <span className="text-[11px] font-mono text-zinc-500">{draft.length}/280</span>
@@ -195,14 +221,14 @@ export function VoidLetters({ deviceId, onClose }: { deviceId: string; onClose: 
                     className={cn(
                       "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs transition-colors touch-manipulation active:scale-95 cursor-pointer",
                       letter.hasStarred
-                        ? "bg-amber-500/15 text-amber-300 font-medium"
+                        ? "bg-white/10 text-white font-medium border border-white/20 shadow-[0_0_8px_rgba(255,255,255,0.2)]"
                         : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
                     )}
                   >
                     <Star
                       className={cn(
                         "h-3 w-3",
-                        letter.hasStarred && "fill-amber-400 text-amber-400",
+                        letter.hasStarred && "fill-white text-white",
                       )}
                     />
                     <span className="font-mono text-[11px]">{letter.stars}</span>

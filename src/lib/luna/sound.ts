@@ -33,6 +33,23 @@ function getAudioContext(): AudioContext | null {
   }
 }
 
+if (typeof window !== "undefined") {
+  const unlockAudio = () => {
+    try {
+      const ctx = getAudioContext();
+      if (ctx && ctx.state === "suspended") {
+        void ctx.resume();
+      }
+    } catch {}
+    window.removeEventListener("pointerdown", unlockAudio);
+    window.removeEventListener("keydown", unlockAudio);
+    window.removeEventListener("touchstart", unlockAudio);
+  };
+  window.addEventListener("pointerdown", unlockAudio, { passive: true });
+  window.addEventListener("keydown", unlockAudio, { passive: true });
+  window.addEventListener("touchstart", unlockAudio, { passive: true });
+}
+
 export function playMatchChime(): void {
   if (!isSoundEnabled()) return;
   const ctx = getAudioContext();

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, Ban, DoorOpen, HeartHandshake, Sparkles } from "lucide-react";
+import { ArrowRight, Ban, DoorOpen, Flag, HeartHandshake, Sparkles, X, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PrivacyShield } from "@/components/luna/privacy-shield";
@@ -35,6 +35,8 @@ export function LineView({
   onLeave,
   onNext,
   onBlock,
+  onReport,
+  onRetryMessage,
   busy,
   onReaction,
   floatingReactions,
@@ -67,6 +69,8 @@ export function LineView({
   onLeave: () => void;
   onNext: () => void;
   onBlock: () => void;
+  onReport?: (reason: string) => void;
+  onRetryMessage?: (messageId: string) => void;
   busy: boolean;
   onReaction: (emoji: string) => void;
   floatingReactions: FloatingItem[];
@@ -106,6 +110,21 @@ export function LineView({
 
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportReason, setReportReason] = useState("Spam or unwanted advertising");
+
+  useEffect(() => {
+    if (!showReportModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        setShowReportModal(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showReportModal]);
 
   function handleTranscriptScroll() {
     const el = transcriptScrollRef.current;
@@ -133,9 +152,9 @@ export function LineView({
           {resonance && (
             <Badge
               variant="secondary"
-              className="hidden md:inline-flex items-center gap-1 text-[10px] text-purple-300 bg-purple-950/40 border-purple-500/30 py-0 px-1.5"
+              className="hidden md:inline-flex items-center gap-1 text-[10px] text-zinc-200 bg-white/5 border-white/15 py-0 px-1.5"
             >
-              <Sparkles className="h-2.5 w-2.5 text-purple-400" />
+              <Sparkles className="h-2.5 w-2.5 text-zinc-300" />
               <span>Resonance</span>
             </Badge>
           )}
@@ -156,7 +175,7 @@ export function LineView({
               className="h-7 sm:h-7.5 px-2 sm:px-2.5 gap-1 sm:gap-1.5 text-xs bg-zinc-850 hover:bg-zinc-800 text-zinc-200 border border-white/10 cursor-pointer touch-manipulation active:scale-95"
               title="Add contact"
             >
-              <HeartHandshake className="h-3.5 w-3.5 text-indigo-400" />
+              <HeartHandshake className="h-3.5 w-3.5 text-zinc-100" />
               <span className="hidden sm:inline">Add contact</span>
               <span className="sm:hidden text-[11px]">Add</span>
             </Button>
@@ -219,22 +238,42 @@ export function LineView({
           </Button>
 
           {sessionKind === "stranger" && (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                triggerHaptic("heavy");
-                onBlock();
-              }}
-              disabled={busy}
-              aria-label="Block and leave"
-              className="h-7 sm:h-7.5 px-1.5 sm:px-2 text-xs text-zinc-400 hover:text-red-400 hover:bg-red-950/30 cursor-pointer flex items-center gap-1 touch-manipulation active:scale-95"
-              title="Block and leave"
-            >
-              <Ban className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Block</span>
-            </Button>
+            <>
+              {onReport && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setShowReportModal(true);
+                  }}
+                  disabled={busy}
+                  aria-label="Report user"
+                  className="h-7 sm:h-7.5 px-1.5 sm:px-2 text-xs text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 cursor-pointer flex items-center gap-1 touch-manipulation active:scale-95"
+                  title="Report user"
+                >
+                  <Flag className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Report</span>
+                </Button>
+              )}
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  triggerHaptic("heavy");
+                  onBlock();
+                }}
+                disabled={busy}
+                aria-label="Block and leave"
+                className="h-7 sm:h-7.5 px-1.5 sm:px-2 text-xs text-zinc-400 hover:text-red-400 hover:bg-red-950/30 cursor-pointer flex items-center gap-1 touch-manipulation active:scale-95"
+                title="Block and leave"
+              >
+                <Ban className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Block</span>
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -295,9 +334,98 @@ export function LineView({
           onEditMessage={onEditMessage}
           onDeleteMessage={onDeleteMessage}
           onReply={onReply}
+          onRetryMessage={onRetryMessage}
         />
         <ScrollBottomPill visible={showScrollBottom} onClick={handleScrollToBottom} />
       </div>
+
+      {showReportModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="report-modal-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowReportModal(false);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in"
+        >
+          <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-zinc-950 p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2 text-rose-400 font-medium">
+                <AlertTriangle className="h-4 w-4" />
+                <span id="report-modal-title" className="text-sm font-semibold text-zinc-100">
+                  Report Stranger
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowReportModal(false)}
+                aria-label="Close dialog"
+                className="text-zinc-500 hover:text-zinc-200 transition-colors p-1"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Help keep Luna safe. Submitting a report records the violation category and permanently blocks this user. Message content is not collected or retained.
+            </p>
+
+            <div className="space-y-2">
+              {[
+                "Spam or unwanted advertising",
+                "Harassment or offensive behavior",
+                "Inappropriate or harmful content",
+                "Other safety concern",
+              ].map((reason) => (
+                <label
+                  key={reason}
+                  className={cn(
+                    "flex items-center gap-2.5 p-2.5 rounded-xl border text-xs cursor-pointer transition-colors",
+                    reportReason === reason
+                      ? "border-rose-500/50 bg-rose-500/10 text-zinc-100"
+                      : "border-white/5 bg-zinc-900/50 text-zinc-300 hover:bg-zinc-900",
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="reportReason"
+                    value={reason}
+                    checked={reportReason === reason}
+                    onChange={(e) => setReportReason(e.target.value)}
+                    className="accent-rose-500"
+                  />
+                  <span>{reason}</span>
+                </label>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowReportModal(false)}
+                className="text-xs text-zinc-400 hover:text-zinc-200"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  triggerHaptic("heavy");
+                  setShowReportModal(false);
+                  onReport?.(reportReason);
+                }}
+                className="text-xs bg-rose-600 hover:bg-rose-700 text-white font-medium"
+              >
+                Submit Report & Block
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Composer
         value={draft}

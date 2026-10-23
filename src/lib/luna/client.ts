@@ -38,7 +38,7 @@ export const reportTyping = rpc<{ ok: boolean }, { deviceId: string; sessionId: 
 export const openFriendLine = rpc<DeskView, { deviceId: string; friendId: string }>("openFriendLine");
 export const leaveSession = rpc<DeskView, { deviceId: string; sessionId: string }>("leaveSession");
 export const listMessages = rpc<MessagesPack, { deviceId: string; sessionId: string }>("listMessages");
-export const sendMessage = rpc<MessagesPack, { deviceId: string; sessionId: string; body: string }>("sendMessage");
+export const sendMessage = rpc<MessagesPack, { deviceId: string; sessionId: string; body: string; clientMsgId?: string }>("sendMessage");
 export const editMessage = rpc<MessagesPack, { deviceId: string; sessionId: string; messageId: string; body: string }>("editMessage");
 export const deleteMessage = rpc<{ ok: boolean; messageId: string }, { deviceId: string; sessionId: string; messageId: string }>("deleteMessage");
 export const reportPresence = rpc<{ ok: boolean }, { deviceId: string; sessionId?: string; isAway: boolean }>("reportPresence");
@@ -49,6 +49,8 @@ export const deleteStation = rpc<{ ok: boolean }, { deviceId: string }>("deleteS
 export const listVoidLetters = (deviceId: string) => request<VoidLetter[]>("listVoidLetters", { deviceId });
 export const castVoidLetter = rpc<{ ok: boolean; letter?: VoidLetter; error?: string }, { deviceId: string; text: string }>("castVoidLetter");
 export const starVoidLetter = rpc<{ ok: boolean; stars: number; hasStarred: boolean }, { deviceId: string; letterId: string }>("starVoidLetter");
+export const blockUser = rpc<{ ok: boolean }, { deviceId: string; targetId: string }>("blockUser");
+export const reportUser = rpc<{ ok: boolean }, { deviceId: string; targetId: string; reason: string }>("reportUser");
 
 type StreamHandler = (eventType: string, data: unknown) => void;
 
@@ -82,7 +84,10 @@ export function subscribeDeskStream(
 
   const scheduleReconnect = () => {
     if (stopped || retryTimer !== null) return;
-    const delay = RECONNECT_DELAYS_MS[Math.min(attempt, RECONNECT_DELAYS_MS.length - 1)] ?? 10000;
+    // Exponential backoff with random jitter (1s base, 1.5x factor up to 15s max, + 0-500ms jitter)
+    const baseDelay = Math.min(1000 * Math.pow(1.5, attempt), 15000);
+    const jitter = Math.floor(Math.random() * 500);
+    const delay = Math.round(baseDelay + jitter);
     attempt += 1;
     retryTimer = window.setTimeout(() => {
       retryTimer = null;

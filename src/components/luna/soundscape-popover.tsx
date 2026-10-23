@@ -59,14 +59,14 @@ export function SoundscapePopover({ soundFxEnabled, onToggleSoundFx }: Soundscap
         className={cn(
           "relative flex h-8.5 w-8.5 sm:h-8 sm:w-8 items-center justify-center rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 transition-colors cursor-pointer touch-manipulation active:scale-95",
           open && "bg-zinc-800 text-zinc-100 ring-1 ring-white/20",
-          isSoundscapeActive && "text-indigo-400 hover:text-indigo-300",
+          isSoundscapeActive && "text-zinc-100 hover:text-white",
         )}
       >
         {isSoundscapeActive ? (
           <>
             <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500" />
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
             </span>
             <Sparkles className="h-4 w-4" />
           </>
@@ -91,7 +91,7 @@ export function SoundscapePopover({ soundFxEnabled, onToggleSoundFx }: Soundscap
           >
             <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-white/10">
               <span className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
-                <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
+                <Sparkles className="h-3.5 w-3.5 text-zinc-100" />
                 <span>Audio & Atmosphere</span>
               </span>
               <div className="flex items-center gap-2">
@@ -110,7 +110,7 @@ export function SoundscapePopover({ soundFxEnabled, onToggleSoundFx }: Soundscap
                 >
                   {soundFxEnabled ? (
                     <>
-                      <Volume2 className="h-3 w-3 text-emerald-400" />
+                      <Volume2 className="h-3 w-3 text-zinc-100" />
                       <span>SFX On</span>
                     </>
                   ) : (
@@ -144,19 +144,19 @@ export function SoundscapePopover({ soundFxEnabled, onToggleSoundFx }: Soundscap
                 className={cn(
                   "flex items-center gap-2.5 rounded-lg border px-3 py-2 text-xs text-left transition-all cursor-pointer active:scale-[0.98] touch-manipulation",
                   soundscape === "cosmic"
-                    ? "border-purple-500/60 bg-purple-950/40 text-purple-200 font-medium shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]"
+                    ? "border-white/30 bg-zinc-850 text-white font-medium shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]"
                     : "border-white/10 bg-zinc-900/60 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-850",
                 )}
               >
-                <div className="flex h-7 w-7 items-center justify-center rounded-md bg-purple-950/80 border border-purple-500/30 shrink-0">
-                  <Sparkles className="h-3.5 w-3.5 text-purple-400" />
+                <div className="flex h-7 w-7 items-center justify-center rounded-md bg-zinc-800 border border-white/10 shrink-0">
+                  <Sparkles className="h-3.5 w-3.5 text-zinc-100" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium text-zinc-100">Cosmic Drift</div>
-                  <div className="text-[10px] text-zinc-500 truncate">Deep ambient drone & soft bells</div>
+                  <div className="text-[10px] text-zinc-400 truncate">Deep ambient drone & soft bells</div>
                 </div>
                 {soundscape === "cosmic" && (
-                  <span className="h-1.5 w-1.5 rounded-full bg-purple-400 shrink-0" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.8)] shrink-0" />
                 )}
               </button>
 
@@ -166,19 +166,19 @@ export function SoundscapePopover({ soundFxEnabled, onToggleSoundFx }: Soundscap
                 className={cn(
                   "flex items-center gap-2.5 rounded-lg border px-3 py-2 text-xs text-left transition-all cursor-pointer active:scale-[0.98] touch-manipulation",
                   soundscape === "lofi"
-                    ? "border-amber-500/60 bg-amber-950/40 text-amber-200 font-medium shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]"
+                    ? "border-white/30 bg-zinc-850 text-white font-medium shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]"
                     : "border-white/10 bg-zinc-900/60 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-850",
                 )}
               >
-                <div className="flex h-7 w-7 items-center justify-center rounded-md bg-amber-950/80 border border-amber-500/30 shrink-0">
-                  <Radio className="h-3.5 w-3.5 text-amber-400" />
+                <div className="flex h-7 w-7 items-center justify-center rounded-md bg-zinc-800 border border-white/10 shrink-0">
+                  <Radio className="h-3.5 w-3.5 text-zinc-100" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium text-zinc-100">Lo-Fi Tape</div>
-                  <div className="text-[10px] text-zinc-500 truncate">Rhodes jazz chords & vinyl warmth</div>
+                  <div className="text-[10px] text-zinc-400 truncate">Rhodes jazz chords & vinyl warmth</div>
                 </div>
                 {soundscape === "lofi" && (
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.8)] shrink-0" />
                 )}
               </button>
 
@@ -209,7 +209,7 @@ export function SoundscapePopover({ soundFxEnabled, onToggleSoundFx }: Soundscap
               <div className="pt-2 border-t border-white/10">
                 <div className="flex items-center justify-between text-[11px] text-zinc-400 mb-1">
                   <span className="flex items-center gap-1">
-                    <Sliders className="h-3 w-3 text-indigo-400" />
+                    <Sliders className="h-3 w-3 text-zinc-300" />
                     <span>Atmosphere Volume</span>
                   </span>
                   <span className="font-mono text-zinc-400 font-medium">
@@ -223,7 +223,7 @@ export function SoundscapePopover({ soundFxEnabled, onToggleSoundFx }: Soundscap
                   step="0.05"
                   value={volume}
                   onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
-                  className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-indigo-400"
+                  className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-white"
                 />
               </div>
             )}

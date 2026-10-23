@@ -55,6 +55,8 @@ export function LinkPreviewCard({
 }) {
   const [data, setData] = useState<LinkPreviewData | null>(() => previewCache.get(url) || null);
   const [loading, setLoading] = useState(() => !previewCache.has(url));
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const imageError = failedUrl === url;
 
   useEffect(() => {
     if (previewCache.has(url)) {
@@ -114,16 +116,14 @@ export function LinkPreviewCard({
           : "border-white/10 bg-zinc-900/70 hover:border-white/20 hover:bg-zinc-850/90 text-zinc-100 shadow-md backdrop-blur-md",
       )}
     >
-      {data.image && (
+      {data.image && !imageError && (
         <div className="relative aspect-[16/9] w-full overflow-hidden bg-black/40 border-b border-inherit/20">
           <img
             src={data.image}
             alt=""
             loading="lazy"
             decoding="async"
-            onError={(e) => {
-              (e.currentTarget as HTMLElement).style.display = "none";
-            }}
+            onError={() => setFailedUrl(url)}
             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
           />
         </div>

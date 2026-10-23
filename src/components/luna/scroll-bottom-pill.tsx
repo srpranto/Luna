@@ -12,7 +12,7 @@ export function ScrollBottomPill({ visible, onClick }: { visible: boolean; onCli
         onClick={onClick}
         className="flex items-center gap-1.5 rounded-full border border-white/15 bg-zinc-950/90 px-3 py-1.5 text-xs font-medium text-zinc-200 shadow-xl backdrop-blur-xl hover:bg-zinc-900 active:scale-95 transition-all cursor-pointer"
       >
-        <ArrowDown className="h-3.5 w-3.5 text-indigo-400 animate-bounce" />
+        <ArrowDown className="h-3.5 w-3.5 text-zinc-100 animate-bounce" />
         <span>Jump to latest</span>
       </button>
     </div>

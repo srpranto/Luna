@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { formatClock, formatRemaining } from "@/lib/luna/identity";
 import type { ChatMessage } from "@/lib/luna/types";
 import { cn } from "@/lib/utils";
-import { ArrowRight, Pencil, Trash2, Reply, Lock } from "lucide-react";
+import { ArrowRight, Pencil, Trash2, Reply, Lock, Check, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { triggerHaptic } from "@/lib/luna/sound";
 import { LinkPreviewCard } from "@/components/luna/link-preview-card";
@@ -12,7 +12,10 @@ import { LinkPreviewCard } from "@/components/luna/link-preview-card";
 const URL_REGEX = /https?:\/\/[^\s<]+[^<.,:;"')\]\s]/i;
 
 function extractFirstUrl(text: string): string | null {
-  const match = text.match(URL_REGEX);
+  if (!text) return null;
+  const withoutCodeBlocks = text.replace(/```[\s\S]*?```/g, "");
+  const withoutInlineCode = withoutCodeBlocks.replace(/`[^`]+`/g, "");
+  const match = withoutInlineCode.match(URL_REGEX);
   return match ? match[0] : null;
 }
 
@@ -38,10 +41,10 @@ function renderTextWithLinks(text: string, isMine: boolean): (string | React.Rea
           triggerHaptic("selection");
         }}
         className={cn(
-          "underline underline-offset-2 break-all font-medium transition-colors",
+          "underline underline-offset-4 break-all font-medium transition-colors",
           isMine
-            ? "text-blue-700 hover:text-blue-900 decoration-blue-500/40"
-            : "text-indigo-300 hover:text-indigo-200 decoration-indigo-400/40",
+            ? "text-zinc-950 underline-offset-4 decoration-zinc-950/40 hover:decoration-zinc-950 font-semibold"
+            : "text-zinc-100 underline-offset-4 decoration-white/40 hover:decoration-white font-medium",
         )}
       >
         {url}
@@ -55,109 +58,242 @@ function renderTextWithLinks(text: string, isMine: boolean): (string | React.Rea
   return parts.length > 0 ? parts : [text];
 }
 
-function renderFormattedBody(body: string, isMine: boolean) {
-  const lines = body.split("\n");
+function CodeBlock({
+  code,
+  language,
+  isMine,
+}: {
+  code: string;
+  language?: string;
+  isMine?: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  return lines.map((line, lineIdx) => {
-    const isQuote = line.startsWith("> ");
-    const content = isQuote ? line.slice(2) : line;
-
-    const parts: (string | React.ReactNode)[] = [];
-    const regex = /(\*\*.*?\*\*|\*.*?\*|`.*?`)/g;
-    let lastIndex = 0;
-    let match: RegExpExecArray | null;
-
-    while ((match = regex.exec(content)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push(...renderTextWithLinks(content.slice(lastIndex, match.index), isMine));
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
       }
-      const token = match[0];
-      if (token.startsWith("**") && token.endsWith("**") && token.length >= 4) {
-        parts.push(
-          <strong key={match.index} className="font-semibold text-inherit">
-            {token.slice(2, -2)}
-          </strong>,
-        );
-      } else if (token.startsWith("*") && token.endsWith("*") && token.length >= 2) {
-        parts.push(
-          <em key={match.index} className="italic text-inherit">
-            {token.slice(1, -1)}
-          </em>,
-        );
-      } else if (token.startsWith("`") && token.endsWith("`") && token.length >= 2) {
-        parts.push(
-          <code
-            key={match.index}
-            className={cn(
-              "px-1.5 py-0.5 rounded text-[11px] font-mono",
-              isMine
-                ? "bg-zinc-200 text-zinc-900 border border-zinc-300"
-                : "bg-zinc-800 text-zinc-200 border border-white/10",
-            )}
-          >
-            {token.slice(1, -1)}
-          </code>,
-        );
-      } else {
-        parts.push(...renderTextWithLinks(token, isMine));
-      }
-      lastIndex = match.index + token.length;
+    };
+  }, []);
+
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(code);
+      triggerHaptic("light");
+      setCopied(true);
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback
     }
+  };
 
-    if (lastIndex < content.length) {
-      parts.push(...renderTextWithLinks(content.slice(lastIndex), isMine));
-    }
-
-    if (isQuote) {
-      const colonIdx = content.indexOf(": ");
-      if (colonIdx > 0 && colonIdx < 32) {
-        const quoteAuthor = content.slice(0, colonIdx);
-        const quoteSnippet = content.slice(colonIdx + 2);
-        return (
-          <div
-            key={lineIdx}
-            className={cn(
-              "rounded-lg border-l-4 px-2.5 py-1.5 mb-2 text-xs select-none",
-              isMine
-                ? "border-zinc-500 bg-zinc-200/80 text-zinc-800"
-                : "border-sky-500 bg-white/5 text-zinc-300",
-            )}
-          >
-            <div
-              className={cn(
-                "text-[10px] font-semibold tracking-wide uppercase font-mono",
-                isMine ? "text-zinc-700" : "text-sky-400",
-              )}
-            >
-              {quoteAuthor}
-            </div>
-            <div className="line-clamp-2 italic text-[11px] opacity-90 mt-0.5">{quoteSnippet}</div>
-          </div>
-        );
-      }
-
-      return (
-        <blockquote
-          key={lineIdx}
-          className={cn(
-            "border-l-2 pl-2 my-1 italic text-xs",
-            isMine ? "border-zinc-400 text-zinc-700" : "border-zinc-600 text-zinc-400",
-          )}
+  return (
+    <div
+      className={cn(
+        "my-2 rounded-xl overflow-hidden border font-mono text-xs select-text shadow-sm text-left bg-zinc-950 text-zinc-100",
+        isMine ? "border-zinc-800" : "border-white/10",
+      )}
+    >
+      <div className="flex items-center justify-between px-3 py-1.5 bg-zinc-900/80 border-b border-white/10 text-[10px] text-zinc-400">
+        <span className="font-semibold uppercase tracking-wider">{language || "code"}</span>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-white/10 text-zinc-300 hover:text-white transition-colors cursor-pointer"
+          title="Copy code"
         >
-          {parts}
-        </blockquote>
+          {copied ? (
+            <>
+              <Check className="h-3 w-3 text-zinc-100" />
+              <span className="text-zinc-100 font-medium">Copied!</span>
+            </>
+          ) : (
+            <>
+              <Copy className="h-3 w-3" />
+              <span>Copy</span>
+            </>
+          )}
+        </button>
+      </div>
+      <pre className="p-3 overflow-x-auto text-[11px] sm:text-xs leading-relaxed font-mono">
+        <code>{code.replace(/\r?\n$/, "")}</code>
+      </pre>
+    </div>
+  );
+}
+
+interface ContentBlock {
+  type: "code" | "text";
+  language?: string;
+  code?: string;
+  text?: string;
+}
+
+function splitIntoBlocks(body: string): ContentBlock[] {
+  const blocks: ContentBlock[] = [];
+  const codeBlockRegex = /```([a-zA-Z0-9_+-]*)[^\S\r\n]*\r?\n([\s\S]*?)```/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = codeBlockRegex.exec(body)) !== null) {
+    if (match.index > lastIndex) {
+      let textChunk = body.slice(lastIndex, match.index);
+      if (textChunk.endsWith("\n")) {
+        textChunk = textChunk.replace(/\r?\n$/, "");
+      }
+      if (textChunk.length > 0) {
+        blocks.push({
+          type: "text",
+          text: textChunk,
+        });
+      }
+    }
+    blocks.push({
+      type: "code",
+      language: match[1]?.trim() || "",
+      code: match[2],
+    });
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < body.length) {
+    let textChunk = body.slice(lastIndex);
+    if (textChunk.startsWith("\n") || textChunk.startsWith("\r\n")) {
+      textChunk = textChunk.replace(/^\r?\n/, "");
+    }
+    if (textChunk.length > 0) {
+      blocks.push({
+        type: "text",
+        text: textChunk,
+      });
+    }
+  }
+
+  return blocks;
+}
+
+function renderFormattedBody(body: string, isMine: boolean) {
+  const blocks = splitIntoBlocks(body);
+
+  return blocks.map((block, blockIdx) => {
+    if (block.type === "code") {
+      return (
+        <CodeBlock
+          key={`code-${blockIdx}`}
+          code={block.code ?? ""}
+          language={block.language}
+          isMine={isMine}
+        />
       );
     }
 
-    if (lines.length === 1) {
-      return <React.Fragment key={lineIdx}>{parts.length > 0 ? parts : " "}</React.Fragment>;
-    }
+    const lines = (block.text ?? "").split("\n");
 
-    return (
-      <span key={lineIdx} className="block min-h-[1.2em]">
-        {parts.length > 0 ? parts : " "}
-      </span>
-    );
+    return lines.map((line, lineIdx) => {
+      const isQuote = line.startsWith("> ");
+      const content = isQuote ? line.slice(2) : line;
+
+      const parts: (string | React.ReactNode)[] = [];
+      const regex = /(\*\*.*?\*\*|\*.*?\*|`.*?`)/g;
+      let lastIndex = 0;
+      let match: RegExpExecArray | null;
+
+      while ((match = regex.exec(content)) !== null) {
+        if (match.index > lastIndex) {
+          parts.push(...renderTextWithLinks(content.slice(lastIndex, match.index), isMine));
+        }
+        const token = match[0];
+        if (token.startsWith("**") && token.endsWith("**") && token.length >= 4) {
+          parts.push(
+            <strong key={`${blockIdx}-${lineIdx}-${match.index}`} className="font-semibold text-inherit">
+              {token.slice(2, -2)}
+            </strong>,
+          );
+        } else if (token.startsWith("*") && token.endsWith("*") && token.length >= 2) {
+          parts.push(
+            <em key={`${blockIdx}-${lineIdx}-${match.index}`} className="italic text-inherit">
+              {token.slice(1, -1)}
+            </em>,
+          );
+        } else if (token.startsWith("`") && token.endsWith("`") && token.length >= 2) {
+          parts.push(
+            <code
+              key={`${blockIdx}-${lineIdx}-${match.index}`}
+              className={cn(
+                "px-1.5 py-0.5 rounded text-[11px] font-mono",
+                isMine
+                  ? "bg-zinc-200 text-zinc-900 border border-zinc-300"
+                  : "bg-zinc-800 text-zinc-200 border border-white/10",
+              )}
+            >
+              {token.slice(1, -1)}
+            </code>,
+          );
+        } else {
+          parts.push(...renderTextWithLinks(token, isMine));
+        }
+        lastIndex = match.index + token.length;
+      }
+
+      if (lastIndex < content.length) {
+        parts.push(...renderTextWithLinks(content.slice(lastIndex), isMine));
+      }
+
+      if (isQuote) {
+        const colonIdx = content.indexOf(": ");
+        if (colonIdx > 0 && colonIdx < 32) {
+          const quoteAuthor = content.slice(0, colonIdx);
+          const quoteSnippet = content.slice(colonIdx + 2);
+          return (
+            <div
+              key={`${blockIdx}-${lineIdx}`}
+              className={cn(
+                "rounded-lg border-l-4 px-2.5 py-1.5 mb-2 text-xs select-none",
+                isMine
+                  ? "border-zinc-500 bg-zinc-200/80 text-zinc-800"
+                  : "border-sky-500 bg-white/5 text-zinc-300",
+              )}
+            >
+              <div
+                className={cn(
+                  "text-[10px] font-semibold tracking-wide uppercase font-mono",
+                  isMine ? "text-zinc-700" : "text-sky-400",
+                )}
+              >
+                {quoteAuthor}
+              </div>
+              <div className="line-clamp-2 italic text-[11px] opacity-90 mt-0.5">{quoteSnippet}</div>
+            </div>
+          );
+        }
+
+        return (
+          <blockquote
+            key={`${blockIdx}-${lineIdx}`}
+            className={cn(
+              "border-l-2 pl-2 my-1 italic text-xs",
+              isMine ? "border-zinc-400 text-zinc-700" : "border-zinc-600 text-zinc-400",
+            )}
+          >
+            {parts}
+          </blockquote>
+        );
+      }
+
+      if (lines.length === 1 && blocks.length === 1) {
+        return <React.Fragment key={`${blockIdx}-${lineIdx}`}>{parts.length > 0 ? parts : " "}</React.Fragment>;
+      }
+
+      return (
+        <span key={`${blockIdx}-${lineIdx}`} className="block min-h-[1.2em]">
+          {parts.length > 0 ? parts : " "}
+        </span>
+      );
+    });
   });
 }
 
@@ -173,6 +309,7 @@ export function Transcript({
   onEditMessage,
   onDeleteMessage,
   onReply,
+  onRetryMessage,
 }: {
   messages: ChatMessage[];
   now?: Date | null;
@@ -185,12 +322,19 @@ export function Transcript({
   onEditMessage?: (messageId: string, newBody: string) => Promise<void>;
   onDeleteMessage?: (messageId: string) => Promise<void>;
   onReply?: (target: { id: string; fromCallsign: string; body: string }) => void;
+  onRetryMessage?: (messageId: string) => void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [showInterests, setShowInterests] = useState(true);
+  const [linkPreviewsEnabled] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("luna_link_previews_enabled") !== "false";
+    }
+    return true;
+  });
 
   const [swipingId, setSwipingId] = useState<string | null>(null);
   const [swipeOffset, setSwipeOffset] = useState<number>(0);
@@ -286,7 +430,7 @@ export function Transcript({
     <div className="flex flex-1 flex-col justify-end p-3 sm:p-6 space-y-3 sm:space-y-4 select-none">
       <div className="animate-fade-up mx-auto my-1 w-full max-w-xs sm:max-w-sm rounded-xl border border-white/10 bg-zinc-950/75 p-2.5 sm:p-3 text-center backdrop-blur-md shadow-sm transition-all duration-500">
         <div className="flex items-center justify-center gap-1.5 text-[11px] text-zinc-400 font-mono">
-          <Lock className="h-3 w-3 text-emerald-400 shrink-0" />
+          <Lock className="h-3 w-3 text-zinc-100 shrink-0" />
           <span className="font-semibold text-zinc-300">End-to-End Encrypted</span>
           {!showInterests && (
             <>
@@ -338,7 +482,11 @@ export function Transcript({
 
           if (isSystem) {
             return (
-              <div key={msg.id} className="animate-fade-up flex justify-center my-2">
+              <div
+                key={msg.id}
+                id={`msg-${msg.id}`}
+                className="animate-fade-up flex justify-center my-2"
+              >
                 <span className="rounded-full bg-zinc-900/60 border border-white/10 px-2.5 py-0.5 text-[11px] sm:text-xs text-zinc-400 shadow-sm">
                   {msg.body}
                 </span>
@@ -352,6 +500,7 @@ export function Transcript({
           return (
             <div
               key={msg.id}
+              id={`msg-${msg.id}`}
               className={cn(
                 "flex flex-col group transition-opacity duration-150",
                 isMine ? "items-end animate-bubble-mine" : "items-start animate-bubble-peer",
@@ -435,6 +584,7 @@ export function Transcript({
                           void handleSubmitEdit(msg.id);
                         } else if (e.key === "Escape") {
                           e.preventDefault();
+                          e.stopPropagation();
                           handleCancelEditing();
                         }
                       }}
@@ -481,11 +631,29 @@ export function Transcript({
                       title={formatClock(new Date(msg.createdAt))}
                     >
                       <div className="inline">{renderFormattedBody(msg.body, isMine)}</div>
-                      {(() => {
+                      {linkPreviewsEnabled && (() => {
                         const previewUrl = extractFirstUrl(msg.body);
                         if (!previewUrl) return null;
                         return <LinkPreviewCard url={previewUrl} isMine={isMine} />;
                       })()}
+                      {msg.status === "failed" && isMine && (
+                        <div className="flex items-center gap-1.5 mt-1.5 pt-1 border-t border-rose-500/20 text-[11px] text-rose-500 font-sans">
+                          <span>Failed to send</span>
+                          {onRetryMessage && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                triggerHaptic("medium");
+                                onRetryMessage(msg.id);
+                              }}
+                              className="px-2 py-0.5 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 font-medium transition-colors cursor-pointer"
+                            >
+                              Retry
+                            </button>
+                          )}
+                        </div>
+                      )}
                       <span className="inline-flex items-center gap-1 float-right mt-1.5 ml-2.5 text-[10px] font-mono select-none">
                         <span className="hidden group-hover:inline text-[10px] text-zinc-500 transition-opacity">
                           {formatClock(new Date(msg.createdAt))}
@@ -500,18 +668,49 @@ export function Transcript({
                             ({remaining})
                           </span>
                         )}
+                        {isMine && !isSystem && (
+                          <span
+                            className={cn(
+                              "inline-flex items-center text-[10px] select-none transition-colors ml-0.5",
+                              msg.status === "failed"
+                                ? "text-rose-500 font-bold"
+                                : msg.seenAt || msg.status === "seen"
+                                  ? "text-zinc-950 font-bold"
+                                  : msg.status === "sending"
+                                    ? "text-zinc-500 font-normal opacity-70"
+                                    : "text-zinc-500 font-medium",
+                            )}
+                            title={
+                              msg.status === "failed"
+                                ? "Failed to send"
+                                : msg.seenAt || msg.status === "seen"
+                                  ? `Seen ${msg.seenAt ? formatClock(new Date(msg.seenAt)) : ""}`
+                                  : msg.status === "delivered"
+                                    ? "Delivered"
+                                    : msg.status === "sending"
+                                      ? "Sending…"
+                                      : "Sent"
+                            }
+                          >
+                            {msg.status === "failed"
+                              ? "!"
+                              : (msg.seenAt || msg.status === "seen")
+                                ? "✓✓"
+                                : "✓"}
+                          </span>
+                        )}
                       </span>
                     </div>
 
                     {isSwipingThis && currentOffset < -5 && (
                       <div
-                        className="flex items-center justify-center shrink-0 pl-1.5 text-sky-400 transition-opacity"
+                        className="flex items-center justify-center shrink-0 pl-1.5 text-zinc-100 transition-opacity"
                         style={{
                           opacity: Math.min(1, Math.abs(currentOffset) / 35),
                           transform: `scale(${Math.min(1, Math.abs(currentOffset) / 35)})`,
                         }}
                       >
-                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-800 border border-white/10 text-sky-400 shadow-md">
+                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-800 border border-white/15 text-zinc-100 shadow-md">
                           <Reply className="h-3 w-3" />
                         </div>
                       </div>
@@ -520,10 +719,13 @@ export function Transcript({
                 )}
               </div>
 
-              {msg.id === lastMineMsgId && !closed && (msg.seenAt || msg.copied) && (
+              {msg.id === lastMineMsgId && !closed && (
                 <div className="flex items-center justify-end px-1 pt-0.5 text-[10px] font-mono select-none animate-fade-up">
-                  <span className={cn("text-[10px]", msg.seenAt ? "text-sky-400 font-medium" : "text-zinc-400")}>
-                    {msg.seenAt ? "Seen" : "Delivered"}
+                  <span className={cn("text-[10px] flex items-center gap-1", msg.seenAt ? "text-zinc-100 font-medium" : "text-zinc-400")}>
+                    <span>{msg.seenAt ? "Seen" : "Delivered"}</span>
+                    <span className={cn("text-[11px] font-bold tracking-tighter", msg.seenAt ? "text-zinc-100 drop-shadow-[0_0_4px_rgba(255,255,255,0.4)]" : "text-zinc-400")}>
+                      {msg.seenAt ? "✓✓" : "✓"}
+                    </span>
                   </span>
                 </div>
               )}
@@ -587,6 +789,12 @@ export function Transcript({
             </div>
           </div>
         )}
+
+        <div role="status" aria-live="polite" className="sr-only">
+          {messages.length > 0 && messages[messages.length - 1]?.mine
+            ? `Message status: ${messages[messages.length - 1]?.status ?? (messages[messages.length - 1]?.seenAt ? "seen" : "sent")}`
+            : ""}
+        </div>
 
         <div ref={endRef} id="transcript-end" />
       </div>

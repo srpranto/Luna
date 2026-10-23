@@ -66,7 +66,7 @@ export function PrivacyShield() {
           aria-hidden="true"
         >
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-900 border border-white/10 shadow-inner mb-3">
-            <ShieldCheck className="h-6 w-6 text-emerald-400" />
+            <ShieldCheck className="h-6 w-6 text-zinc-100" />
           </div>
           <span className="text-sm font-semibold tracking-tight text-zinc-100">
             Luna Private Sanctuary
@@ -78,8 +78,8 @@ export function PrivacyShield() {
       )}
 
       {warning && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-full border border-amber-500/30 bg-zinc-950/95 px-4 py-1.5 text-xs text-amber-300 shadow-2xl backdrop-blur-xl animate-fade-up">
-          <ShieldAlert className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-full border border-white/20 bg-zinc-950/95 px-4 py-1.5 text-xs text-zinc-100 shadow-2xl backdrop-blur-xl animate-fade-up">
+          <ShieldAlert className="h-3.5 w-3.5 text-zinc-300 shrink-0" />
           <span className="font-medium">{warning}</span>
         </div>
       )}
