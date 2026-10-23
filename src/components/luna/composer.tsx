@@ -94,7 +94,6 @@ export function Composer({
 
   function doSubmit() {
     if (!disabled && value.trim()) {
-      triggerHaptic("medium");
       clearTypingTimer();
       onTyping?.(false);
       onSend();
@@ -274,6 +273,11 @@ export function Composer({
               autoCorrect="off"
               onFocus={() => {
                 onActivity?.();
+                if (typeof window !== "undefined") {
+                  setTimeout(() => {
+                    textareaRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                  }, 180);
+                }
               }}
               onClick={() => {
                 onActivity?.();
@@ -310,7 +314,7 @@ export function Composer({
               aria-label="Celestial reactions"
               title="Celestial reactions"
               className={cn(
-                "h-10 w-10 min-h-[44px] min-w-[44px] sm:min-h-[40px] sm:min-w-[40px] p-0 rounded-xl text-zinc-400 hover:text-zinc-100 hover:bg-zinc-850 shrink-0 cursor-pointer transition-all duration-200 cubic-bezier(0.16, 1, 0.3, 1) active:scale-[0.94] touch-manipulation",
+                "h-10 w-10 min-h-[44px] min-w-[44px] sm:min-h-[40px] sm:min-w-[40px] p-0 rounded-xl text-zinc-400 hover:text-zinc-100 hover:bg-zinc-850 shrink-0 cursor-pointer transition-all duration-200 ease-coloros active:scale-[0.94] touch-manipulation",
                 showReactions && "text-zinc-100 bg-zinc-800 ring-1 ring-white/20",
               )}
             >
@@ -324,7 +328,7 @@ export function Composer({
             size="sm"
             aria-label="Send message"
             title="Send message (Enter, Shift+Enter for new line)"
-            className="h-10 min-h-[44px] sm:min-h-[40px] px-3.5 min-w-[44px] sm:min-w-0 shrink-0 bg-zinc-100 text-zinc-950 hover:bg-white shadow-[0_0_15px_rgba(255,255,255,0.15)] active:scale-[0.94] transition-all duration-200 cubic-bezier(0.16, 1, 0.3, 1) rounded-xl font-medium cursor-pointer touch-manipulation"
+            className="h-10 min-h-[44px] sm:min-h-[40px] px-3.5 min-w-[44px] sm:min-w-0 shrink-0 bg-zinc-100 text-zinc-950 hover:bg-white shadow-[0_0_15px_rgba(255,255,255,0.15)] active:scale-[0.94] transition-all duration-200 ease-coloros rounded-xl font-medium cursor-pointer touch-manipulation"
           >
             <ArrowUp className="h-4 w-4" />
             <span className="hidden sm:inline">Send</span>

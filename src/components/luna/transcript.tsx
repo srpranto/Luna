@@ -1,6 +1,14 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  Fragment,
+  type ReactNode,
+  type MouseEvent,
+  type TouchEvent,
+} from "react";
 import { formatClock, formatRemaining } from "@/lib/luna/identity";
 import type { ChatMessage } from "@/lib/luna/types";
 import { cn } from "@/lib/utils";
@@ -19,9 +27,9 @@ function extractFirstUrl(text: string): string | null {
   return match ? match[0] : null;
 }
 
-function renderTextWithLinks(text: string, isMine: boolean): (string | React.ReactNode)[] {
+function renderTextWithLinks(text: string, isMine: boolean): (string | ReactNode)[] {
   const urlRegex = /(https?:\/\/[^\s<]+[^<.,:;"')\]\s])/g;
-  const parts: (string | React.ReactNode)[] = [];
+  const parts: (string | ReactNode)[] = [];
   let lastIdx = 0;
   let match: RegExpExecArray | null;
 
@@ -78,7 +86,7 @@ function CodeBlock({
     };
   }, []);
 
-  const handleCopy = async (e: React.MouseEvent) => {
+  const handleCopy = async (e: MouseEvent) => {
     e.stopPropagation();
     try {
       await navigator.clipboard.writeText(code);
@@ -197,7 +205,7 @@ function renderFormattedBody(body: string, isMine: boolean) {
       const isQuote = line.startsWith("> ");
       const content = isQuote ? line.slice(2) : line;
 
-      const parts: (string | React.ReactNode)[] = [];
+      const parts: (string | ReactNode)[] = [];
       const regex = /(\*\*.*?\*\*|\*.*?\*|`.*?`)/g;
       let lastIndex = 0;
       let match: RegExpExecArray | null;
@@ -285,7 +293,7 @@ function renderFormattedBody(body: string, isMine: boolean) {
       }
 
       if (lines.length === 1 && blocks.length === 1) {
-        return <React.Fragment key={`${blockIdx}-${lineIdx}`}>{parts.length > 0 ? parts : " "}</React.Fragment>;
+        return <Fragment key={`${blockIdx}-${lineIdx}`}>{parts.length > 0 ? parts : " "}</Fragment>;
       }
 
       return (
@@ -340,7 +348,7 @@ export function Transcript({
   const [swipeOffset, setSwipeOffset] = useState<number>(0);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
-  function handleTouchStart(e: React.TouchEvent, msgId: string) {
+  function handleTouchStart(e: TouchEvent, msgId: string) {
     touchStartRef.current = {
       x: e.touches[0].clientX,
       y: e.touches[0].clientY,
@@ -349,7 +357,7 @@ export function Transcript({
     setSwipeOffset(0);
   }
 
-  function handleTouchMove(e: React.TouchEvent, msgId: string) {
+  function handleTouchMove(e: TouchEvent, msgId: string) {
     if (!touchStartRef.current || swipingId !== msgId) return;
     const deltaX = e.touches[0].clientX - touchStartRef.current.x;
     const deltaY = e.touches[0].clientY - touchStartRef.current.y;

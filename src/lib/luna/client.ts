@@ -31,7 +31,7 @@ const rpc = <TResult, TPayload extends Record<string, unknown> = Record<string, 
 
 export const registerStation = rpc<DeskView, { deviceId: string; publicKey?: string }>("registerStation");
 export const getDesk = rpc<DeskView, { deviceId: string; publicKey?: string }>("getDesk");
-export const joinQueue = rpc<QueueHeartbeatResult, { deviceId: string; interests: string[]; blockedIds?: string[]; publicKey?: string }>("joinQueue");
+export const joinQueue = rpc<QueueHeartbeatResult, { deviceId: string; interests: string[]; blockedIds?: string[]; publicKey?: string; sessionId?: string }>("joinQueue");
 export const leaveQueue = rpc<DeskView, { deviceId: string }>("leaveQueue");
 export const heartbeatQueue = rpc<QueueHeartbeatResult, { deviceId: string; blockedIds?: string[] }>("heartbeatQueue");
 export const reportTyping = rpc<{ ok: boolean }, { deviceId: string; sessionId: string; isTyping: boolean }>("reportTyping");
@@ -65,8 +65,6 @@ const STREAM_EVENT_TYPES = [
   "message_edited",
   "message_deleted",
 ] as const;
-
-const RECONNECT_DELAYS_MS = [1000, 2000, 5000, 10000];
 
 export function subscribeDeskStream(
   deviceId: string,

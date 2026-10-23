@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { register } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
@@ -5,7 +6,7 @@ import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 
 try {
-  register(pathToFileURL(path.resolve('tests/e2e/loader.mjs')).href, import.meta.url);
+  register(pathToFileURL(path.resolve('tests/e2e/loader.ts')).href, import.meta.url);
 } catch {}
 
 process.removeAllListeners('warning');
@@ -357,6 +358,163 @@ async function runFocusedEnhancements() {
       threw = true;
     }
     assert.ok(threw, 'Sending whitespace-only message must throw an error');
+  });
+
+  // Section 6: Reliable Queue Search & Zero-Disconnect Persistence
+  console.log('\n▶ 6. Reliable Queue Search & Zero-Disconnect Persistence');
+
+  await test('User enters queue with topics when alone, remains waiting with queued: true', async () => {
+    const loner = crypto.randomUUID();
+    await registerStation({ deviceId: loner });
+
+    // Join queue with topic
+    const joinRes = await joinQueue({ deviceId: loner, interests: ['solitude', 'midnight'] });
+    assert.equal(joinRes.status, 'waiting', 'Must report waiting when no match is online');
+    assert.equal(joinRes.desk.queued, true, 'Desk must indicate queued: true');
+    assert.deepEqual(joinRes.desk.queuedInterests, ['solitude', 'midnight'], 'Must preserve queued interests');
+
+    // Consecutive heartbeats should reliably stay waiting without idle bounce
+    for (let i = 0; i < 4; i++) {
+      const hb = await heartbeatQueue({ deviceId: loner });
+      assert.equal(hb.status, 'waiting', `Heartbeat #${i + 1} must report waiting`);
+      assert.equal(hb.desk.queued, true, `Heartbeat #${i + 1} must maintain queued: true`);
+    }
+
+    // Clean up
+    await sql`delete from queue where device_id = ${loner}`;
+  });
+
+  await test('Heartbeat touches queue.last_beat even when matchmaker rate limit throttles', async () => {
+    const rateLoner = crypto.randomUUID();
+    await registerStation({ deviceId: rateLoner });
+    await joinQueue({ deviceId: rateLoner, interests: ['crypto'] });
+
+    // Rapidly poll heartbeat 5 times to exhaust token bucket
+    const hbResults = [];
+    for (let i = 0; i < 5; i++) {
+      hbResults.push(await heartbeatQueue({ deviceId: rateLoner }));
+    }
+
+    // All should return waiting with queued: true
+    for (const hb of hbResults) {
+      assert.equal(hb.status, 'waiting', 'All heartbeats must report waiting');
+      assert.equal(hb.desk.queued, true, 'Desk must remain queued');
+    }
+
+    // Verify row still exists in queue table with recent last_beat
+    const qRows = await sql`select * from queue where device_id = ${rateLoner}`;
+    assert.equal(qRows.length, 1, 'Queue row must NOT be evicted by rate limiting');
+
+    // Clean up
+    await sql`delete from queue where device_id = ${rateLoner}`;
+  });
+
+  await test('joinQueue safely closes stale unclosed sessions before entering queue', async () => {
+    const userA = crypto.randomUUID();
+    const userB = crypto.randomUUID();
+    const staleSessionId = crypto.randomUUID();
+    await registerStation({ deviceId: userA });
+    await registerStation({ deviceId: userB });
+
+    // Simulate an abandoned open session from 10 seconds ago
+    await sql`
+      insert into sessions (id, a_id, b_id, kind, interests, created_at, closed_at)
+      values (${staleSessionId}, ${userA}, ${userB}, 'stranger', '["nostalgia"]', now() - interval '10 seconds', null)
+    `;
+
+    // User A joins queue with a new topic
+    const joinRes = await joinQueue({ deviceId: userA, interests: ['fresh-topic'] });
+    assert.equal(joinRes.status, 'waiting', 'Must enter queue as waiting');
+    assert.equal(joinRes.desk.queued, true, 'Desk must be queued');
+
+    // The stale session must now be closed
+    const sesCheck = await sql`select closed_at from sessions where id = ${staleSessionId}`;
+    assert.ok(sesCheck[0]?.closed_at, 'Stale session must be closed');
+
+    // User A must remain in queue after a subsequent heartbeat
+    const hb = await heartbeatQueue({ deviceId: userA });
+    assert.equal(hb.status, 'waiting', 'Must still be in queue');
+    assert.equal(hb.desk.queued, true, 'Must still have queued: true');
+
+    // Clean up
+    await sql`delete from queue where device_id in (${userA}, ${userB})`;
+    await sql`delete from sessions where id = ${staleSessionId}`;
+  });
+
+  await test('joinQueue immediately closes sessions requested via leaveSessionId without phantom match', async () => {
+    const userA = crypto.randomUUID();
+    const userB = crypto.randomUUID();
+    const targetSessionId = crypto.randomUUID();
+    await registerStation({ deviceId: userA });
+    await registerStation({ deviceId: userB });
+
+    // Simulate session created 500ms ago that user explicitly leaves to find next stranger
+    await sql`
+      insert into sessions (id, a_id, b_id, kind, interests, created_at, closed_at)
+      values (${targetSessionId}, ${userA}, ${userB}, 'stranger', '["anime"]', now() - interval '500 milliseconds', null)
+    `;
+
+    const joinRes = await joinQueue({
+      deviceId: userA,
+      interests: ['anime'],
+      leaveSessionId: targetSessionId,
+    });
+
+    assert.equal(joinRes.status, 'waiting', 'Must enter queue as waiting, not re-match the left session');
+    assert.equal(joinRes.desk.queued, true, 'Desk must be queued');
+    assert.equal(joinRes.desk.activeSession, null, 'Must have no active session');
+
+    // Clean up
+    await sql`delete from queue where device_id in (${userA}, ${userB})`;
+    await sql`delete from sessions where id = ${targetSessionId}`;
+  });
+
+  await test('heartbeatQueue recovers missing queue row gracefully and preserves waiting status', async () => {
+    const loner = crypto.randomUUID();
+    await registerStation({ deviceId: loner });
+    await joinQueue({ deviceId: loner, interests: ['solitude'] });
+
+    // Simulate transient queue eviction
+    await sql`delete from queue where device_id = ${loner}`;
+
+    // Heartbeat from actively searching client must maintain waiting and restore queue presence
+    const hb = await heartbeatQueue({ deviceId: loner });
+    assert.equal(hb.status, 'waiting', 'Must preserve waiting state');
+    assert.equal(hb.desk.queued, true, 'Must preserve queued: true');
+
+    const check = await sql`select * from queue where device_id = ${loner}`;
+    assert.equal(check.length, 1, 'Queue entry must be restored');
+
+    // Clean up
+    await sql`delete from queue where device_id = ${loner}`;
+  });
+
+  await test('reapAbandonedSessions reaps dead sessions when disconnected stranger exceeds abandon window', async () => {
+    const userLocal = crypto.randomUUID();
+    const userGone = crypto.randomUUID();
+    const deadSessionId = crypto.randomUUID();
+    await registerStation({ deviceId: userLocal });
+    await registerStation({ deviceId: userGone });
+
+    // Set userGone last_seen to 5 minutes ago (exceeds 2-min abandon window)
+    await sql`update stations set last_seen = now() - interval '5 minutes' where device_id = ${userGone}`;
+
+    await sql`
+      insert into sessions (id, a_id, b_id, kind, interests, created_at, closed_at)
+      values (${deadSessionId}, ${userLocal}, ${userGone}, 'stranger', '["quiet"]', now() - interval '5 minutes', null)
+    `;
+
+    // Heartbeat triggers cleanup and session reaping
+    const hb = await heartbeatQueue({ deviceId: userLocal });
+    assert.equal(hb.status, 'waiting', 'Local user must be waiting, not matched to dead session');
+    assert.equal(hb.desk.activeSession, null, 'Dead session must not be active');
+
+    const sesCheck = await sql`select closed_at from sessions where id = ${deadSessionId}`;
+    assert.ok(sesCheck[0]?.closed_at, 'Dead session must be closed');
+
+    // Clean up
+    await sql`delete from queue where device_id in (${userLocal}, ${userGone})`;
+    await sql`delete from sessions where id = ${deadSessionId}`;
   });
 
   console.log('\n===============================================================');

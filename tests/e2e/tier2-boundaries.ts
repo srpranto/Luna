@@ -1,3 +1,4 @@
+// @ts-nocheck
 import {
   describe,
   it,
@@ -10,9 +11,9 @@ import {
   extractSanitizedFirstUrl,
   parseMarkdownTokens,
   readGlobalsCss,
-} from './harness.mjs';
+} from './harness.ts';
 
-import { cleanDatabase } from './harness.mjs';
+import { cleanDatabase } from './harness.ts';
 
 async function createPairedSession(interestsA, interestsB) {
   await cleanDatabase();

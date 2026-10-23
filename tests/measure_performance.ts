@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { register } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
@@ -5,7 +6,7 @@ import crypto from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 
 try {
-  register(pathToFileURL(path.resolve('tests/e2e/loader.mjs')).href, import.meta.url);
+  register(pathToFileURL(path.resolve('tests/e2e/loader.ts')).href, import.meta.url);
 } catch {}
 
 process.removeAllListeners('warning');

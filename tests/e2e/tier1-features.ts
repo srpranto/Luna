@@ -1,3 +1,4 @@
+// @ts-nocheck
 import {
   describe,
   it,
@@ -11,10 +12,10 @@ import {
   extractSanitizedFirstUrl,
   parseMarkdownTokens,
   readGlobalsCss,
-} from './harness.mjs';
+} from './harness.ts';
 import { performance } from 'node:perf_hooks';
 
-import { cleanDatabase } from './harness.mjs';
+import { cleanDatabase } from './harness.ts';
 
 // Helper to establish a paired chat session
 async function createPairedSession(interestsA, interestsB) {

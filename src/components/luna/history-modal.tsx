@@ -40,22 +40,42 @@ export function HistoryModal({
   onClearAll: () => void;
 }) {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+  if (prevIsOpen !== isOpen) {
+    setPrevIsOpen(isOpen);
+    if (!isOpen) setSelectedSessionId(null);
+  }
 
   useEffect(() => {
     if (!isOpen) return;
+
+    const handlePopState = () => {
+      if (selectedSessionId) {
+        setSelectedSessionId(null);
+      }
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
         e.stopImmediatePropagation();
         if (selectedSessionId) {
           setSelectedSessionId(null);
+          if (typeof window !== "undefined" && window.history.state?.modal === "history_session") {
+            window.history.back();
+          }
         } else {
           onClose();
         }
       }
     };
+
+    window.addEventListener("popstate", handlePopState);
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
   }, [isOpen, selectedSessionId, onClose]);
 
   if (!isOpen) return null;
@@ -84,6 +104,9 @@ export function HistoryModal({
                 onClick={() => {
                   triggerHaptic("light");
                   setSelectedSessionId(null);
+                  if (typeof window !== "undefined" && window.history.state?.modal === "history_session") {
+                    window.history.back();
+                  }
                 }}
                 className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 touch-manipulation cursor-pointer"
               >
@@ -185,6 +208,9 @@ export function HistoryModal({
                   onClick={() => {
                     triggerHaptic("selection");
                     setSelectedSessionId(item.sessionId);
+                    if (typeof window !== "undefined") {
+                      window.history.pushState({ luna: true, modal: "history_session" }, "");
+                    }
                   }}
                   className="flex-1 text-left min-w-0 cursor-pointer"
                 >

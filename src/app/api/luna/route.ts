@@ -102,6 +102,7 @@ const actionHandlers: Record<string, ActionHandler> = {
       blockedIds: p.blockedIds ?? [],
       clientIp: ip,
       publicKey: p.publicKey,
+      leaveSessionId: p.sessionId,
     }),
   leaveQueue: (p) => leaveQueue({ deviceId: p.deviceId! }),
   heartbeatQueue: (p, ip) =>

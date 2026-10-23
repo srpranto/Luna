@@ -1,8 +1,8 @@
 export const MAX_LINE_CHARS = 280;
-export const QUEUE_STALE_SECONDS = 30;
+export const QUEUE_STALE_SECONDS = 90;
 export const STRANGER_TTL_MINUTES = 1440;
 export const IDLE_AWAY_THRESHOLD_MS = 60000;
-export const ABANDON_AFTER_MINUTES = 120;
+export const ABANDON_AFTER_MINUTES = 2;
 export const FRIEND_TTL_DAYS = 7;
 
 export function sanitizeInterests(input: unknown): string[] {
@@ -35,8 +35,6 @@ export function sharedInterests(a: string[], b: string[]): string[] {
   const bSet = new Set(b);
   return a.filter((item) => bSet.has(item));
 }
-
-export const minSharedForWait = (_waitMs?: number): number => 1;
 
 export const newId = (): string => crypto.randomUUID();
 

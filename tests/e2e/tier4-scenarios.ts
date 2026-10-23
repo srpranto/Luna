@@ -1,3 +1,4 @@
+// @ts-nocheck
 import {
   describe,
   it,
@@ -11,7 +12,7 @@ import {
   simulateComposerKeydown,
   extractSanitizedFirstUrl,
   parseMarkdownTokens,
-} from './harness.mjs';
+} from './harness.ts';
 import { performance } from 'node:perf_hooks';
 
 export function registerTier4Tests() {

@@ -1,6 +1,13 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+  type ReactNode,
+} from "react";
 
 interface BeforeInstallPromptEvent extends Event {
   readonly platforms: string[];
@@ -27,7 +34,7 @@ const PwaContext = createContext<PwaContextValue>({
   dismissBanner: () => {},
 });
 
-export function PwaProvider({ children }: { children: React.ReactNode }) {
+export function PwaProvider({ children }: { children: ReactNode }) {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isStandalone, setIsStandalone] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(() => {

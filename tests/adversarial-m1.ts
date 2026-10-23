@@ -1,15 +1,16 @@
+// @ts-nocheck
 import { register } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 
 try {
-  register(pathToFileURL(path.resolve('tests/e2e/loader.mjs')).href, import.meta.url);
+  register(pathToFileURL(path.resolve('tests/e2e/loader.ts')).href, import.meta.url);
 } catch {}
 
 process.removeAllListeners('warning');
 
-const { callApi, createStation, cleanDatabase, listenDeviceEvents } = await import('./e2e/harness.mjs');
+const { callApi, createStation, cleanDatabase, listenDeviceEvents } = await import('./e2e/harness.ts');
 const { getSql } = await import('@/lib/luna/db.ts');
 
 

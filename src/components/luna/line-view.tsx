@@ -23,7 +23,6 @@ export function LineView({
   onDraft,
   onSend,
   onTyping,
-  sending,
   closed,
   peerTyping,
   canQsl,
@@ -57,7 +56,6 @@ export function LineView({
   onDraft: (next: string) => void;
   onSend: () => void;
   onTyping: (isTyping: boolean) => void;
-  sending: boolean;
   closed: boolean;
   peerTyping?: boolean;
   canQsl: boolean;
@@ -115,16 +113,55 @@ export function LineView({
 
   useEffect(() => {
     if (!showReportModal) return;
+    if (typeof window !== "undefined") {
+      window.history.pushState({ luna: true, view: "chat", modal: "report" }, "");
+    }
+    const handlePopState = () => {
+      setShowReportModal(false);
+    };
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
         e.stopImmediatePropagation();
         setShowReportModal(false);
+        if (typeof window !== "undefined" && window.history.state?.modal === "report") {
+          window.history.back();
+        }
       }
     };
+    window.addEventListener("popstate", handlePopState);
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
   }, [showReportModal]);
+
+  const closeReportModal = () => {
+    setShowReportModal(false);
+    if (typeof window !== "undefined" && window.history.state?.modal === "report") {
+      window.history.back();
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.visualViewport) return;
+    const vv = window.visualViewport;
+    const handleViewportChange = () => {
+      const el = transcriptScrollRef.current;
+      if (!el) return;
+      const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (distanceToBottom < 220) {
+        el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+      }
+    };
+    vv.addEventListener("resize", handleViewportChange);
+    vv.addEventListener("scroll", handleViewportChange);
+    return () => {
+      vv.removeEventListener("resize", handleViewportChange);
+      vv.removeEventListener("scroll", handleViewportChange);
+    };
+  }, []);
 
   function handleTranscriptScroll() {
     const el = transcriptScrollRef.current;
@@ -319,7 +356,7 @@ export function LineView({
       <div
         ref={transcriptScrollRef}
         onScroll={handleTranscriptScroll}
-        className="relative min-h-0 flex-1 overflow-y-auto"
+        className="relative min-h-0 flex-1 overflow-y-auto overscroll-y-contain"
       >
         <PrivacyShield />
         <FloatingReactionsOverlay items={floatingReactions} onFinished={onReactionFinished} />
@@ -345,7 +382,7 @@ export function LineView({
           aria-modal="true"
           aria-labelledby="report-modal-title"
           onClick={(e) => {
-            if (e.target === e.currentTarget) setShowReportModal(false);
+            if (e.target === e.currentTarget) closeReportModal();
           }}
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in"
         >
@@ -359,7 +396,7 @@ export function LineView({
               </div>
               <button
                 type="button"
-                onClick={() => setShowReportModal(false)}
+                onClick={closeReportModal}
                 aria-label="Close dialog"
                 className="text-zinc-500 hover:text-zinc-200 transition-colors p-1"
               >
@@ -405,7 +442,7 @@ export function LineView({
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() => setShowReportModal(false)}
+                onClick={closeReportModal}
                 className="text-xs text-zinc-400 hover:text-zinc-200"
               >
                 Cancel
@@ -415,7 +452,7 @@ export function LineView({
                 size="sm"
                 onClick={() => {
                   triggerHaptic("heavy");
-                  setShowReportModal(false);
+                  closeReportModal();
                   onReport?.(reportReason);
                 }}
                 className="text-xs bg-rose-600 hover:bg-rose-700 text-white font-medium"

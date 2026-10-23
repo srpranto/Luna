@@ -8,6 +8,7 @@ import { StatusHeader } from "@/components/luna/status-header";
 import { HistoryModal } from "@/components/luna/history-modal";
 import { VoidLetters } from "@/components/luna/void-letters";
 import { WelcomeModal } from "@/components/luna/welcome-modal";
+import { ExitConfirmModal } from "@/components/luna/exit-confirm-modal";
 import { BootView } from "@/components/luna/boot-view";
 import { ListeningView } from "@/components/luna/listening-view";
 import { LineView } from "@/components/luna/line-view";
@@ -47,6 +48,7 @@ import {
   playMatchChime,
   playLeaveTone,
   setSoundEnabled,
+  triggerHaptic,
 } from "@/lib/luna/sound";
 import type { DeskView, MessagesPack, SessionView, HistorySession } from "@/lib/luna/types";
 
@@ -131,6 +133,7 @@ export default function Home() {
   const [voidOpen, setVoidOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historySessions, setHistorySessions] = useState<HistorySession[]>([]);
+  const [exitConfirm, setExitConfirm] = useState<{ type: "chat" | "queue" } | null>(null);
   const hasAutoQueuedRef = useRef(false);
   const [, setResyncTick] = useState(0);
 
@@ -141,6 +144,43 @@ export default function Home() {
   const leftSessionIdsRef = useRef<Set<string>>(new Set());
   const lastMatchChimeRef = useRef<string | null>(null);
   const peerTypingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const busyRef = useRef(busy);
+  const isQueueingRef = useRef(false);
+  const interestsRef = useRef(interests);
+  const settingsOpenRef = useRef(settingsOpen);
+  const logOpenRef = useRef(logOpen);
+  const historyOpenRef = useRef(historyOpen);
+  const voidOpenRef = useRef(voidOpen);
+  const exitConfirmRef = useRef(exitConfirm);
+  const listeningRef = useRef(false);
+
+  useEffect(() => {
+    busyRef.current = busy;
+  }, [busy]);
+
+  useEffect(() => {
+    interestsRef.current = interests;
+  }, [interests]);
+
+  useEffect(() => {
+    settingsOpenRef.current = settingsOpen;
+  }, [settingsOpen]);
+
+  useEffect(() => {
+    logOpenRef.current = logOpen;
+  }, [logOpen]);
+
+  useEffect(() => {
+    historyOpenRef.current = historyOpen;
+  }, [historyOpen]);
+
+  useEffect(() => {
+    voidOpenRef.current = voidOpen;
+  }, [voidOpen]);
+
+  useEffect(() => {
+    exitConfirmRef.current = exitConfirm;
+  }, [exitConfirm]);
 
   const notifyError = useCallback((err: unknown) => {
     const msg = errorMessage(err);
@@ -148,6 +188,32 @@ export default function Home() {
   }, []);
 
   const triggerResync = useCallback(() => setResyncTick((n) => n + 1), []);
+
+  const handleDeskUpdate = useCallback((refreshed: DeskView) => {
+    setDesk((prev) => {
+      if (!prev) return refreshed;
+      // If we are currently searching (in queue or join in-flight), protect queued state
+      const isSearching = Boolean(prev.queued) || isQueueingRef.current;
+      const validSession =
+        refreshed.activeSession && !leftSessionIdsRef.current.has(refreshed.activeSession.id);
+
+      if (isSearching && !validSession && !refreshed.queued) {
+        return {
+          ...refreshed,
+          activeSession: null,
+          queued: true,
+          queuedInterests: prev.queuedInterests ?? refreshed.queuedInterests,
+          enteredAt: prev.enteredAt ?? refreshed.enteredAt,
+        };
+      }
+
+      if (refreshed.activeSession && leftSessionIdsRef.current.has(refreshed.activeSession.id)) {
+        return { ...refreshed, activeSession: null };
+      }
+
+      return refreshed;
+    });
+  }, []);
 
   const session = desk?.activeSession ?? null;
   const currentSession = session
@@ -160,10 +226,14 @@ export default function Home() {
   const listening = Boolean(desk?.queued) && !currentSession;
 
   useEffect(() => {
+    listeningRef.current = listening;
+  }, [listening]);
+
+  useEffect(() => {
     activeSessionRef.current = currentSession;
   }, [currentSession]);
 
-  const { isAway, setIsAway, resetIdle } = useLunaPresence({
+  const { setIsAway, resetIdle } = useLunaPresence({
     deviceId,
     currentSession,
     onResync: triggerResync,
@@ -196,16 +266,20 @@ export default function Home() {
     deviceId,
     onActivity: resetIdle,
     onHistoryUpdated: setHistorySessions,
-    onSessionEndedNotice: () => markSessionClosed(currentSession?.id),
+    onSessionEndedNotice: () => {
+      markSessionClosed(currentSession?.id);
+      playLeaveTone();
+      triggerHaptic("disconnect");
+    },
   });
 
   // Re-fetch desk when returning online
   useEffect(() => {
     if (!prevOnlineRef.current && isOnline && deviceId) {
-      void getDesk({ deviceId }).then(setDesk).catch(() => {});
+      void getDesk({ deviceId }).then(handleDeskUpdate).catch(() => {});
     }
     prevOnlineRef.current = isOnline;
-  }, [isOnline, deviceId]);
+  }, [isOnline, deviceId, handleDeskUpdate]);
 
   // Window title notification reset
   useEffect(() => {
@@ -269,12 +343,12 @@ export default function Home() {
           try {
             const updated = await updateCallsign({ deviceId, callsign: cachedName });
             if (!cancelled) {
-              setDesk(updated);
+              handleDeskUpdate(updated);
               return;
             }
           } catch {}
         }
-        setDesk(data);
+        handleDeskUpdate(data);
       })
       .catch((err) => {
         if (!cancelled) notifyError(err);
@@ -283,7 +357,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [deviceId, notifyError]);
+  }, [deviceId, notifyError, handleDeskUpdate]);
 
   // SSE Stream Event Handler
   const handleStreamEvent = useCallback(
@@ -328,35 +402,34 @@ export default function Home() {
         setSessionView(null);
         setMessages([]);
         setIsAway(false);
-        if (info.desk) setDesk(info.desk);
-        else if (deviceId) getDesk({ deviceId }).then(setDesk).catch(() => {});
+        if (info.desk) handleDeskUpdate(info.desk);
+        else if (deviceId) getDesk({ deviceId }).then(handleDeskUpdate).catch(() => {});
 
         if (info.sessionId && lastMatchChimeRef.current !== info.sessionId) {
           lastMatchChimeRef.current = info.sessionId;
           playMatchChime();
-          if (typeof window !== "undefined" && "vibrate" in navigator) {
-            try { navigator.vibrate([15, 60, 20]); } catch {}
-          }
+          triggerHaptic("match");
         }
       } else if (eventType === "session_ended") {
         const info = data as { sessionId: string; desk?: DeskView };
         if (info.sessionId && info.sessionId === activeSessionRef.current?.id) {
           markSessionClosed(info.sessionId);
-          if (info.desk) setDesk(info.desk);
+          if (info.desk) handleDeskUpdate(info.desk);
           playLeaveTone();
+          triggerHaptic("disconnect");
         }
       } else if (eventType === "desk_update" || eventType === "friend_request") {
         const refreshed = data as DeskView;
-        if (refreshed?.station) setDesk(refreshed);
+        if (refreshed?.station) handleDeskUpdate(refreshed);
       }
     },
-    [deviceId, decryptPack, mergeAndStoreMessages, setMessages, markSessionClosed, setIsAway],
+    [deviceId, decryptPack, mergeAndStoreMessages, setMessages, markSessionClosed, setIsAway, handleDeskUpdate],
   );
 
   useLunaStream({
     deviceId,
     onEvent: handleStreamEvent,
-    onDeskUpdate: setDesk,
+    onDeskUpdate: handleDeskUpdate,
     onResync: triggerResync,
     isListening: listening,
   });
@@ -399,6 +472,7 @@ export default function Home() {
       if (lastMatchChimeRef.current !== currentSession.id) {
         lastMatchChimeRef.current = currentSession.id;
         playMatchChime();
+        triggerHaptic("match");
       }
       if (currentSession.peerPublicKey && deviceId) {
         void establishSharedKey(deviceId, currentSession.id, currentSession.peerPublicKey);
@@ -412,6 +486,8 @@ export default function Home() {
     let cancelled = false;
 
     const tick = async () => {
+      // Do not run heartbeat if joinQueue is in flight or state is busy
+      if (isQueueingRef.current || busyRef.current) return;
       try {
         const blocked = readBlockedStations();
         const res = await heartbeatQueue({ deviceId, blockedIds: blocked });
@@ -420,19 +496,21 @@ export default function Home() {
             setSessionView(null);
             setMessages([]);
             setIsAway(false);
+            handleDeskUpdate(res.desk);
+          } else if (res.status === "waiting") {
+            handleDeskUpdate(res.desk);
           }
-          setDesk(res.desk);
         }
       } catch {}
     };
 
-    void tick();
+    // Periodic heartbeats refresh every 2000ms. joinQueue already executed initial join & heartbeat.
     const timer = window.setInterval(() => void tick(), 2000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [deviceId, listening, setIsAway, setMessages]);
+  }, [deviceId, listening, setIsAway, setMessages, handleDeskUpdate]);
 
   // Wirecut banner auto-dismiss
   useEffect(() => {
@@ -456,18 +534,29 @@ export default function Home() {
   }, [resetIdle]);
 
   const handleJoinQueue = useCallback(async (overrideInterests?: unknown) => {
-    if (!deviceId || busy) return;
+    if (!deviceId || busyRef.current) return;
     const finalInterests = Array.isArray(overrideInterests)
       ? overrideInterests.filter((x): x is string => typeof x === "string")
-      : interests;
+      : interestsRef.current;
     setBusy(true);
+    isQueueingRef.current = true;
     setNote(null);
     setIsAway(false);
     setReplyingTo(null);
     setMessages([]);
     setSessionView(null);
     leftSessionIdsRef.current.clear();
-    setDesk((prev) => (prev ? { ...prev, activeSession: null, queued: true, enteredAt: new Date().toISOString() } : null));
+    setDesk((prev) => (prev ? {
+      ...prev,
+      activeSession: null,
+      queued: true,
+      queuedInterests: finalInterests,
+      enteredAt: new Date().toISOString(),
+    } : null));
+
+    if (typeof window !== "undefined" && window.history.state?.view !== "queue") {
+      window.history.pushState({ luna: true, view: "queue" }, "");
+    }
 
     try {
       const blocked = readBlockedStations();
@@ -477,19 +566,26 @@ export default function Home() {
         interests: finalInterests,
         blockedIds: blocked,
         publicKey: pubKey ?? undefined,
+        sessionId: currentSession?.id,
       });
-      setDesk(res.desk);
+      if (res.status === "matched") {
+        setSessionView(null);
+        setMessages([]);
+        setIsAway(false);
+      }
+      handleDeskUpdate(res.desk);
       setLogOpen(false);
       setSettingsOpen(false);
     } catch (err) {
       notifyError(err);
       if (deviceId) {
-        void getDesk({ deviceId }).then(setDesk).catch(() => {});
+        void getDesk({ deviceId }).then(handleDeskUpdate).catch(() => {});
       }
     } finally {
+      isQueueingRef.current = false;
       setBusy(false);
     }
-  }, [deviceId, busy, interests, notifyError, setIsAway, setMessages, setReplyingTo]);
+  }, [deviceId, currentSession, notifyError, setIsAway, setMessages, setReplyingTo, handleDeskUpdate]);
 
   // Auto-enqueue if requested via PWA action=chat shortcut
   useEffect(() => {
@@ -502,23 +598,34 @@ export default function Home() {
   const handleLeaveQueue = useCallback(async () => {
     if (!deviceId || busy) return;
     setBusy(true);
+    triggerHaptic("tap");
     setDesk((prev) => (prev ? { ...prev, queued: false, enteredAt: null } : null));
+
+    if (typeof window !== "undefined") {
+      if (window.history.state?.view === "queue") {
+        window.history.back();
+      } else {
+        window.history.replaceState({ luna: true, view: "boot" }, "");
+      }
+    }
+
     try {
       setNote(null);
       const next = await leaveQueue({ deviceId });
-      setDesk(next);
+      handleDeskUpdate(next);
     } catch (err) {
       notifyError(err);
     } finally {
       setBusy(false);
     }
-  }, [deviceId, busy, notifyError]);
+  }, [deviceId, busy, notifyError, handleDeskUpdate]);
 
   const handleLeaveSession = useCallback(async () => {
     if (!deviceId || busy) return;
     const targetSessionId = currentSession?.id;
     setBusy(true);
     playLeaveTone();
+    triggerHaptic("disconnect");
     setIsAway(false);
     setReplyingTo(null);
     setMessages([]);
@@ -526,39 +633,57 @@ export default function Home() {
     setDesk((prev) => (prev ? { ...prev, activeSession: null } : null));
     setHistorySessions(loadChatHistory());
 
+    if (typeof window !== "undefined") {
+      window.history.replaceState({ luna: true, view: "boot" }, "");
+    }
+
     if (targetSessionId) {
       leftSessionIdsRef.current.add(targetSessionId);
       destroySessionKey(targetSessionId);
       try {
         setNote(null);
         const next = await leaveSession({ deviceId, sessionId: targetSessionId });
-        setDesk(next);
+        handleDeskUpdate(next);
       } catch {
-        if (deviceId) getDesk({ deviceId }).then(setDesk).catch(() => {});
+        if (deviceId) getDesk({ deviceId }).then(handleDeskUpdate).catch(() => {});
       } finally {
         setBusy(false);
       }
     } else {
       setBusy(false);
     }
-  }, [deviceId, busy, currentSession?.id, setIsAway, setReplyingTo, setMessages]);
+  }, [deviceId, busy, currentSession?.id, setIsAway, setReplyingTo, setMessages, handleDeskUpdate]);
 
   const handleNextStranger = useCallback(async () => {
-    if (!deviceId || busy) return;
+    if (!deviceId || busyRef.current) return;
     const targetSessionId = currentSession?.id;
     setBusy(true);
+    isQueueingRef.current = true;
     playLeaveTone();
+    triggerHaptic("disconnect");
     setIsAway(false);
     setReplyingTo(null);
     setMessages([]);
     setSessionView(null);
-    setDesk((prev) => (prev ? { ...prev, activeSession: null, queued: true, enteredAt: new Date().toISOString() } : null));
+    setDesk((prev) => (prev ? {
+      ...prev,
+      activeSession: null,
+      queued: true,
+      queuedInterests: interestsRef.current,
+      enteredAt: new Date().toISOString(),
+    } : null));
     setHistorySessions(loadChatHistory());
+
+    if (typeof window !== "undefined") {
+      window.history.replaceState({ luna: true, view: "queue" }, "");
+    }
 
     if (targetSessionId) {
       leftSessionIdsRef.current.add(targetSessionId);
       destroySessionKey(targetSessionId);
-      void leaveSession({ deviceId, sessionId: targetSessionId }).catch(() => {});
+      try {
+        await leaveSession({ deviceId, sessionId: targetSessionId });
+      } catch {}
     }
 
     try {
@@ -567,22 +692,29 @@ export default function Home() {
       const pubKey = await exportDevicePublicKeyHex(deviceId);
       const res = await joinQueue({
         deviceId,
-        interests,
+        interests: interestsRef.current,
         blockedIds: blocked,
         publicKey: pubKey ?? undefined,
+        sessionId: targetSessionId,
       });
-      setDesk(res.desk);
+      if (res.status === "matched") {
+        setSessionView(null);
+        setMessages([]);
+        setIsAway(false);
+      }
+      handleDeskUpdate(res.desk);
       setLogOpen(false);
       setSettingsOpen(false);
     } catch (err) {
       notifyError(err);
       if (deviceId) {
-        void getDesk({ deviceId }).then(setDesk).catch(() => {});
+        void getDesk({ deviceId }).then(handleDeskUpdate).catch(() => {});
       }
     } finally {
+      isQueueingRef.current = false;
       setBusy(false);
     }
-  }, [deviceId, busy, currentSession?.id, interests, setIsAway, setReplyingTo, setMessages, notifyError]);
+  }, [deviceId, currentSession?.id, setIsAway, setReplyingTo, setMessages, notifyError, handleDeskUpdate]);
 
   const handleSendMessage = () => {
     if (!isOnline) {
@@ -675,16 +807,162 @@ export default function Home() {
     void reportTyping({ deviceId, sessionId: currentSession.id, isTyping }).catch(() => {});
   };
 
+  // Synchronized modal controls that manage browser history without desynchronization
+  const openOverlayModal = useCallback((name: "settings" | "log" | "history" | "void") => {
+    setSettingsOpen(name === "settings");
+    setLogOpen(name === "log");
+    setHistoryOpen(name === "history");
+    setVoidOpen(name === "void");
+
+    if (typeof window !== "undefined") {
+      const current = window.history.state;
+      const view = activeSessionRef.current ? "chat" : listeningRef.current ? "queue" : "boot";
+      const sessionId = activeSessionRef.current?.id;
+      const nextState = { luna: true, view, sessionId, modal: name };
+
+      if (current?.modal && current.modal !== "exit_confirm") {
+        window.history.replaceState(nextState, "");
+      } else {
+        window.history.pushState(nextState, "");
+      }
+    }
+  }, []);
+
+  const closeOverlayModal = useCallback((name?: "settings" | "log" | "history" | "void") => {
+    if (!name || name === "settings") setSettingsOpen(false);
+    if (!name || name === "log") setLogOpen(false);
+    if (!name || name === "history") setHistoryOpen(false);
+    if (!name || name === "void") setVoidOpen(false);
+
+    if (typeof window !== "undefined") {
+      if (window.history.state?.modal === name || (!name && window.history.state?.modal)) {
+        window.history.back();
+      }
+    }
+  }, []);
+
+  // Session history synchronization
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (currentSession?.id) {
+      if (window.history.state?.view === "queue") {
+        window.history.replaceState({ luna: true, view: "chat", sessionId: currentSession.id }, "");
+      } else if (window.history.state?.view !== "chat" || window.history.state?.sessionId !== currentSession.id) {
+        window.history.pushState({ luna: true, view: "chat", sessionId: currentSession.id }, "");
+      }
+    }
+  }, [currentSession?.id]);
+
+  // Mobile System Navigation, Predictive Back & History Stack Management
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    if (!window.history.state || !window.history.state.luna) {
+      window.history.replaceState({ luna: true, view: "boot" }, "");
+    }
+
+    const onPopState = (event: PopStateEvent) => {
+      const state = event.state as {
+        luna?: boolean;
+        view?: "boot" | "queue" | "chat";
+        modal?: string | null;
+        sessionId?: string | null;
+      } | null;
+
+      // 1. If Exit Confirmation dialog is open, back gesture cancels the dialog safely
+      if (exitConfirmRef.current) {
+        setExitConfirm(null);
+        const session = activeSessionRef.current;
+        if (session && !session.closed) {
+          window.history.pushState({ luna: true, view: "chat", sessionId: session.id }, "");
+        } else if (listeningRef.current) {
+          window.history.pushState({ luna: true, view: "queue" }, "");
+        }
+        return;
+      }
+
+      // 2. Modals and drawers pop off first before main session or queue is disturbed
+      if (settingsOpenRef.current || logOpenRef.current || historyOpenRef.current || voidOpenRef.current) {
+        if (state?.modal === "history" && historyOpenRef.current) {
+          return;
+        }
+        setSettingsOpen(false);
+        setLogOpen(false);
+        setHistoryOpen(false);
+        setVoidOpen(false);
+        return;
+      }
+
+      // 3. Active chat session back gesture -> prompt clean exit dialog
+      const session = activeSessionRef.current;
+      if (session && !session.closed) {
+        if (state?.view === "chat" && state?.sessionId === session.id) {
+          return;
+        }
+        setExitConfirm({ type: "chat" });
+        window.history.pushState(
+          { luna: true, view: "chat", sessionId: session.id, modal: "exit_confirm" },
+          "",
+        );
+        return;
+      }
+
+      // 4. Searching / Queue back gesture -> prompt clean exit dialog
+      if (listeningRef.current) {
+        if (state?.view === "queue") {
+          return;
+        }
+        setExitConfirm({ type: "queue" });
+        window.history.pushState({ luna: true, view: "queue", modal: "exit_confirm" }, "");
+        return;
+      }
+
+      // 5. Chat that has already closed -> cleanly return to sanctuary
+      if (session?.closed) {
+        void handleLeaveSession();
+        return;
+      }
+    };
+
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [handleLeaveSession]);
+
+  // Protect active conversation against accidental window/tab closure
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (activeSessionRef.current && !activeSessionRef.current.closed) {
+        e.preventDefault();
+        e.returnValue = "";
+        return "";
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, []);
+
   // Keyboard Navigation: Esc for wirecut / leave, Enter for queue join / next
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
+        if (exitConfirm) {
+          e.preventDefault();
+          const type = exitConfirm.type;
+          setExitConfirm(null);
+          if (typeof window !== "undefined") {
+            const session = activeSessionRef.current;
+            if (type === "chat" && session && !session.closed) {
+              window.history.replaceState({ luna: true, view: "chat", sessionId: session.id }, "");
+            } else if (type === "queue" && listeningRef.current) {
+              window.history.replaceState({ luna: true, view: "queue" }, "");
+            }
+          }
+          return;
+        }
+
         if (settingsOpen || logOpen || voidOpen || historyOpen) {
           e.preventDefault();
-          setSettingsOpen(false);
-          setLogOpen(false);
-          setVoidOpen(false);
-          setHistoryOpen(false);
+          closeOverlayModal();
           return;
         }
 
@@ -702,10 +980,13 @@ export default function Home() {
           }
         } else if (listening) {
           e.preventDefault();
-          void handleLeaveQueue();
+          setExitConfirm({ type: "queue" });
+          if (typeof window !== "undefined") {
+            window.history.pushState({ luna: true, modal: "exit_confirm" }, "");
+          }
         }
       } else if (e.key === "Enter") {
-        if (settingsOpen || logOpen || voidOpen || historyOpen) {
+        if (exitConfirm || settingsOpen || logOpen || voidOpen || historyOpen) {
           return;
         }
 
@@ -725,6 +1006,7 @@ export default function Home() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
+    exitConfirm,
     settingsOpen,
     logOpen,
     voidOpen,
@@ -739,6 +1021,7 @@ export default function Home() {
     handleLeaveQueue,
     handleLeaveSession,
     handleNextStranger,
+    closeOverlayModal,
   ]);
 
   const meta = !isOnline
@@ -757,36 +1040,16 @@ export default function Home() {
         callsign={desk?.station.callsign}
         meta={meta}
         logOpen={logOpen}
-        onToggleLog={() => {
-          setLogOpen((o) => !o);
-          setSettingsOpen(false);
-          setHistoryOpen(false);
-          setVoidOpen(false);
-        }}
+        onToggleLog={() => (logOpen ? closeOverlayModal("log") : openOverlayModal("log"))}
         soundEnabled={soundActive}
         onToggleSound={handleToggleSound}
         settingsOpen={settingsOpen}
-        onToggleSettings={() => {
-          setSettingsOpen((o) => !o);
-          setLogOpen(false);
-          setHistoryOpen(false);
-          setVoidOpen(false);
-        }}
+        onToggleSettings={() => (settingsOpen ? closeOverlayModal("settings") : openOverlayModal("settings"))}
         voidOpen={voidOpen}
-        onToggleVoid={() => {
-          setVoidOpen((o) => !o);
-          setLogOpen(false);
-          setSettingsOpen(false);
-          setHistoryOpen(false);
-        }}
+        onToggleVoid={() => (voidOpen ? closeOverlayModal("void") : openOverlayModal("void"))}
         hasHistory={historySessions.length > 0}
         historyOpen={historyOpen}
-        onToggleHistory={() => {
-          setHistoryOpen((o) => !o);
-          setLogOpen(false);
-          setSettingsOpen(false);
-          setVoidOpen(false);
-        }}
+        onToggleHistory={() => (historyOpen ? closeOverlayModal("history") : openOverlayModal("history"))}
         activeChat={
           currentSession
             ? {
@@ -808,7 +1071,7 @@ export default function Home() {
         {settingsOpen && desk ? (
           <SettingsPanel
             desk={desk}
-            onClose={() => setSettingsOpen(false)}
+            onClose={() => closeOverlayModal("settings")}
             onCallsignUpdated={setDesk}
             onStationReset={() => {
               const newDid = getOrCreateDeviceId();
@@ -826,7 +1089,7 @@ export default function Home() {
             busy={busy}
             onOpenFriend={handleOpenFriendLine}
             onRespond={handleRespondQsl}
-            onClose={() => setLogOpen(false)}
+            onClose={() => closeOverlayModal("log")}
           />
         ) : currentSession ? (
           <LineView
@@ -841,7 +1104,6 @@ export default function Home() {
             onActivity={resetIdle}
             onSend={handleSendMessage}
             onTyping={handleTyping}
-            sending={busy}
             closed={currentSession.closed}
             peerTyping={currentSession.peerTyping}
             replyingTo={replyingTo}
@@ -885,6 +1147,13 @@ export default function Home() {
               setInterests(combined);
               void handleJoinQueue(combined);
             }}
+            onRestartSearch={() => {
+              void handleJoinQueue(desk?.queuedInterests ?? interests);
+            }}
+            onBroadenSearch={() => {
+              setInterests([]);
+              void handleJoinQueue([]);
+            }}
             busy={busy}
           />
         ) : (
@@ -908,12 +1177,15 @@ export default function Home() {
       )}
 
       {voidOpen && deviceId && (
-        <VoidLetters deviceId={deviceId} onClose={() => setVoidOpen(false)} />
+        <VoidLetters
+          deviceId={deviceId}
+          onClose={() => closeOverlayModal("void")}
+        />
       )}
 
       <HistoryModal
         isOpen={historyOpen}
-        onClose={() => setHistoryOpen(false)}
+        onClose={() => closeOverlayModal("history")}
         sessions={historySessions}
         onDeleteSession={(sid) => {
           deleteHistorySession(sid);
@@ -922,11 +1194,42 @@ export default function Home() {
         onClearAll={() => {
           clearAllChatHistory();
           setHistorySessions([]);
-          setHistoryOpen(false);
+          closeOverlayModal("history");
         }}
       />
 
       <WelcomeModal />
+
+      <ExitConfirmModal
+        isOpen={exitConfirm !== null}
+        type={exitConfirm?.type ?? "chat"}
+        onConfirm={() => {
+          const type = exitConfirm?.type;
+          setExitConfirm(null);
+          if (typeof window !== "undefined") {
+            window.history.replaceState({ luna: true, view: "boot" }, "");
+          }
+          if (type === "chat") {
+            void handleLeaveSession();
+          } else {
+            void handleLeaveQueue();
+          }
+        }}
+        onCancel={() => {
+          const type = exitConfirm?.type;
+          setExitConfirm(null);
+          if (typeof window !== "undefined") {
+            const session = activeSessionRef.current;
+            if (type === "chat" && session && !session.closed) {
+              window.history.replaceState({ luna: true, view: "chat", sessionId: session.id }, "");
+            } else if (type === "queue" && listeningRef.current) {
+              window.history.replaceState({ luna: true, view: "queue" }, "");
+            } else {
+              window.history.replaceState({ luna: true, view: "boot" }, "");
+            }
+          }
+        }}
+      />
     </PaperShell>
   );
 }

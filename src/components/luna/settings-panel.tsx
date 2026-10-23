@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { updateCallsign, deleteStation } from "@/lib/luna/client";
 import { mintCallsign } from "@/lib/luna/constants";
 import { setCachedCustomName, clearCachedCustomName } from "@/lib/luna/identity";
-import { triggerHaptic } from "@/lib/luna/sound";
+import { triggerHaptic, isHapticEnabled, setHapticEnabled } from "@/lib/luna/sound";
 import { usePwa } from "@/components/luna/pwa-provider";
 import type { DeskView } from "@/lib/luna/types";
 import { cn } from "@/lib/utils";
@@ -67,6 +67,15 @@ export function SettingsPanel({
     }
     return true;
   });
+
+  const [haptics, setHaptics] = useState(() => isHapticEnabled());
+
+  const toggleHaptics = () => {
+    const next = !haptics;
+    setHaptics(next);
+    setHapticEnabled(next);
+    if (next) triggerHaptic("tap");
+  };
 
   const toggleLinkPreviews = () => {
     triggerHaptic("selection");
@@ -279,6 +288,45 @@ export function SettingsPanel({
           </div>
           <p className="text-[11px] text-zinc-500 leading-relaxed border-t border-white/5 pt-2">
             Notice: When enabled, preview metadata is fetched by the Luna preview proxy for the requested URL. Disabling prevents any link preview requests.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3 pt-3 border-t border-white/5">
+        <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400 font-mono">
+          Sensory & Feedback
+        </span>
+        <div className="rounded-xl border border-white/10 bg-zinc-900/40 p-4 flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-xs font-semibold text-zinc-200">
+                Tactile Haptics
+              </span>
+              <span className="text-[11px] text-zinc-400">
+                Subtle vibration pulses on match, messages, and key actions
+              </span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={haptics}
+              aria-label="Toggle tactile haptics"
+              onClick={toggleHaptics}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400",
+                haptics ? "bg-zinc-100" : "bg-zinc-800",
+              )}
+            >
+              <span
+                className={cn(
+                  "pointer-events-none inline-block h-5 w-5 transform rounded-full shadow-lg ring-0 transition duration-200 ease-in-out",
+                  haptics ? "translate-x-5 bg-zinc-950" : "translate-x-0 bg-zinc-400",
+                )}
+              />
+            </button>
+          </div>
+          <p className="text-[11px] text-zinc-500 leading-relaxed border-t border-white/5 pt-2">
+            Supports Android Vibration API, iOS Taptic fallback, and PWA system haptics. Muting master sound also silences haptics.
           </p>
         </div>
       </div>

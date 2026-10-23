@@ -29,9 +29,10 @@ const POPULAR_TAGS = [
 interface InterestInputProps {
   value: string[];
   onChange: (next: string[]) => void;
+  onSubmit?: () => void;
 }
 
-export function InterestGrid({ value, onChange }: InterestInputProps) {
+export function InterestGrid({ value, onChange, onSubmit }: InterestInputProps) {
   const [draft, setDraft] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
 
@@ -47,7 +48,11 @@ export function InterestGrid({ value, onChange }: InterestInputProps) {
   function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter" || e.key === ",") {
       e.preventDefault();
-      commitWords(draft);
+      if (draft.trim()) {
+        commitWords(draft);
+      } else if (e.key === "Enter" && onSubmit) {
+        onSubmit();
+      }
     }
   }
 

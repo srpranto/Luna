@@ -295,24 +295,33 @@ async function reapAbandonedSessions(sql: Sql): Promise<void> {
       )
   `;
   for (const row of rows) {
-    if (isDeviceConnected(row.a_id) || isDeviceConnected(row.b_id)) {
-      continue;
-    }
-    const aGone = Boolean(row.a_gone);
-    const bGone = Boolean(row.b_gone);
-    if (!aGone || !bGone) {
-      continue;
-    }
-    const ended = await endSessionOnce(sql, row);
-    if (!ended) {
-      continue;
-    }
-    const payload = { sessionId: row.id, reason: "User is no longer available right now." };
-    if (!aGone) {
-      emitToDevice(row.a_id, "session_ended", payload);
-    }
-    if (!bGone) {
-      emitToDevice(row.b_id, "session_ended", payload);
+    const aDisconnected = !isDeviceConnected(row.a_id);
+    const bDisconnected = !isDeviceConnected(row.b_id);
+    const aStale = Boolean(row.a_gone) && aDisconnected;
+    const bStale = Boolean(row.b_gone) && bDisconnected;
+
+    // Reap if either party has abandoned (>2 min stale and disconnected), or if both are disconnected
+    if (aStale || bStale || (aDisconnected && bDisconnected)) {
+      const ended = await endSessionOnce(sql, row);
+      if (!ended) {
+        continue;
+      }
+      const payload = {
+        sessionId: row.id,
+        reason: "Stranger disconnected. User is no longer available right now.",
+      };
+      if (isDeviceConnected(row.a_id)) {
+        emitToDevice(row.a_id, "session_ended", {
+          ...payload,
+          desk: await loadDesk(row.a_id),
+        });
+      }
+      if (isDeviceConnected(row.b_id)) {
+        emitToDevice(row.b_id, "session_ended", {
+          ...payload,
+          desk: await loadDesk(row.b_id),
+        });
+      }
     }
   }
 }
@@ -597,6 +606,12 @@ async function heartbeatQueueHandler(
   blockedIds: string[] = [],
   clientIp?: string,
 ): Promise<QueueHeartbeatResult> {
+  const sql = await getSql();
+
+  // Always update heartbeats immediately so active users are never pruned by cleanup, even if throttled
+  await sql`update queue set last_beat = now() where device_id = ${deviceId}`;
+  await sql`update stations set last_seen = now() where device_id = ${deviceId}`;
+
   const rateCheck = checkMatchmakerRateLimit(deviceId);
   if (!rateCheck.allowed) {
     return {
@@ -605,16 +620,13 @@ async function heartbeatQueueHandler(
     };
   }
 
-  const sql = await getSql();
+  await cleanup(sql);
+
   const open = await openSessionFor(deviceId);
   if (open) {
     await sql`delete from queue where device_id = ${deviceId}`;
     return { status: "matched", desk: await loadDesk(deviceId, clientIp) };
   }
-
-  // Update heartbeats immediately so active users are never pruned by cleanup
-  await sql`update queue set last_beat = now() where device_id = ${deviceId}`;
-  await sql`update stations set last_seen = now() where device_id = ${deviceId}`;
 
   // Enforce server-side blocks: query permanent blocks recorded on server
   const serverBlocks = await sql<{ peer_id: string }>`
@@ -623,8 +635,6 @@ async function heartbeatQueueHandler(
     select blocker_id as peer_id from blocks where blocked_id = ${deviceId}
   `;
   const blockedSet = new Set([...blockedIds, ...serverBlocks.map((b) => b.peer_id)]);
-
-  await cleanup(sql);
 
   for (let matchAttempt = 0; matchAttempt < 4; matchAttempt++) {
     const openNow = await openSessionFor(deviceId);
@@ -651,18 +661,25 @@ async function heartbeatQueueHandler(
         await sql`delete from queue where device_id = ${deviceId}`;
         return { status: "matched", desk: await loadDesk(deviceId, clientIp) };
       }
-      return { status: "idle", desk: await loadDesk(deviceId, clientIp) };
+      await touchStation(deviceId, clientIp);
+      await sql`
+        insert into queue (device_id, interests, entered_at, last_beat)
+        values (${deviceId}, '[]', now(), now())
+        on conflict (device_id) do update set last_beat = now()
+      `;
+      return { status: "waiting", desk: await loadDesk(deviceId, clientIp) };
     }
 
     const myInterests = parseInterests(me.interests);
 
+    const stale = `${QUEUE_STALE_SECONDS} seconds`;
     const others = await sql<QueueRow>`
       select q.device_id, q.interests, q.entered_at, q.last_beat
       from queue q
       inner join stations s on s.device_id = q.device_id
       where q.device_id <> ${deviceId}
-        and q.last_beat > now() - interval '30 seconds'
-        and s.last_seen > now() - interval '45 seconds'
+        and q.last_beat > now() - ${stale}::interval
+        and s.last_seen > now() - ${stale}::interval
         and not exists (
           select 1 from sessions ses
           where ses.closed_at is null
@@ -844,31 +861,69 @@ export async function joinQueue(input: {
   blockedIds?: string[];
   clientIp?: string;
   publicKey?: string;
+  leaveSessionId?: string;
 }): Promise<QueueHeartbeatResult> {
   const deviceId = requireDeviceId(input.deviceId);
   const interests = sanitizeInterests(input.interests);
 
-  await cleanup();
-
   const sql = await getSql();
-  const existing = await openSessionFor(deviceId);
-  if (existing) {
-    const ageMs = Date.now() - new Date(existing.created_at).getTime();
-    if (ageMs < 4000) {
-      // Just matched within last 4s - do not destroy the fresh match
+
+  // If a session was explicitly targeted to be left, close it immediately
+  if (input.leaveSessionId) {
+    const targetRows = await sql<SessionRow>`
+      select id, a_id, b_id, kind, interests, created_at, closed_at
+      from sessions
+      where id = ${input.leaveSessionId} and (a_id = ${deviceId} or b_id = ${deviceId})
+    `;
+    if (targetRows[0] && !targetRows[0].closed_at) {
+      const ended = await endSessionOnce(sql, targetRows[0]);
+      if (ended) {
+        const peerId = peerOf(targetRows[0], deviceId);
+        emitToDevice(peerId, "session_ended", {
+          sessionId: targetRows[0].id,
+          desk: await loadDesk(peerId),
+        });
+      }
+    }
+  }
+
+  // Inspect existing open sessions for this device
+  const existing = await sql<SessionRow>`
+    select id, a_id, b_id, kind, interests, created_at, closed_at
+    from sessions
+    where closed_at is null
+      and (a_id = ${deviceId} or b_id = ${deviceId})
+    order by created_at desc
+  `;
+
+  if (existing.length > 0) {
+    const freshest = existing[0]!;
+    const ageMs = Date.now() - new Date(freshest.created_at).getTime();
+    const peerId = peerOf(freshest, deviceId);
+    const peerOnline = isDeviceConnected(peerId);
+
+    // Only treat as a fresh match race if:
+    // 1. Session is not the one explicitly left
+    // 2. Peer is actively connected
+    // 3. Match was created in the last 2000ms
+    if (freshest.id !== input.leaveSessionId && peerOnline && ageMs < 2000) {
       await sql`delete from queue where device_id = ${deviceId}`;
       return { status: "matched", desk: await loadDesk(deviceId, input.clientIp) };
     }
 
-    const ended = await endSessionOnce(sql, existing);
-    if (ended) {
-      const peerId = peerOf(existing, deviceId);
-      emitToDevice(peerId, "session_ended", {
-        sessionId: existing.id,
-        desk: await loadDesk(peerId),
-      });
+    for (const session of existing) {
+      const ended = await endSessionOnce(sql, session);
+      if (ended) {
+        const pId = peerOf(session, deviceId);
+        emitToDevice(pId, "session_ended", {
+          sessionId: session.id,
+          desk: await loadDesk(pId),
+        });
+      }
     }
   }
+
+  await cleanup(sql);
 
   await touchStation(deviceId, input.clientIp, input.publicKey);
 

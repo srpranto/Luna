@@ -1,3 +1,4 @@
+// @ts-nocheck
 import {
   describe,
   it,
@@ -10,10 +11,10 @@ import {
   simulateComposerKeydown,
   extractSanitizedFirstUrl,
   parseMarkdownTokens,
-} from './harness.mjs';
+} from './harness.ts';
 import { performance } from 'node:perf_hooks';
 
-import { cleanDatabase } from './harness.mjs';
+import { cleanDatabase } from './harness.ts';
 
 async function createPairedSession(interestsA, interestsB) {
   await cleanDatabase();

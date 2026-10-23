@@ -19,7 +19,7 @@ import {
   editMessage as apiEditMessage,
   deleteMessage as apiDeleteMessage,
 } from "@/lib/luna/client";
-import { playMessagePop, playMessageReceived } from "@/lib/luna/sound";
+import { playMessagePop, playMessageReceived, triggerHaptic } from "@/lib/luna/sound";
 
 const REACTION_REGEX = /^\[reaction:(🌙|✨)\]$/;
 
@@ -190,6 +190,7 @@ export function useLunaMessages({
         if (lastMsg && !lastMsg.mine && !lastMsg.system) {
           onActivity?.();
           playMessageReceived();
+          triggerHaptic("message-received");
           notifyUnread(lastMsg.fromCallsign, lastMsg.body);
         }
       }
@@ -226,6 +227,7 @@ export function useLunaMessages({
       };
 
       playMessagePop();
+      triggerHaptic("message-sent");
       setMessages((prev) => [...prev, optimisticMsg]);
 
       sendQueueRef.current = sendQueueRef.current

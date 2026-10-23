@@ -57,18 +57,27 @@
     color-scheme: dark;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
+    overscroll-behavior: none;
+    -webkit-overscroll-behavior: none;
+    height: 100%;
+    height: 100dvh;
   }
 
   html,
   body {
+    height: 100%;
+    height: 100dvh;
     min-height: 100%;
     min-height: 100dvh;
     background-color: #09090b;
     color: #fafafa;
     font-family: var(--font-sans);
     margin: 0;
-    overflow-x: hidden;
-    overscroll-behavior-y: contain;
+    padding: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
+    overscroll-behavior-y: none;
+    -webkit-overscroll-behavior: none;
     -webkit-overflow-scrolling: touch;
   }
 
@@ -118,25 +127,6 @@
       rgba(255, 255, 255, 0.05) 0%,
       transparent 70%
     );
-  }
-
-  .butter-interactive {
-    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-    touch-action: manipulation;
-  }
-  .butter-interactive:active {
-    transform: scale(0.96);
-  }
-
-  .monochrome-glow {
-    box-shadow: 0 0 25px rgba(255, 255, 255, 0.08);
-  }
-
-  .monochrome-glass {
-    background: rgba(13, 13, 16, 0.75);
-    backdrop-filter: blur(24px) saturate(140%);
-    -webkit-backdrop-filter: blur(24px) saturate(140%);
-    border: 1px solid rgba(255, 255, 255, 0.1);
   }
 
   .radar-ring {
