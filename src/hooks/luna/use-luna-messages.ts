@@ -101,7 +101,6 @@ export function useLunaMessages({
   const mergeAndStoreMessages = useCallback(
     (sessionId: string, session: SessionView, incoming: ChatMessage[], isSoundNotification = false) => {
       setMessages((prev) => {
-        // Build lookup maps of incoming messages by ID and clientMsgId
         const incomingById = new Map<string, ChatMessage>();
         const incomingByClientMsgId = new Map<string, ChatMessage>();
         for (const m of incoming) {
@@ -111,7 +110,6 @@ export function useLunaMessages({
           }
         }
 
-        // Match incoming confirmed messages with optimistic messages in prev.
         const matchedOptIds = new Set<string>();
         const optToConfirmed = new Map<string, ChatMessage>();
 
@@ -132,10 +130,8 @@ export function useLunaMessages({
           }
         }
 
-        // Assemble merged messages without losing prior confirmed messages
         const resultMap = new Map<string, ChatMessage>();
 
-        // 1. Process prev messages
         for (const m of prev) {
           if (matchedOptIds.has(m.id)) {
             const confirmed = optToConfirmed.get(m.id);
@@ -143,18 +139,15 @@ export function useLunaMessages({
               resultMap.set(confirmed.id, confirmed);
             }
           } else if (incomingById.has(m.id)) {
-            // Incoming has updated version of this message (e.g. seen receipt or edit)
             resultMap.set(m.id, incomingById.get(m.id)!);
           } else if (m.clientMsgId && incomingByClientMsgId.has(m.clientMsgId)) {
             const confirmed = incomingByClientMsgId.get(m.clientMsgId)!;
             resultMap.set(confirmed.id, confirmed);
           } else {
-            // Retain existing message (both prior confirmed messages and pending opt- messages)
             resultMap.set(m.id, m);
           }
         }
 
-        // 2. Add any remaining incoming messages not already in resultMap
         for (const inc of incoming) {
           if (!resultMap.has(inc.id)) {
             resultMap.set(inc.id, inc);
@@ -276,7 +269,6 @@ export function useLunaMessages({
       const clientMsgId = target.clientMsgId || target.id;
       const textToSend = target.body;
 
-      // Set status to sending
       setMessages((prev) =>
         prev.map((m) =>
           m.id === target.id ? { ...m, status: "sending" } : m,
@@ -309,7 +301,9 @@ export function useLunaMessages({
             } else {
               setMessages((prev) =>
                 prev.map((m) =>
-                  m.id === target.id ? { ...m, status: "failed" } : m,
+                  m.id === target.id || m.clientMsgId === target.id
+                    ? { ...m, status: "failed" }
+                    : m,
                 ),
               );
             }

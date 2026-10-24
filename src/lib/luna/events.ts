@@ -1,3 +1,5 @@
+import { getSql } from "./db";
+
 export type LunaEventType =
   | "desk_update"
   | "message"
@@ -11,6 +13,7 @@ export type LunaEventType =
   | "ping";
 
 export interface LunaEvent<T = unknown> {
+  id?: number;
   type: LunaEventType;
   data: T;
   timestamp: string;
@@ -61,6 +64,21 @@ export function isDeviceConnected(deviceId: string): boolean {
   return Boolean(listeners && listeners.size > 0);
 }
 
+export async function isDeviceOnline(deviceId: string, thresholdSeconds = 45): Promise<boolean> {
+  if (isDeviceConnected(deviceId)) return true;
+  try {
+    const sql = await getSql();
+    const rows = await sql<{ online: boolean }>`
+      select (last_seen > now() - (${thresholdSeconds} || ' seconds')::interval) as online
+      from stations
+      where device_id = ${deviceId}
+    `;
+    return Boolean(rows[0]?.online);
+  } catch {
+    return false;
+  }
+}
+
 export function emitToDevice<T = unknown>(deviceId: string, type: LunaEventType, data: T): void {
   const event: LunaEvent<T> = {
     type,
@@ -68,30 +86,23 @@ export function emitToDevice<T = unknown>(deviceId: string, type: LunaEventType,
     timestamp: new Date().toISOString(),
   };
 
-  // 1. Deliver to local in-process listeners immediately for 0ms latency
   const listeners = deviceListeners.get(deviceId);
   if (listeners && listeners.size > 0) {
     for (const listener of listeners) {
       try {
         listener(event as LunaEvent);
-      } catch {
-        // Safe dispatch
-      }
+      } catch {}
     }
   }
 
-  // 2. Persist to shared database transport for cross-instance delivery
   void (async () => {
     try {
-      const { getSql } = await import("./db");
       const sql = await getSql();
       const serialized = JSON.stringify(data);
       await sql`
         insert into device_events (device_id, type, data, instance_id, created_at)
         values (${deviceId}, ${type}, ${serialized}, ${SERVER_INSTANCE_ID}, now())
       `;
-    } catch {
-      // Ignored for non-db or transient environments
-    }
+    } catch {}
   })();
 }

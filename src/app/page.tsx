@@ -9,9 +9,9 @@ import { HistoryModal } from "@/components/luna/history-modal";
 import { VoidLetters } from "@/components/luna/void-letters";
 import { WelcomeModal } from "@/components/luna/welcome-modal";
 import { ExitConfirmModal } from "@/components/luna/exit-confirm-modal";
-import { BootView } from "@/components/luna/boot-view";
-import { ListeningView } from "@/components/luna/listening-view";
-import { LineView } from "@/components/luna/line-view";
+import { Start } from "@/components/luna/start";
+import { Searching } from "@/components/luna/searching";
+import { Chat } from "@/components/luna/chat";
 import { NetworkBanner } from "@/components/luna/network-banner";
 import { useLunaPresence } from "@/hooks/luna/use-luna-presence";
 import { useLunaMessages } from "@/hooks/luna/use-luna-messages";
@@ -135,7 +135,6 @@ export default function Home() {
   const [historySessions, setHistorySessions] = useState<HistorySession[]>([]);
   const [exitConfirm, setExitConfirm] = useState<{ type: "chat" | "queue" } | null>(null);
   const hasAutoQueuedRef = useRef(false);
-  const [, setResyncTick] = useState(0);
 
   const isOnline = useSyncExternalStore(subscribeNetwork, () => navigator.onLine, () => true);
   const prevOnlineRef = useRef(isOnline);
@@ -187,12 +186,9 @@ export default function Home() {
     if (msg) setNote(msg);
   }, []);
 
-  const triggerResync = useCallback(() => setResyncTick((n) => n + 1), []);
-
   const handleDeskUpdate = useCallback((refreshed: DeskView) => {
     setDesk((prev) => {
       if (!prev) return refreshed;
-      // If we are currently searching (in queue or join in-flight), protect queued state
       const isSearching = Boolean(prev.queued) || isQueueingRef.current;
       const validSession =
         refreshed.activeSession && !leftSessionIdsRef.current.has(refreshed.activeSession.id);
@@ -233,12 +229,6 @@ export default function Home() {
     activeSessionRef.current = currentSession;
   }, [currentSession]);
 
-  const { setIsAway, resetIdle } = useLunaPresence({
-    deviceId,
-    currentSession,
-    onResync: triggerResync,
-  });
-
   const markSessionClosed = useCallback((sessionId: string | undefined) => {
     if (!sessionId) return;
     setSessionView((prev) => {
@@ -264,7 +254,7 @@ export default function Home() {
     clearUnread,
   } = useLunaMessages({
     deviceId,
-    onActivity: resetIdle,
+    onActivity: () => {},
     onHistoryUpdated: setHistorySessions,
     onSessionEndedNotice: () => {
       markSessionClosed(currentSession?.id);
@@ -273,7 +263,30 @@ export default function Home() {
     },
   });
 
-  // Re-fetch desk when returning online
+  const triggerResync = useCallback(() => {
+    if (deviceId) {
+      void getDesk({ deviceId }).then(handleDeskUpdate).catch(() => {});
+      if (activeSessionRef.current?.id) {
+        const targetId = activeSessionRef.current.id;
+        listMessages({ deviceId, sessionId: targetId })
+          .then(async (pack) => {
+            if (activeSessionRef.current?.id === targetId) {
+              const displayMsgs = await decryptPack(pack, deviceId);
+              setSessionView(pack.session);
+              mergeAndStoreMessages(targetId, pack.session, displayMsgs, false);
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  }, [deviceId, handleDeskUpdate, decryptPack, mergeAndStoreMessages]);
+
+  const { setIsAway, resetIdle } = useLunaPresence({
+    deviceId,
+    currentSession,
+    onResync: triggerResync,
+  });
+
   useEffect(() => {
     if (!prevOnlineRef.current && isOnline && deviceId) {
       void getDesk({ deviceId }).then(handleDeskUpdate).catch(() => {});
@@ -281,7 +294,6 @@ export default function Home() {
     prevOnlineRef.current = isOnline;
   }, [isOnline, deviceId, handleDeskUpdate]);
 
-  // Window title notification reset
   useEffect(() => {
     const onVisibilityChange = () => {
       if (!document.hidden) clearUnread();
@@ -294,7 +306,6 @@ export default function Home() {
     };
   }, [clearUnread]);
 
-  // Initial device hydration & cache sweep
   useEffect(() => {
     const id = getOrCreateDeviceId();
     const saved = readSavedInterests();
@@ -322,14 +333,12 @@ export default function Home() {
     };
   }, []);
 
-  // Save interests changes
   useEffect(() => {
     if (typeof window !== "undefined") {
       localStorage.setItem(`${INTEREST_KEY}.${deskName()}`, JSON.stringify(interests));
     }
   }, [interests]);
 
-  // Register station and sync custom name
   useEffect(() => {
     if (!deviceId) return;
     let cancelled = false;
@@ -359,7 +368,6 @@ export default function Home() {
     };
   }, [deviceId, notifyError, handleDeskUpdate]);
 
-  // SSE Stream Event Handler
   const handleStreamEvent = useCallback(
     async (eventType: string, data: unknown) => {
       if (eventType === "message" || eventType === "message_edited") {
@@ -434,7 +442,6 @@ export default function Home() {
     isListening: listening,
   });
 
-  // Fetch / Sync active session messages periodically or on resync
   useEffect(() => {
     if (!deviceId || !currentSession?.id) return;
     let cancelled = false;
@@ -466,7 +473,6 @@ export default function Home() {
     };
   }, [deviceId, currentSession?.id, decryptPack, mergeAndStoreMessages]);
 
-  // Session establishment sound and key negotiation
   useEffect(() => {
     if (currentSession?.id) {
       if (lastMatchChimeRef.current !== currentSession.id) {
@@ -480,13 +486,11 @@ export default function Home() {
     }
   }, [currentSession?.id, currentSession?.peerPublicKey, deviceId]);
 
-  // Queue Heartbeat polling while listening
   useEffect(() => {
     if (!deviceId || !listening) return;
     let cancelled = false;
 
     const tick = async () => {
-      // Do not run heartbeat if joinQueue is in flight or state is busy
       if (isQueueingRef.current || busyRef.current) return;
       try {
         const blocked = readBlockedStations();
@@ -504,7 +508,6 @@ export default function Home() {
       } catch {}
     };
 
-    // Periodic heartbeats refresh every 2000ms. joinQueue already executed initial join & heartbeat.
     const timer = window.setInterval(() => void tick(), 2000);
     return () => {
       cancelled = true;
@@ -512,7 +515,6 @@ export default function Home() {
     };
   }, [deviceId, listening, setIsAway, setMessages, handleDeskUpdate]);
 
-  // Wirecut banner auto-dismiss
   useEffect(() => {
     if (!wireCutPrimed) return;
     const timer = window.setTimeout(() => {
@@ -587,7 +589,6 @@ export default function Home() {
     }
   }, [deviceId, currentSession, notifyError, setIsAway, setMessages, setReplyingTo, handleDeskUpdate]);
 
-  // Auto-enqueue if requested via PWA action=chat shortcut
   useEffect(() => {
     if (hasAutoQueuedRef.current && deviceId && desk && !desk.activeSession && !desk.queued && !busy) {
       hasAutoQueuedRef.current = false;
@@ -748,15 +749,16 @@ export default function Home() {
   };
 
   const handleOfferQsl = async () => {
-    if (!deviceId || !currentSession?.id || busy) return;
+    if (!deviceId || !currentSession || busy) return;
     setBusy(true);
+    triggerHaptic("medium");
     try {
       setNote(null);
       const pack = await offerQsl({ deviceId, sessionId: currentSession.id });
-      setMessages(pack.messages);
+      const displayMsgs = await decryptPack(pack, deviceId);
       setSessionView(pack.session);
-      const refreshed = await getDesk({ deviceId });
-      setDesk(refreshed);
+      mergeAndStoreMessages(currentSession.id, pack.session, displayMsgs, false);
+      setNote("Invite offered.");
     } catch (err) {
       notifyError(err);
     } finally {
@@ -767,15 +769,12 @@ export default function Home() {
   const handleRespondQsl = async (requestId: string, accept: boolean) => {
     if (!deviceId || busy) return;
     setBusy(true);
+    triggerHaptic("medium");
     try {
       setNote(null);
       const next = await respondQsl({ deviceId, requestId, accept });
-      setDesk(next);
-      if (currentSession?.id) {
-        const pack = await listMessages({ deviceId, sessionId: currentSession.id });
-        setMessages(pack.messages);
-        setSessionView(pack.session);
-      }
+      handleDeskUpdate(next);
+      setNote(accept ? "Friend connected." : "Invite declined.");
     } catch (err) {
       notifyError(err);
     } finally {
@@ -786,6 +785,13 @@ export default function Home() {
   const handleOpenFriendLine = async (friendId: string) => {
     if (!deviceId || busy) return;
     setBusy(true);
+    triggerHaptic("tap");
+    setNote(null);
+    setIsAway(false);
+    setReplyingTo(null);
+    setMessages([]);
+    setSessionView(null);
+
     try {
       setNote(null);
       const next = await openFriendLine({ deviceId, friendId });
@@ -807,7 +813,6 @@ export default function Home() {
     void reportTyping({ deviceId, sessionId: currentSession.id, isTyping }).catch(() => {});
   };
 
-  // Synchronized modal controls that manage browser history without desynchronization
   const openOverlayModal = useCallback((name: "settings" | "log" | "history" | "void") => {
     setSettingsOpen(name === "settings");
     setLogOpen(name === "log");
@@ -835,57 +840,28 @@ export default function Home() {
     if (!name || name === "void") setVoidOpen(false);
 
     if (typeof window !== "undefined") {
-      if (window.history.state?.modal === name || (!name && window.history.state?.modal)) {
+      const current = window.history.state;
+      if (current?.modal && current.modal !== "exit_confirm") {
         window.history.back();
       }
     }
   }, []);
 
-  // Session history synchronization
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (currentSession?.id) {
-      if (window.history.state?.view === "queue") {
-        window.history.replaceState({ luna: true, view: "chat", sessionId: currentSession.id }, "");
-      } else if (window.history.state?.view !== "chat" || window.history.state?.sessionId !== currentSession.id) {
-        window.history.pushState({ luna: true, view: "chat", sessionId: currentSession.id }, "");
-      }
-    }
-  }, [currentSession?.id]);
-
-  // Mobile System Navigation, Predictive Back & History Stack Management
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    if (!window.history.state || !window.history.state.luna) {
-      window.history.replaceState({ luna: true, view: "boot" }, "");
-    }
-
-    const onPopState = (event: PopStateEvent) => {
-      const state = event.state as {
-        luna?: boolean;
-        view?: "boot" | "queue" | "chat";
-        modal?: string | null;
-        sessionId?: string | null;
-      } | null;
-
-      // 1. If Exit Confirmation dialog is open, back gesture cancels the dialog safely
+    const handlePopState = () => {
       if (exitConfirmRef.current) {
         setExitConfirm(null);
-        const session = activeSessionRef.current;
-        if (session && !session.closed) {
-          window.history.pushState({ luna: true, view: "chat", sessionId: session.id }, "");
-        } else if (listeningRef.current) {
-          window.history.pushState({ luna: true, view: "queue" }, "");
-        }
         return;
       }
 
-      // 2. Modals and drawers pop off first before main session or queue is disturbed
-      if (settingsOpenRef.current || logOpenRef.current || historyOpenRef.current || voidOpenRef.current) {
-        if (state?.modal === "history" && historyOpenRef.current) {
-          return;
-        }
+      if (
+        settingsOpenRef.current ||
+        logOpenRef.current ||
+        historyOpenRef.current ||
+        voidOpenRef.current
+      ) {
         setSettingsOpen(false);
         setLogOpen(false);
         setHistoryOpen(false);
@@ -893,206 +869,164 @@ export default function Home() {
         return;
       }
 
-      // 3. Active chat session back gesture -> prompt clean exit dialog
-      const session = activeSessionRef.current;
-      if (session && !session.closed) {
-        if (state?.view === "chat" && state?.sessionId === session.id) {
-          return;
-        }
+      if (activeSessionRef.current) {
         setExitConfirm({ type: "chat" });
         window.history.pushState(
-          { luna: true, view: "chat", sessionId: session.id, modal: "exit_confirm" },
+          {
+            luna: true,
+            view: "chat",
+            sessionId: activeSessionRef.current.id,
+            modal: "exit_confirm",
+          },
           "",
         );
         return;
       }
 
-      // 4. Searching / Queue back gesture -> prompt clean exit dialog
       if (listeningRef.current) {
-        if (state?.view === "queue") {
-          return;
-        }
         setExitConfirm({ type: "queue" });
-        window.history.pushState({ luna: true, view: "queue", modal: "exit_confirm" }, "");
-        return;
-      }
-
-      // 5. Chat that has already closed -> cleanly return to sanctuary
-      if (session?.closed) {
-        void handleLeaveSession();
+        window.history.pushState(
+          {
+            luna: true,
+            view: "queue",
+            modal: "exit_confirm",
+          },
+          "",
+        );
         return;
       }
     };
 
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, [handleLeaveSession]);
-
-  // Protect active conversation against accidental window/tab closure
-  useEffect(() => {
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (activeSessionRef.current && !activeSessionRef.current.closed) {
-        e.preventDefault();
-        e.returnValue = "";
-        return "";
-      }
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
-  // Keyboard Navigation: Esc for wirecut / leave, Enter for queue join / next
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
-        if (exitConfirm) {
+        if (exitConfirmRef.current) {
           e.preventDefault();
-          const type = exitConfirm.type;
           setExitConfirm(null);
-          if (typeof window !== "undefined") {
-            const session = activeSessionRef.current;
-            if (type === "chat" && session && !session.closed) {
-              window.history.replaceState({ luna: true, view: "chat", sessionId: session.id }, "");
-            } else if (type === "queue" && listeningRef.current) {
-              window.history.replaceState({ luna: true, view: "queue" }, "");
-            }
+          if (typeof window !== "undefined" && window.history.state?.modal === "exit_confirm") {
+            window.history.back();
           }
           return;
         }
 
-        if (settingsOpen || logOpen || voidOpen || historyOpen) {
+        if (
+          settingsOpenRef.current ||
+          logOpenRef.current ||
+          historyOpenRef.current ||
+          voidOpenRef.current
+        ) {
           e.preventDefault();
           closeOverlayModal();
           return;
         }
 
-        if (currentSession?.id) {
+        if (activeSessionRef.current && !busyRef.current) {
           e.preventDefault();
-          if (currentSession.closed) {
+          if (wireCutPrimed) {
             void handleLeaveSession();
-          } else if (wireCutPrimed) {
-            setWireCutPrimed(false);
-            setNote("You left the chat. Finding a new stranger...");
-            void handleNextStranger();
           } else {
             setWireCutPrimed(true);
-            setNote("Press Esc again to leave this chat");
+            setNote("Press Esc again within 2.5s to leave the chat.");
           }
-        } else if (listening) {
-          e.preventDefault();
-          setExitConfirm({ type: "queue" });
-          if (typeof window !== "undefined") {
-            window.history.pushState({ luna: true, modal: "exit_confirm" }, "");
-          }
-        }
-      } else if (e.key === "Enter") {
-        if (exitConfirm || settingsOpen || logOpen || voidOpen || historyOpen) {
           return;
         }
 
-        if (currentSession?.closed) {
+        if (listeningRef.current && !busyRef.current) {
           e.preventDefault();
-          void handleNextStranger();
-        } else if (!currentSession?.id && !desk?.queued && !busy && deviceId) {
-          const tag = document.activeElement?.tagName;
-          if (tag !== "BUTTON" && tag !== "INPUT" && tag !== "TEXTAREA") {
-            e.preventDefault();
-            void handleJoinQueue();
-          }
+          void handleLeaveQueue();
+          return;
         }
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [
-    exitConfirm,
-    settingsOpen,
-    logOpen,
-    voidOpen,
-    historyOpen,
-    currentSession,
-    wireCutPrimed,
-    listening,
-    busy,
-    deviceId,
-    desk?.queued,
-    handleJoinQueue,
-    handleLeaveQueue,
-    handleLeaveSession,
-    handleNextStranger,
-    closeOverlayModal,
-  ]);
+  }, [wireCutPrimed, closeOverlayModal, handleLeaveSession, handleLeaveQueue]);
 
-  const meta = !isOnline
-    ? "offline"
-    : currentSession
-      ? currentSession.kind === "friend"
-        ? "friend"
-        : "chatting"
-      : listening
-        ? "searching"
-        : "online";
+  const fallbackDesk: DeskView = desk ?? {
+    station: { deviceId: deviceId ?? "", callsign: "----" },
+    friends: [],
+    inboundQsl: [],
+    activeSession: null,
+    queued: false,
+    queuedInterests: [],
+    enteredAt: null,
+  };
 
   return (
-    <PaperShell>
-      <StatusHeader
-        callsign={desk?.station.callsign}
-        meta={meta}
-        logOpen={logOpen}
-        onToggleLog={() => (logOpen ? closeOverlayModal("log") : openOverlayModal("log"))}
-        soundEnabled={soundActive}
-        onToggleSound={handleToggleSound}
-        settingsOpen={settingsOpen}
-        onToggleSettings={() => (settingsOpen ? closeOverlayModal("settings") : openOverlayModal("settings"))}
-        voidOpen={voidOpen}
-        onToggleVoid={() => (voidOpen ? closeOverlayModal("void") : openOverlayModal("void"))}
-        hasHistory={historySessions.length > 0}
-        historyOpen={historyOpen}
-        onToggleHistory={() => (historyOpen ? closeOverlayModal("history") : openOverlayModal("history"))}
-        activeChat={
-          currentSession
-            ? {
-                peerCallsign: currentSession.peerCallsign,
-                sessionCreatedAt: currentSession.createdAt,
-                sessionKind: currentSession.kind,
-                peerPresence: currentSession.peerPresence,
-                peerTyping: currentSession.peerTyping,
-                matchedTopic: currentSession.interests?.[0],
-                interests: currentSession.interests,
-              }
-            : undefined
-        }
-      />
+    <div className="flex h-dvh w-full flex-col bg-zinc-950 text-zinc-100 antialiased selection:bg-white/20 select-none overflow-hidden overscroll-none">
+      <PaperShell>
+        <StatusHeader
+          callsign={desk?.station.callsign}
+          meta={
+            currentSession
+              ? `in session with ${currentSession.peerCallsign}`
+              : listening
+                ? "searching"
+                : "ready"
+          }
+          onToggleLog={() => (logOpen ? closeOverlayModal("log") : openOverlayModal("log"))}
+          logOpen={logOpen}
+          soundEnabled={soundActive}
+          onToggleSound={handleToggleSound}
+          settingsOpen={settingsOpen}
+          onToggleSettings={() =>
+            settingsOpen ? closeOverlayModal("settings") : openOverlayModal("settings")
+          }
+          voidOpen={voidOpen}
+          onToggleVoid={() => (voidOpen ? closeOverlayModal("void") : openOverlayModal("void"))}
+          hasHistory={historySessions.length > 0}
+          historyOpen={historyOpen}
+          onToggleHistory={() =>
+            historyOpen ? closeOverlayModal("history") : openOverlayModal("history")
+          }
+          activeChat={
+            currentSession
+              ? {
+                  peerCallsign: currentSession.peerCallsign,
+                  sessionCreatedAt: currentSession.createdAt,
+                  sessionKind: currentSession.kind,
+                  peerPresence: currentSession.peerPresence,
+                  peerTyping: currentSession.peerTyping,
+                  interests: currentSession.interests,
+                }
+              : undefined
+          }
+        />
 
-      <NetworkBanner isOnline={isOnline} />
+        <NetworkBanner isOnline={isOnline} />
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {settingsOpen && desk ? (
-          <SettingsPanel
-            desk={desk}
-            onClose={() => closeOverlayModal("settings")}
-            onCallsignUpdated={setDesk}
-            onStationReset={() => {
-              const newDid = getOrCreateDeviceId();
-              setDeviceId(newDid);
-              setDesk(null);
-              setReplyingTo(null);
-              setMessages([]);
-              setSessionView(null);
-              void registerStation({ deviceId: newDid }).then(setDesk).catch(() => {});
-            }}
-          />
-        ) : logOpen && desk ? (
+        {note && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="flex items-center justify-between border-b border-white/10 bg-zinc-900/90 px-4 py-2 text-xs font-mono text-zinc-200 animate-in fade-in slide-in-from-top-1"
+          >
+            <span>{note}</span>
+            <button
+              type="button"
+              onClick={() => setNote(null)}
+              className="ml-3 text-zinc-400 hover:text-zinc-100 cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {logOpen ? (
           <LogPanel
-            desk={desk}
-            busy={busy}
+            desk={fallbackDesk}
             onOpenFriend={handleOpenFriendLine}
             onRespond={handleRespondQsl}
             onClose={() => closeOverlayModal("log")}
+            busy={busy}
           />
         ) : currentSession ? (
-          <LineView
+          <Chat
             key={`chat-${currentSession.id}`}
             sessionKind={currentSession.kind}
             peerCallsign={currentSession.peerCallsign}
@@ -1137,7 +1071,7 @@ export default function Home() {
             onDeleteMessage={(mid) => runDeleteMessage(mid, currentSession)}
           />
         ) : listening ? (
-          <ListeningView
+          <Searching
             key="listening-view"
             enteredAt={desk?.enteredAt ?? null}
             interests={desk?.queuedInterests ?? interests}
@@ -1157,31 +1091,26 @@ export default function Home() {
             busy={busy}
           />
         ) : (
-          <BootView
-            key="boot-view"
+          <Start
             interests={interests}
             onInterests={setInterests}
             onCall={() => void handleJoinQueue()}
-            busy={busy || !deviceId}
+            busy={busy}
           />
         )}
-      </div>
+      </PaperShell>
 
-      {note && (
-        <div className="border-t border-white/10 bg-zinc-950/90 px-4 py-2 text-xs text-zinc-300 flex items-center justify-between" role="status">
-          <span>{note}</span>
-          <button type="button" onClick={() => setNote(null)} className="text-zinc-500 hover:text-zinc-200 text-xs ml-2 cursor-pointer">
-            dismiss
-          </button>
-        </div>
-      )}
-
-      {voidOpen && deviceId && (
-        <VoidLetters
-          deviceId={deviceId}
-          onClose={() => closeOverlayModal("void")}
-        />
-      )}
+      <SettingsPanel
+        desk={fallbackDesk}
+        onClose={() => closeOverlayModal("settings")}
+        onCallsignUpdated={handleDeskUpdate}
+        onStationReset={() => {
+          setDeviceId(null);
+          const nextId = getOrCreateDeviceId();
+          setDeviceId(nextId);
+          if (nextId) void getDesk({ deviceId: nextId }).then(handleDeskUpdate).catch(() => {});
+        }}
+      />
 
       <HistoryModal
         isOpen={historyOpen}
@@ -1194,42 +1123,37 @@ export default function Home() {
         onClearAll={() => {
           clearAllChatHistory();
           setHistorySessions([]);
-          closeOverlayModal("history");
         }}
       />
+
+      {voidOpen && (
+        <VoidLetters
+          deviceId={deviceId ?? ""}
+          onClose={() => closeOverlayModal("void")}
+        />
+      )}
 
       <WelcomeModal />
 
       <ExitConfirmModal
-        isOpen={exitConfirm !== null}
+        isOpen={Boolean(exitConfirm)}
         type={exitConfirm?.type ?? "chat"}
+        onCancel={() => {
+          setExitConfirm(null);
+          if (typeof window !== "undefined" && window.history.state?.modal === "exit_confirm") {
+            window.history.back();
+          }
+        }}
         onConfirm={() => {
           const type = exitConfirm?.type;
           setExitConfirm(null);
-          if (typeof window !== "undefined") {
-            window.history.replaceState({ luna: true, view: "boot" }, "");
-          }
           if (type === "chat") {
             void handleLeaveSession();
           } else {
             void handleLeaveQueue();
           }
         }}
-        onCancel={() => {
-          const type = exitConfirm?.type;
-          setExitConfirm(null);
-          if (typeof window !== "undefined") {
-            const session = activeSessionRef.current;
-            if (type === "chat" && session && !session.closed) {
-              window.history.replaceState({ luna: true, view: "chat", sessionId: session.id }, "");
-            } else if (type === "queue" && listeningRef.current) {
-              window.history.replaceState({ luna: true, view: "queue" }, "");
-            } else {
-              window.history.replaceState({ luna: true, view: "boot" }, "");
-            }
-          }
-        }}
       />
-    </PaperShell>
+    </div>
   );
 }

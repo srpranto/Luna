@@ -26,6 +26,7 @@ export function useLunaPresence({
   const isAwayRef = useRef(isAway);
   const lastActivityRef = useRef(0);
   const sessionStartRef = useRef(0);
+  const awayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     isAwayRef.current = isAway;
@@ -42,7 +43,6 @@ export function useLunaPresence({
     [currentSessionId],
   );
 
-  // Synchronize timestamps and notify server on fresh session start
   useEffect(() => {
     if (currentSessionId && !isClosed) {
       lastActivityRef.current = Date.now();
@@ -54,6 +54,10 @@ export function useLunaPresence({
   }, [currentSessionId, isClosed, deviceId]);
 
   const resetIdle = useCallback(() => {
+    if (awayTimerRef.current) {
+      clearTimeout(awayTimerRef.current);
+      awayTimerRef.current = null;
+    }
     lastActivityRef.current = Date.now();
     if (isAwayRef.current) {
       setAwaySessionId(null);
@@ -71,7 +75,6 @@ export function useLunaPresence({
     const sessionId = currentSession.id;
 
     function evaluateIdle() {
-      // 60-second grace window after match before idle detection begins
       const sessionAge = Date.now() - sessionStartRef.current;
       if (sessionAge < IDLE_AWAY_THRESHOLD_MS) {
         if (isAwayRef.current) {
@@ -103,13 +106,16 @@ export function useLunaPresence({
 
     const onVisibility = () => {
       if (document.hidden) {
-        if (!isAwayRef.current) {
-          isAwayRef.current = true;
-          setAwaySessionId(sessionId);
-          if (deviceId) {
-            void reportPresence({ deviceId, sessionId, isAway: true }).catch(() => {});
+        if (awayTimerRef.current) clearTimeout(awayTimerRef.current);
+        awayTimerRef.current = setTimeout(() => {
+          if (document.hidden && !isAwayRef.current) {
+            isAwayRef.current = true;
+            setAwaySessionId(sessionId);
+            if (deviceId) {
+              void reportPresence({ deviceId, sessionId, isAway: true }).catch(() => {});
+            }
           }
-        }
+        }, 10000);
       } else {
         resetIdle();
         onResync?.();
@@ -134,9 +140,13 @@ export function useLunaPresence({
     document.addEventListener("visibilitychange", onVisibility);
 
     evaluateIdle();
-    const interval = window.setInterval(evaluateIdle, 1000);
+    const interval = window.setInterval(evaluateIdle, 2000);
 
     return () => {
+      if (awayTimerRef.current) {
+        clearTimeout(awayTimerRef.current);
+        awayTimerRef.current = null;
+      }
       window.removeEventListener("keydown", onActivity);
       window.removeEventListener("touchstart", onActivity);
       window.removeEventListener("pointerdown", onActivity);
@@ -150,6 +160,5 @@ export function useLunaPresence({
   }, [currentSession, deviceId, resetIdle, onResync]);
 
   const effectiveIsAway = Boolean(currentSession?.id && !currentSession.closed && isAway);
-
   return { isAway: effectiveIsAway, setIsAway, resetIdle, lastActivityRef };
 }

@@ -267,7 +267,7 @@ export function LineView({
             }}
             disabled={busy}
             aria-label="Leave this chat"
-            className="h-7 sm:h-7.5 px-2 sm:px-2.5 gap-1 text-xs text-zinc-400 hover:text-zinc-100 hover:bg-zinc-850 cursor-pointer touch-manipulation active:scale-95"
+            className="h-7 sm:h-7.5 px-2 sm:px-2.5 gap-1 text-xs text-zinc-400 hover:text-zinc-100 hover:bg-zinc-855 cursor-pointer touch-manipulation active:scale-95"
             title="Leave this chat"
           >
             <DoorOpen className="h-3.5 w-3.5" />
@@ -483,3 +483,6 @@ export function LineView({
     </section>
   );
 }
+
+export { LineView as Chat };
+export default LineView;

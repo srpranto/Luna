@@ -79,10 +79,10 @@ export function subscribeDeskStream(
   let retryTimer: number | null = null;
   let attempt = 0;
   let stopped = false;
+  let lastSeenEventId = 0;
 
   const scheduleReconnect = () => {
     if (stopped || retryTimer !== null) return;
-    // Exponential backoff with random jitter (1s base, 1.5x factor up to 15s max, + 0-500ms jitter)
     const baseDelay = Math.min(1000 * Math.pow(1.5, attempt), 15000);
     const jitter = Math.floor(Math.random() * 500);
     const delay = Math.round(baseDelay + jitter);
@@ -96,7 +96,8 @@ export function subscribeDeskStream(
   const connect = () => {
     if (stopped) return;
     source?.close();
-    const next = new EventSource(`/api/luna/stream?deviceId=${encodeURIComponent(deviceId)}`);
+    const cursorParam = lastSeenEventId > 0 ? `&lastEventId=${lastSeenEventId}` : "";
+    const next = new EventSource(`/api/luna/stream?deviceId=${encodeURIComponent(deviceId)}${cursorParam}`);
     source = next;
 
     next.addEventListener("open", () => {
@@ -112,11 +113,15 @@ export function subscribeDeskStream(
 
     for (const type of STREAM_EVENT_TYPES) {
       next.addEventListener(type, (e: MessageEvent) => {
+        if (e.lastEventId) {
+          const idNum = Number(e.lastEventId);
+          if (!Number.isNaN(idNum) && idNum > lastSeenEventId) {
+            lastSeenEventId = idNum;
+          }
+        }
         try {
           onEvent(type, JSON.parse(e.data));
-        } catch {
-          return;
-        }
+        } catch {}
       });
     }
   };

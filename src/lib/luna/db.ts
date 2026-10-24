@@ -11,13 +11,11 @@ type GlobalRef = typeof globalThis & {
   __lunaPgPool__?: Pool;
   __lunaPglite__?: PGlite;
   __lunaMigrated__?: boolean;
-  __lunaMigratedVersion__?: number;
 };
 
-const CURRENT_SCHEMA_VERSION = 10;
 const globalRef = globalThis as GlobalRef;
 
-const LUNA_SCHEMA = `
+const BASE_SCHEMA = `
 create table if not exists stations (
   device_id    text primary key,
   callsign     text not null,
@@ -26,16 +24,9 @@ create table if not exists stations (
   typing_until timestamptz,
   ip           text,
   is_custom    boolean default false,
-  public_key   text
+  public_key   text,
+  is_away      boolean default false
 );
-
-alter table stations drop constraint if exists stations_callsign_key;
-alter table stations drop constraint if exists stations_callsign_unique;
-alter table stations add column if not exists typing_until timestamptz;
-alter table stations add column if not exists ip text;
-alter table stations add column if not exists is_custom boolean default false;
-alter table stations add column if not exists public_key text;
-alter table stations add column if not exists is_away boolean default false;
 
 create table if not exists queue (
   device_id  text primary key references stations(device_id) on delete cascade,
@@ -64,12 +55,10 @@ create table if not exists messages (
   body       text not null,
   created_at timestamptz not null default now(),
   expires_at timestamptz not null,
-  copied_at  timestamptz
+  copied_at  timestamptz,
+  edited_at  timestamptz,
+  seen_at    timestamptz
 );
-
-alter table messages add column if not exists copied_at timestamptz;
-alter table messages add column if not exists edited_at timestamptz;
-alter table messages add column if not exists seen_at timestamptz;
 
 create index if not exists messages_session_idx on messages (session_id, created_at);
 
@@ -121,7 +110,6 @@ create table if not exists device_events (
   created_at  timestamptz not null default now()
 );
 
-alter table device_events add column if not exists instance_id text;
 create index if not exists device_events_device_idx on device_events (device_id, id);
 
 create table if not exists void_letters (
@@ -141,7 +129,46 @@ create table if not exists void_stars (
   created_at   timestamptz not null default now(),
   primary key (letter_id, device_id)
 );
+
+create table if not exists _migrations (
+  name text primary key,
+  applied_at timestamptz not null default now()
+);
 `;
+
+const MIGRATIONS: { name: string; sql: string }[] = [
+  {
+    name: "001_initial_base",
+    sql: BASE_SCHEMA,
+  },
+  {
+    name: "002_station_columns",
+    sql: `
+      alter table stations add column if not exists typing_until timestamptz;
+      alter table stations add column if not exists ip text;
+      alter table stations add column if not exists is_custom boolean default false;
+      alter table stations add column if not exists public_key text;
+      alter table stations add column if not exists is_away boolean default false;
+      alter table stations drop constraint if exists stations_callsign_key;
+      alter table stations drop constraint if exists stations_callsign_unique;
+    `,
+  },
+  {
+    name: "003_message_status_columns",
+    sql: `
+      alter table messages add column if not exists copied_at timestamptz;
+      alter table messages add column if not exists edited_at timestamptz;
+      alter table messages add column if not exists seen_at timestamptz;
+    `,
+  },
+  {
+    name: "004_device_events_instance_id",
+    sql: `
+      alter table device_events add column if not exists instance_id text;
+      create index if not exists device_events_device_idx on device_events (device_id, id);
+    `,
+  },
+];
 
 type QueryRunner = <T>(text: string, params: unknown[]) => Promise<T[]>;
 
@@ -163,6 +190,22 @@ function createSqlInterface(run: QueryRunner): Sql {
   return sql;
 }
 
+async function runMigrationsOnEngine(
+  execMulti: (sql: string) => Promise<void>,
+  query: QueryRunner,
+): Promise<void> {
+  await execMulti(`create table if not exists _migrations (name text primary key, applied_at timestamptz not null default now())`);
+  const appliedRows = await query<{ name: string }>(`select name from _migrations`, []);
+  const applied = new Set(appliedRows.map((r) => r.name));
+
+  for (const m of MIGRATIONS) {
+    if (!applied.has(m.name)) {
+      await execMulti(m.sql);
+      await query(`insert into _migrations (name) values ($1) on conflict do nothing`, [m.name]);
+    }
+  }
+}
+
 async function initNeon(databaseUrl: string): Promise<Sql> {
   const { Pool, types } = await import("pg");
   types.setTypeParser(20, (v: string) => Number(v));
@@ -178,10 +221,9 @@ async function initNeon(databaseUrl: string): Promise<Sql> {
   };
 
   if (!globalRef.__lunaMigrated__) {
-    await pool.query(LUNA_SCHEMA);
-    try {
-      await pool.query("alter table messages add column if not exists seen_at timestamptz;");
-    } catch {}
+    await runMigrationsOnEngine(async (s) => {
+      await pool.query(s);
+    }, run);
     globalRef.__lunaMigrated__ = true;
   }
 
@@ -199,13 +241,18 @@ async function initPglite(): Promise<Sql> {
       },
     });
     await pg.waitReady;
-    await pg.exec(LUNA_SCHEMA);
     globalRef.__lunaPglite__ = pg;
+    const run: QueryRunner = async <T>(text: string, params: unknown[]) => {
+      const result = await pg.query<T>(text, params);
+      return result.rows;
+    };
+    await runMigrationsOnEngine(async (s) => {
+      await pg.exec(s);
+    }, run);
     globalRef.__lunaMigrated__ = true;
   }
 
   const pglite = globalRef.__lunaPglite__;
-
   const run: QueryRunner = async <T>(text: string, params: unknown[]) => {
     const result = await pglite.query<T>(text, params);
     return result.rows;
@@ -218,6 +265,12 @@ export async function getSql(): Promise<Sql> {
   if (!globalRef.__lunaSqlPromise__) {
     const databaseUrl =
       typeof process !== "undefined" ? process.env.DATABASE_URL?.trim() : undefined;
+    const isProduction =
+      typeof process !== "undefined" && process.env.NODE_ENV === "production";
+
+    if (isProduction && !databaseUrl) {
+      throw new Error("DATABASE_URL environment variable is required in production.");
+    }
 
     const promise = databaseUrl ? initNeon(databaseUrl) : initPglite();
 
@@ -227,71 +280,5 @@ export async function getSql(): Promise<Sql> {
     });
   }
 
-  const sql = await globalRef.__lunaSqlPromise__;
-
-  if (globalRef.__lunaMigratedVersion__ !== CURRENT_SCHEMA_VERSION) {
-    const migrationStatements = [
-      "alter table stations drop constraint if exists stations_callsign_key;",
-      "alter table stations drop constraint if exists stations_callsign_unique;",
-      "alter table stations add column if not exists typing_until timestamptz;",
-      "alter table stations add column if not exists ip text;",
-      "alter table stations add column if not exists is_custom boolean default false;",
-      "alter table stations add column if not exists public_key text;",
-      "alter table stations add column if not exists is_away boolean default false;",
-      "alter table messages add column if not exists copied_at timestamptz;",
-      "alter table messages add column if not exists edited_at timestamptz;",
-      "alter table messages add column if not exists seen_at timestamptz;",
-      "drop table if exists bans cascade;",
-      "drop table if exists violation_logs cascade;",
-      `create table if not exists void_letters (
-        id           text primary key,
-        device_id    text not null,
-        callsign     text not null,
-        text         text not null,
-        stars        integer not null default 0,
-        created_at   timestamptz not null default now()
-      );`,
-      "create index if not exists void_letters_created_idx on void_letters (created_at desc);",
-      `create table if not exists void_stars (
-        letter_id    text not null,
-        device_id    text not null,
-        created_at   timestamptz not null default now(),
-        primary key (letter_id, device_id)
-      );`,
-      `create table if not exists blocks (
-        blocker_id  text not null,
-        blocked_id  text not null,
-        created_at  timestamptz not null default now(),
-        primary key (blocker_id, blocked_id)
-      );`,
-      "create index if not exists blocks_blocker_idx on blocks (blocker_id);",
-      "create index if not exists blocks_blocked_idx on blocks (blocked_id);",
-      `create table if not exists abuse_reports (
-        id          text primary key,
-        reporter_id text not null,
-        reported_id text not null,
-        reason      text not null,
-        created_at  timestamptz not null default now()
-      );`,
-      `create table if not exists device_events (
-        id          bigserial primary key,
-        device_id   text not null,
-        type        text not null,
-        data        text not null,
-        instance_id text,
-        created_at  timestamptz not null default now()
-      );`,
-      "alter table device_events add column if not exists instance_id text;",
-      "create index if not exists device_events_device_idx on device_events (device_id, id);",
-    ];
-
-    for (const stmt of migrationStatements) {
-      try {
-        await sql.query(stmt);
-      } catch {}
-    }
-    globalRef.__lunaMigratedVersion__ = CURRENT_SCHEMA_VERSION;
-  }
-
-  return sql;
+  return globalRef.__lunaSqlPromise__;
 }

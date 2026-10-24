@@ -55,7 +55,6 @@ export function useLunaStream({
     );
 
     const pollTimer = window.setInterval(() => {
-      // While listening in queue, heartbeatQueue already handles real-time desk synchronization
       if (isListeningRef.current) return;
 
       getDesk({ deviceId })
@@ -65,7 +64,7 @@ export function useLunaStream({
           }
         })
         .catch(() => {});
-    }, 15000);
+    }, 20000);
 
     return () => {
       cancelled = true;
