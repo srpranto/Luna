@@ -8,8 +8,15 @@ try {
   register(pathToFileURL(path.resolve("tests/e2e/loader.ts")).href, import.meta.url);
 } catch {}
 
-// Suppress unhandled type warning noise in output
-process.removeAllListeners("warning");
+// Filter experimental module loader warnings while preserving runtime diagnostics
+const origEmitWarning = process.emitWarning;
+process.emitWarning = ((warning: string | Error, ...args: unknown[]) => {
+  const msg = typeof warning === "string" ? warning : warning?.message || "";
+  if (msg.includes("Custom ESM Loaders") || msg.includes("ExperimentalWarning")) {
+    return;
+  }
+  return (origEmitWarning as (...a: unknown[]) => void).apply(process, [warning, ...args]);
+}) as typeof process.emitWarning;
 
 async function run(): Promise<void> {
   const startSuiteTime = performance.now();

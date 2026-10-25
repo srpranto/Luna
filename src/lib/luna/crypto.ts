@@ -259,47 +259,24 @@ export function destroySessionKey(sessionId: string): void {
   ecdhStore.delete(sessionId);
 }
 
-async function deriveFallbackSessionKey(sessionId: string): Promise<CryptoKey> {
-  const enc = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw",
-    enc.encode(`luna.session.${sessionId}`),
-    { name: "PBKDF2" },
-    false,
-    ["deriveKey"],
-  );
-  return crypto.subtle.deriveKey(
-    {
-      name: "PBKDF2",
-      salt: enc.encode(`luna.salt.${sessionId}`),
-      iterations: 10000,
-      hash: "SHA-256",
-    },
-    keyMaterial,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["encrypt", "decrypt"],
-  );
-}
-
 export async function encryptText(text: string, sessionId: string): Promise<string> {
-  if (typeof window === "undefined" || !crypto?.subtle) return text;
-  try {
-    const entry = ecdhStore.get(sessionId);
-    const key = entry?.sharedKey ?? (await deriveFallbackSessionKey(sessionId));
-    const isEcdh = Boolean(entry?.sharedKey);
-
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const encoded = new TextEncoder().encode(text);
-    const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encoded);
-
-    const ivHex = bufferToHex(iv);
-    const dataHex = bufferToHex(encrypted);
-
-    return isEcdh ? `e2e:v2:${ivHex}:${dataHex}` : `e2e:${ivHex}:${dataHex}`;
-  } catch {
-    return text;
+  if (typeof window === "undefined" || !crypto?.subtle) {
+    throw new Error("Web Crypto API is not available in this environment.");
   }
+  const entry = ecdhStore.get(sessionId);
+  const sharedKey = entry?.sharedKey;
+  if (!sharedKey) {
+    throw new Error("End-to-end encryption key has not been established yet. Message held.");
+  }
+
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encoded = new TextEncoder().encode(text);
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, sharedKey, encoded);
+
+  const ivHex = bufferToHex(iv);
+  const dataHex = bufferToHex(encrypted);
+
+  return `e2e:v2:${ivHex}:${dataHex}`;
 }
 
 export async function decryptText(payload: string, sessionId: string): Promise<string> {
@@ -308,37 +285,26 @@ export async function decryptText(payload: string, sessionId: string): Promise<s
   }
   try {
     const parts = payload.split(":");
-    let ivHex = "";
-    let dataHex = "";
-    let key: CryptoKey;
-
     if (parts.length === 4 && parts[1] === "v2") {
       const sharedKey = ecdhStore.get(sessionId)?.sharedKey;
       if (!sharedKey) {
-        return payload;
+        return "🔒 [Encrypted message - awaiting key]";
       }
-      key = sharedKey;
-      ivHex = parts[2] ?? "";
-      dataHex = parts[3] ?? "";
-    } else if (parts.length === 3) {
-      key = await deriveFallbackSessionKey(sessionId);
-      ivHex = parts[1] ?? "";
-      dataHex = parts[2] ?? "";
-    } else {
-      return payload;
+      const ivHex = parts[2] ?? "";
+      const dataHex = parts[3] ?? "";
+      const iv = hexToBytes(ivHex);
+      const encrypted = hexToBytes(dataHex);
+      if (iv.length === 0 || encrypted.length === 0) return payload;
+
+      const decrypted = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: iv as unknown as BufferSource },
+        sharedKey,
+        encrypted as unknown as BufferSource,
+      );
+      return new TextDecoder().decode(decrypted);
     }
-
-    const iv = hexToBytes(ivHex);
-    const encrypted = hexToBytes(dataHex);
-    if (iv.length === 0 || encrypted.length === 0) return payload;
-
-    const decrypted = await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv: iv as unknown as BufferSource },
-      key,
-      encrypted as unknown as BufferSource,
-    );
-    return new TextDecoder().decode(decrypted);
+    return "🔒 [Encrypted message]";
   } catch {
-    return payload;
+    return "🔒 [Decryption failed]";
   }
 }

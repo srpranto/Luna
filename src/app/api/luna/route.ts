@@ -240,7 +240,21 @@ export async function POST(req: Request) {
     const data = await handler(payload, clientIp);
     return NextResponse.json({ ok: true, data }, { headers: NO_CACHE_HEADERS });
   } catch (error) {
-    const message = error instanceof Error && error.message ? error.message : "Internal server error.";
-    return NextResponse.json({ ok: false, error: message }, { status: 400, headers: NO_CACHE_HEADERS });
+    const rawMessage = error instanceof Error && error.message ? error.message : "Internal server error.";
+    const isInternalError =
+      rawMessage.includes("ECONNREFUSED") ||
+      rawMessage.includes("ETIMEDOUT") ||
+      rawMessage.includes("relation") ||
+      rawMessage.includes("syntax error") ||
+      rawMessage.includes("connection failed") ||
+      rawMessage.includes("socket hang up") ||
+      (error && typeof error === "object" && "code" in error && typeof (error as { code: unknown }).code === "string");
+
+    const status = isInternalError ? 500 : 400;
+    const sanitizedError = isInternalError
+      ? "An unexpected server error occurred. Please try again."
+      : rawMessage;
+
+    return NextResponse.json({ ok: false, error: sanitizedError }, { status, headers: NO_CACHE_HEADERS });
   }
 }

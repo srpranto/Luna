@@ -36,15 +36,10 @@ export async function GET(req: NextRequest) {
 
   const encoder = new TextEncoder();
 
-  let pollInterval: NodeJS.Timeout | null = null;
   let pingInterval: NodeJS.Timeout | null = null;
   let unsubscribe: (() => void) | null = null;
 
   const cleanup = () => {
-    if (pollInterval) {
-      clearInterval(pollInterval);
-      pollInterval = null;
-    }
     if (pingInterval) {
       clearInterval(pingInterval);
       pingInterval = null;
@@ -92,34 +87,6 @@ export async function GET(req: NextRequest) {
       });
 
       void touchLastSeen(deviceId).catch(() => {});
-
-      pollInterval = setInterval(async () => {
-        try {
-          const sql = await getSql();
-          const rows = await sql<{ id: number; type: string; data: string }>`
-            select id, type, data from device_events
-            where device_id = ${deviceId}
-              and id > ${lastEventId}
-            order by id asc
-            limit 50
-          `;
-          for (const row of rows) {
-            lastEventId = Math.max(lastEventId, Number(row.id));
-            try {
-              controller.enqueue(
-                encoder.encode(`id: ${row.id}\nevent: ${row.type}\ndata: ${row.data}\n\n`),
-              );
-            } catch {
-              if (pollInterval) clearInterval(pollInterval);
-              return;
-            }
-          }
-
-          if (Math.random() < 0.02) {
-            void sql`delete from device_events where created_at < now() - interval '5 minutes'`.catch(() => {});
-          }
-        } catch {}
-      }, 1000);
 
       pingInterval = setInterval(() => {
         try {
