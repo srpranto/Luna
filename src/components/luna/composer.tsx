@@ -283,7 +283,7 @@ export function Composer({
                 onClick={onReconnect}
                 disabled={outboundReconnect}
                 className={cn(
-                  "h-10 min-h-[44px] sm:min-h-[40px] px-4 text-xs font-semibold cursor-pointer gap-2 rounded-xl touch-manipulation active:scale-[0.97]",
+                  "h-10 min-h-[40px] px-4 text-xs font-semibold cursor-pointer gap-2 rounded-full touch-manipulation active:scale-[0.97]",
                   inboundReconnect
                     ? "bg-emerald-500 hover:bg-emerald-400 text-zinc-950 shadow-[0_0_20px_rgba(16,185,129,0.3)] animate-pulse"
                     : outboundReconnect
@@ -303,7 +303,7 @@ export function Composer({
             <Button
               type="button"
               onClick={onNext}
-              className="h-10 min-h-[44px] sm:min-h-[40px] px-5 text-xs font-semibold bg-white text-zinc-950 hover:bg-zinc-200 cursor-pointer gap-2 shadow-[0_0_20px_rgba(255,255,255,0.2)] rounded-xl touch-manipulation"
+              className="h-10 min-h-[40px] px-5 text-xs font-semibold bg-white text-zinc-950 hover:bg-zinc-200 cursor-pointer gap-2 shadow-[0_0_20px_rgba(255,255,255,0.2)] rounded-full touch-manipulation"
             >
               <span>Find Next Stranger</span>
               <ArrowRight className="h-3.5 w-3.5" />
@@ -312,7 +312,7 @@ export function Composer({
         </div>
       ) : (
         <div className="flex items-end gap-2">
-          <div className="relative flex-1">
+          <div className="relative flex-1 min-w-0">
             <textarea
               ref={textareaRef}
               id="chat-message-input"
@@ -342,17 +342,17 @@ export function Composer({
                 clearTypingTimer();
                 onTyping?.(false);
               }}
-              className="min-h-[40px] max-h-[200px] w-full resize-none rounded-2xl border border-zinc-800 bg-zinc-900/60 pl-3.5 pr-14 py-2.5 text-base sm:text-sm text-zinc-100 placeholder:text-zinc-400 shadow-inner transition-colors focus:border-white/30 focus:ring-1 focus:ring-white/20 focus:outline-none disabled:opacity-40 leading-relaxed overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+              className="min-h-[40px] max-h-[200px] h-10 w-full resize-none rounded-full border border-white/10 bg-zinc-900/70 pl-4 pr-12 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] transition-all focus:border-white/25 focus:ring-1 focus:ring-white/20 focus:outline-none disabled:opacity-40 leading-6 overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             />
             {value.length > 0 && (
               <span
                 className={cn(
-                  "absolute right-2.5 bottom-2 text-[10px] font-mono pointer-events-none px-1 rounded transition-colors select-none",
+                  "absolute right-3.5 bottom-2.5 text-[10px] font-mono pointer-events-none px-1 rounded transition-colors select-none",
                   value.length >= MAX_LINE_CHARS
                     ? "bg-rose-950/80 text-rose-400 font-bold"
                     : value.length > 250
                       ? "bg-amber-950/80 text-amber-400"
-                      : "bg-zinc-900/80 text-zinc-400",
+                      : "bg-zinc-800/80 text-zinc-400",
                 )}
               >
                 {value.length}/{MAX_LINE_CHARS}
@@ -364,14 +364,14 @@ export function Composer({
             <Button
               type="button"
               variant="ghost"
-              size="sm"
+              size="icon"
               onClick={() => setShowReactions((prev) => !prev)}
               disabled={disabled}
               aria-label="Celestial reactions"
               title="Celestial reactions"
               className={cn(
-                "h-10 w-10 min-h-[40px] min-w-[40px] p-0 rounded-2xl text-zinc-400 hover:text-zinc-100 hover:bg-zinc-850 shrink-0 cursor-pointer transition-all duration-200 ease-coloros active:scale-[0.94] touch-manipulation flex items-center justify-center",
-                showReactions && "text-zinc-100 bg-zinc-800 ring-1 ring-white/20",
+                "h-10 w-10 min-h-[40px] min-w-[40px] p-0 rounded-full border border-white/10 bg-zinc-900/60 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 hover:border-white/20 shrink-0 cursor-pointer transition-all duration-150 ease-coloros active:scale-95 touch-manipulation flex items-center justify-center shadow-sm",
+                showReactions && "text-zinc-100 bg-zinc-800 border-white/30 ring-1 ring-white/20",
               )}
             >
               <Sparkles className="h-4 w-4" />
@@ -384,10 +384,10 @@ export function Composer({
             size="sm"
             aria-label="Send message"
             title="Send message (Enter, Shift+Enter for new line)"
-            className="h-10 min-h-[40px] px-3.5 min-w-[40px] shrink-0 bg-zinc-100 text-zinc-950 hover:bg-white shadow-[0_0_15px_rgba(255,255,255,0.15)] active:scale-[0.94] transition-all duration-200 ease-coloros rounded-2xl font-medium cursor-pointer touch-manipulation flex items-center justify-center gap-1"
+            className="h-10 min-h-[40px] px-3.5 sm:px-4 w-10 sm:w-auto min-w-[40px] shrink-0 bg-white text-zinc-950 hover:bg-zinc-100 disabled:bg-zinc-800 disabled:text-zinc-500 disabled:border-white/5 border border-transparent shadow-[0_0_20px_rgba(255,255,255,0.15)] active:scale-95 transition-all duration-150 ease-coloros rounded-full font-semibold cursor-pointer touch-manipulation flex items-center justify-center gap-1.5"
           >
-            <ArrowUp className="h-4 w-4" />
-            <span className="hidden sm:inline">Send</span>
+            <ArrowUp className="h-4 w-4 stroke-[2.5]" />
+            <span className="hidden sm:inline text-xs font-semibold">Send</span>
           </Button>
         </div>
       )}
