@@ -865,7 +865,7 @@ export default function Home() {
       void blockUser({ deviceId, targetId: currentSession.peerId }).catch(() => {});
     }
     await handleLeaveSession();
-    setNote("Chat ended. You will not be matched with this stranger again.");
+    setNote("Stranger blocked.");
   };
 
   const handleReportAndBlock = async (reason: string) => {
@@ -876,7 +876,7 @@ export default function Home() {
       void reportUser({ deviceId, targetId: currentSession.peerId, reason }).catch(() => {});
     }
     await handleLeaveSession();
-    setNote("Report submitted. You will not be matched with this user again.");
+    setNote("Report submitted.");
   };
 
   const handleOfferQsl = async () => {
@@ -1313,6 +1313,13 @@ export default function Home() {
             onReconnect={handleReconnect}
             outboundReconnect={currentSession.outboundReconnect}
             inboundReconnect={currentSession.inboundReconnect}
+            peerPresence={currentSession.peerPresence}
+            soundEnabled={soundActive}
+            onToggleSound={handleToggleSound}
+            hasHistory={historySessions.length > 0}
+            onToggleHistory={() => openOverlayModal("history")}
+            onToggleSettings={() => openOverlayModal("settings")}
+            onToggleLog={() => openOverlayModal("log")}
           />
         ) : listening ? (
           <Searching

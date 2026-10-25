@@ -110,17 +110,18 @@ export function playMessagePop(): void {
     const gain = ctx.createGain();
 
     osc.type = "sine";
-    osc.frequency.setValueAtTime(480, now);
-    osc.frequency.exponentialRampToValueAtTime(240, now + 0.04);
+    osc.frequency.setValueAtTime(520, now);
+    osc.frequency.exponentialRampToValueAtTime(260, now + 0.038);
 
-    gain.gain.setValueAtTime(0.05, now);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.045, now + 0.005);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.04);
 
     osc.connect(gain);
     gain.connect(ctx.destination);
 
     osc.start(now);
-    osc.stop(now + 0.06);
+    osc.stop(now + 0.042);
   } catch {
     return;
   }
@@ -133,21 +134,32 @@ export function playMessageReceived(): void {
 
   try {
     const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
     const gain = ctx.createGain();
 
-    osc.type = "triangle";
-    osc.frequency.setValueAtTime(784, now);
-    osc.frequency.setValueAtTime(1046.5, now + 0.06);
+    osc1.type = "sine";
+    osc2.type = "sine";
 
-    gain.gain.setValueAtTime(0.04, now);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
+    // Modern crisp dual-harmonic micro-tone (50ms duration)
+    osc1.frequency.setValueAtTime(880, now);
+    osc1.frequency.exponentialRampToValueAtTime(1175, now + 0.04);
 
-    osc.connect(gain);
+    osc2.frequency.setValueAtTime(587, now);
+    osc2.frequency.exponentialRampToValueAtTime(880, now + 0.04);
+
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.038, now + 0.005);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
+
+    osc1.connect(gain);
+    osc2.connect(gain);
     gain.connect(ctx.destination);
 
-    osc.start(now);
-    osc.stop(now + 0.22);
+    osc1.start(now);
+    osc2.start(now);
+    osc1.stop(now + 0.052);
+    osc2.stop(now + 0.052);
   } catch {
     return;
   }
@@ -192,15 +204,15 @@ export type HapticFeedbackPattern =
   | "selection";
 
 export const HAPTIC_PATTERNS: Record<HapticFeedbackPattern, number | number[]> = {
-  match: [40, 60, 80],
-  "message-sent": [15],
-  "message-received": [25, 40, 25],
-  tap: [10],
-  disconnect: [60, 80, 40],
-  light: [10],
-  medium: [15],
-  heavy: [25, 40, 25],
-  selection: [10],
+  match: [25, 30, 25],
+  "message-sent": [12],
+  "message-received": [18],
+  tap: [8],
+  disconnect: [50, 40],
+  light: [8],
+  medium: [14],
+  heavy: [22, 35],
+  selection: [8],
 };
 
 let safariSwitchEl: HTMLInputElement | null = null;

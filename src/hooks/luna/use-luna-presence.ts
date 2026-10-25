@@ -68,11 +68,11 @@ export function useLunaPresence({
   }, [deviceId, currentSessionId, isClosed]);
 
   useEffect(() => {
-    if (!currentSession?.id || currentSession.closed) {
+    if (!currentSessionId || isClosed) {
       return;
     }
 
-    const sessionId = currentSession.id;
+    const sessionId = currentSessionId;
 
     function evaluateIdle() {
       const sessionAge = Date.now() - sessionStartRef.current;
@@ -157,8 +157,8 @@ export function useLunaPresence({
       document.removeEventListener("visibilitychange", onVisibility);
       window.clearInterval(interval);
     };
-  }, [currentSession, deviceId, resetIdle, onResync]);
+  }, [currentSessionId, isClosed, deviceId, resetIdle, onResync]);
 
-  const effectiveIsAway = Boolean(currentSession?.id && !currentSession.closed && isAway);
+  const effectiveIsAway = Boolean(currentSessionId && !isClosed && isAway);
   return { isAway: effectiveIsAway, setIsAway, resetIdle, lastActivityRef };
 }

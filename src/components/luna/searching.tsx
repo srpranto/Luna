@@ -186,7 +186,7 @@ export function Searching({
               }}
               disabled={busy}
               aria-label="Leave the queue"
-              className="h-10 px-6 w-full sm:w-auto border-zinc-800 text-zinc-300 hover:text-white bg-zinc-950/80 backdrop-blur-sm text-xs sm:text-sm cursor-pointer touch-manipulation active:scale-[0.98]"
+              className="h-10 px-6 w-full sm:w-auto rounded-full border-zinc-800 text-zinc-300 hover:text-white bg-zinc-950/80 backdrop-blur-sm text-xs sm:text-sm cursor-pointer touch-manipulation active:scale-[0.98]"
             >
               Leave the queue
             </Button>

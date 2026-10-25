@@ -11,7 +11,7 @@ import { triggerHaptic } from "@/lib/luna/sound";
 import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
 
-function SessionElapsedBadge({
+export function SessionElapsedBadge({
   createdAt,
   fallbackAgeMs = 0,
 }: {
@@ -109,9 +109,14 @@ export function StatusHeader({
   activeChat,
 }: StatusHeaderProps) {
   return (
-    <header className="relative z-40 flex items-center justify-between border-b border-white/10 bg-zinc-950/60 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:px-6 backdrop-blur-md">
+    <header
+      className={cn(
+        "relative z-40 items-center justify-between border-b border-white/[0.08] bg-zinc-950/70 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:px-6 backdrop-blur-2xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]",
+        activeChat ? "hidden sm:flex" : "flex",
+      )}
+    >
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-        <div className="absolute inset-0 bg-radial-[ellipse_80%_60%_at_50%_40%] from-white/[0.02] via-transparent to-transparent opacity-60" />
+        <div className="absolute inset-0 bg-radial-[ellipse_80%_60%_at_50%_40%] from-white/[0.03] via-transparent to-transparent opacity-60" />
         <div className="hidden sm:block">
           {STELLAR_STARS.map((star, idx) => (
             <span
@@ -132,7 +137,7 @@ export function StatusHeader({
       </div>
 
       <div className="relative z-10 flex items-center gap-2 sm:gap-3 min-w-0 shrink-0">
-        <div className="flex h-7.5 w-7.5 sm:h-8 sm:w-8 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]">
+        <div className="flex h-7.5 w-7.5 sm:h-8 sm:w-8 items-center justify-center rounded-xl border border-white/10 bg-zinc-900/90 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_2px_8px_rgba(0,0,0,0.4)] backdrop-blur-md">
           <LunaMoon className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-zinc-100" glow />
         </div>
         <div className="min-w-0">
@@ -142,8 +147,8 @@ export function StatusHeader({
               <>
                 <span className="text-xs text-zinc-600 hidden sm:inline">•</span>
                 <div className="hidden sm:flex items-center gap-1.5">
-                  <span className="h-1.5 w-1.5 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.7)]" />
-                  <span className="text-xs font-mono text-zinc-400 font-medium">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(5,223,114,0.7)]" />
+                  <span className="text-xs font-mono text-zinc-300 font-medium">
                     {callsign ?? "connecting..."}
                   </span>
                 </div>
@@ -152,7 +157,8 @@ export function StatusHeader({
           </div>
           {!activeChat && (
             <div className="flex items-center gap-1.5 sm:hidden">
-              <span className="text-[11px] font-mono text-zinc-400 truncate max-w-[110px]">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(5,223,114,0.6)]" />
+              <span className="text-[11px] font-mono text-zinc-300 truncate max-w-[110px]">
                 {callsign ?? "connecting..."}
               </span>
             </div>
@@ -161,16 +167,16 @@ export function StatusHeader({
       </div>
 
       {activeChat ? (
-        <div className="relative z-10 flex-1 min-w-0 flex items-center justify-center gap-1 sm:gap-2 px-1 overflow-hidden">
-          <div className="flex items-center gap-1.5 min-w-0 max-w-[110px] xs:max-w-[140px] sm:max-w-[220px]">
+        <div className="relative z-10 flex-1 min-w-0 flex items-center justify-center gap-2 sm:gap-3 px-2 overflow-hidden">
+          <div className="flex items-center gap-1.5 min-w-0 max-w-[140px] sm:max-w-[220px]">
             <span
               className={cn(
                 "h-2 w-2 rounded-full shrink-0",
                 activeChat.peerPresence === "away"
-                  ? "bg-zinc-400"
+                  ? "bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.6)]"
                   : activeChat.peerPresence === "disconnected"
                     ? "bg-zinc-600"
-                    : "bg-white animate-pulse shadow-[0_0_8px_rgba(255,255,255,0.8)]",
+                    : "bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(5,223,114,0.8)]",
               )}
               title={
                 activeChat.peerPresence === "away"
@@ -184,54 +190,20 @@ export function StatusHeader({
               {activeChat.peerCallsign}
             </span>
             {activeChat.peerPresence === "away" && (
-              <span className="text-[10px] font-mono text-zinc-400 shrink-0">(away)</span>
+              <span className="text-[10px] font-mono text-amber-400/90 shrink-0">(away)</span>
             )}
             {activeChat.peerTyping && (
-              <span className="text-[10px] font-mono text-zinc-400 animate-pulse hidden sm:inline shrink-0">
+              <span className="text-[10px] font-mono text-emerald-400/90 animate-pulse hidden sm:inline shrink-0">
                 (typing...)
               </span>
             )}
           </div>
-          {(() => {
-            const rawTopic =
-              activeChat.matchedTopic ||
-              (activeChat.interests && activeChat.interests.length > 0
-                ? activeChat.interests[0]
-                : undefined);
-            if (!rawTopic || !rawTopic.trim()) return null;
-            const topic = rawTopic.trim().startsWith("#")
-              ? rawTopic.trim().slice(1)
-              : rawTopic.trim();
-            if (!topic) return null;
-            const displayTopic = topic.length > 20 ? `${topic.slice(0, 18)}…` : topic;
-            const additionalCount =
-              activeChat.interests && activeChat.interests.length > 1
-                ? activeChat.interests.length - 1
-                : 0;
-
-            return (
-              <Badge
-                variant="secondary"
-                className="h-5 sm:h-5.5 px-1.5 sm:px-2 py-0 text-[10px] sm:text-[11px] font-mono font-medium border border-white/15 bg-white/5 text-zinc-200 hover:bg-white/10 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] shrink-0 max-w-[110px] xs:max-w-[130px] sm:max-w-[160px] truncate"
-                title={
-                  activeChat.interests && activeChat.interests.length > 1
-                    ? activeChat.interests.map((t) => (t.startsWith("#") ? t : `#${t}`)).join(", ")
-                    : `#${topic}`
-                }
-              >
-                <span className="truncate">#{displayTopic}</span>
-                {additionalCount > 0 && (
-                  <span className="ml-1 text-[9px] text-zinc-400 font-normal shrink-0">
-                    +{additionalCount}
-                  </span>
-                )}
-              </Badge>
-            );
-          })()}
-          <SessionElapsedBadge
-            createdAt={activeChat.sessionCreatedAt}
-            fallbackAgeMs={activeChat.sessionAgeMs}
-          />
+          <div className="flex items-center justify-center">
+            <SessionElapsedBadge
+              createdAt={activeChat.sessionCreatedAt}
+              fallbackAgeMs={activeChat.sessionAgeMs}
+            />
+          </div>
         </div>
       ) : (
         <div className="flex-1" />

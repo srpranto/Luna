@@ -126,10 +126,10 @@ export function InterestGrid({ value, onChange, onSubmit, activeQueueTopics }: I
             onKeyDown={handleKeyDown}
             onBlur={handleBlur}
             disabled={reachedMax}
-            placeholder={reachedMax ? "10 topics max" : "Type a topic (e.g. philosophy, lo-fi)..."}
-            className="lowercase text-base sm:text-sm pr-9 bg-zinc-900/80 border-white/10 text-zinc-100 placeholder:text-zinc-400 focus-visible:border-white/30 rounded-xl h-10"
+            placeholder={reachedMax ? "10 topics max" : "Add topics (e.g. philosophy, music)..."}
+            className="lowercase text-base sm:text-sm pr-9 bg-zinc-900/80 border-white/10 text-zinc-100 placeholder:text-zinc-500 focus-visible:border-white/30 rounded-xl h-10 shadow-inner"
           />
-          <Hash className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 pointer-events-none" />
+          <Hash className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500 pointer-events-none" />
         </div>
         <Button
           type="button"
@@ -218,20 +218,20 @@ export function InterestGrid({ value, onChange, onSubmit, activeQueueTopics }: I
         </button>
 
         {showSuggestions && (
-          <div className="mt-2.5 flex flex-wrap gap-1.5 p-2.5 sm:p-3 rounded-xl border border-white/10 bg-zinc-900/60 max-h-48 sm:max-h-none overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
+          <div className="mt-2 flex flex-wrap gap-1.5 p-2.5 rounded-xl border border-white/[0.08] bg-zinc-900/60 max-h-36 overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
             {POPULAR_TAGS.map((tag, idx) => {
               const isSelected = value.includes(tag);
               return (
                 <button
                   key={tag}
                   type="button"
-                  style={{ animationDelay: `${idx * 25}ms` }}
+                  style={{ animationDelay: `${idx * 20}ms` }}
                   onClick={() => handleToggleTag(tag)}
                   className={cn(
-                    "animate-fade-up rounded-full px-3 py-1.5 min-h-[32px] text-xs font-medium transition-all cursor-pointer active:scale-95 touch-manipulation",
+                    "rounded-full px-2.5 py-1 text-xs font-medium transition-all cursor-pointer active:scale-95 touch-manipulation border",
                     isSelected
-                      ? "bg-zinc-100 text-zinc-950 shadow-sm"
-                      : "bg-zinc-900/90 text-zinc-300 border border-white/10 hover:bg-zinc-800 hover:text-zinc-100 hover:border-white/20",
+                      ? "bg-zinc-100 text-zinc-950 border-white shadow-sm font-semibold"
+                      : "bg-zinc-900/90 text-zinc-300 border-white/10 hover:bg-zinc-800 hover:text-zinc-100 hover:border-white/20",
                   )}
                 >
                   #{tag}

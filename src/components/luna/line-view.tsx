@@ -1,7 +1,21 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, Ban, DoorOpen, Flag, HeartHandshake, Sparkles, X, AlertTriangle } from "lucide-react";
+import {
+  ArrowRight,
+  Ban,
+  DoorOpen,
+  Flag,
+  HeartHandshake,
+  Sparkles,
+  X,
+  AlertTriangle,
+  MoreHorizontal,
+  Volume2,
+  VolumeX,
+  Settings,
+  History,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PrivacyShield } from "@/components/luna/privacy-shield";
@@ -12,6 +26,8 @@ import { Composer } from "@/components/luna/composer";
 import { triggerHaptic } from "@/lib/luna/sound";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@/lib/luna/types";
+import { LunaMoon } from "@/components/luna/luna-moon";
+import { SessionElapsedBadge } from "@/components/luna/status-header";
 
 export function LineView({
   sessionKind,
@@ -49,6 +65,13 @@ export function LineView({
   onReconnect,
   outboundReconnect,
   inboundReconnect,
+  peerPresence,
+  soundEnabled = true,
+  onToggleSound,
+  hasHistory = false,
+  onToggleHistory,
+  onToggleSettings,
+  onToggleLog,
 }: {
   sessionKind: "stranger" | "friend";
   peerCallsign: string;
@@ -85,11 +108,67 @@ export function LineView({
   onReconnect?: () => void;
   outboundReconnect?: boolean;
   inboundReconnect?: boolean;
+  peerPresence?: "active" | "away" | "disconnected";
+  soundEnabled?: boolean;
+  onToggleSound?: () => void;
+  hasHistory?: boolean;
+  onToggleHistory?: () => void;
+  onToggleSettings?: () => void;
+  onToggleLog?: () => void;
 }) {
   const [locked, setLocked] = useState(() => {
     if (closed || !createdAt) return false;
     return Date.now() - new Date(createdAt).getTime() < 600;
   });
+
+  const [actionSheetOpen, setActionSheetOpen] = useState(false);
+
+  useEffect(() => {
+    if (!actionSheetOpen) return;
+    if (typeof window !== "undefined") {
+      window.history.pushState({ luna: true, view: "chat", sheet: "actions" }, "");
+    }
+    const handlePopState = () => {
+      setActionSheetOpen(false);
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        setActionSheetOpen(false);
+        if (typeof window !== "undefined" && window.history.state?.sheet === "actions") {
+          window.history.back();
+        }
+      }
+    };
+    window.addEventListener("popstate", handlePopState);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [actionSheetOpen]);
+
+  const closeActionSheet = () => {
+    setActionSheetOpen(false);
+    if (typeof window !== "undefined" && window.history.state?.sheet === "actions") {
+      window.history.back();
+    }
+  };
+
+  useEffect(() => {
+    if (closed && typeof window !== "undefined" && window.history.state?.sheet === "actions") {
+      window.history.back();
+    }
+  }, [closed]);
+
+  useEffect(() => {
+    return () => {
+      if (typeof window !== "undefined" && window.history.state?.sheet === "actions") {
+        window.history.back();
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (closed || !createdAt || !locked) return;
@@ -213,7 +292,93 @@ export function LineView({
 
   return (
     <section className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center justify-between gap-2 sm:gap-3 border-b border-white/10 bg-zinc-950/40 px-3 py-1.5 sm:px-6 sm:py-2 backdrop-blur-md">
+      {/* 1. Mobile Phone Unified Dynamic Island Capsule Header */}
+      <div className="sm:hidden flex items-center justify-between gap-1.5 mx-2 mt-2 px-3 py-2 rounded-2xl border border-white/[0.12] bg-zinc-900/60 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.12)] shrink-0 z-30">
+        {/* Left: Stranger Avatar + Callsign + Electric Jade Dot */}
+        <div className="flex items-center gap-2 min-w-0 max-w-[130px]">
+          <div className="relative flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-zinc-950/80 shrink-0">
+            <LunaMoon className="h-4 w-4 text-zinc-100" glow />
+            <span
+              className={cn(
+                "absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-zinc-950 shrink-0",
+                peerPresence === "away"
+                  ? "bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.6)]"
+                  : peerPresence === "disconnected"
+                    ? "bg-zinc-600"
+                    : "bg-emerald-400 shadow-[0_0_8px_rgba(5,223,114,0.8)] animate-pulse",
+              )}
+            />
+          </div>
+          <div className="min-w-0">
+            <span className="text-xs font-semibold font-mono text-zinc-100 truncate block">
+              {peerCallsign}
+            </span>
+            {peerTyping ? (
+              <span className="text-[10px] font-mono text-emerald-400 animate-pulse block leading-none">
+                typing...
+              </span>
+            ) : peerPresence === "away" ? (
+              <span className="text-[10px] font-mono text-amber-400/90 block leading-none">
+                away
+              </span>
+            ) : (
+              <span className="text-[10px] font-mono text-zinc-400 block leading-none">
+                {sessionKind === "friend" ? "friend" : "stranger"}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Center: Centered Elapsed Timer (Topic moved to chat welcome banner) */}
+        <div className="flex items-center justify-center min-w-0 flex-1 px-1">
+          <SessionElapsedBadge createdAt={createdAt} />
+        </div>
+
+        {/* Right: Next button + Action Menu (•••) */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {sessionKind === "stranger" && (
+            <Button
+              type="button"
+              size="sm"
+              variant={closed ? "default" : "secondary"}
+              onClick={handleNextClick}
+              disabled={busy || locked}
+              aria-label={closed ? "Search for someone" : confirmNext ? "Confirm next stranger" : "Leave and find next stranger"}
+              className={cn(
+                "h-7.5 px-2.5 gap-1 text-xs cursor-pointer rounded-full transition-all touch-manipulation active:scale-95 shadow-sm",
+                closed
+                  ? "bg-white text-zinc-950 hover:bg-zinc-200 font-medium shadow-[0_0_12px_rgba(255,255,255,0.2)]"
+                  : confirmNext
+                    ? "bg-amber-500/20 border border-amber-500/50 text-amber-200 hover:bg-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.2)]"
+                    : "bg-zinc-800 text-zinc-100 border border-white/10 hover:bg-zinc-700",
+              )}
+            >
+              <span className="text-xs font-medium">
+                {closed ? "Search" : confirmNext ? "Sure?" : "Next"}
+              </span>
+              <ArrowRight className="h-3 w-3" />
+            </Button>
+          )}
+
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            onClick={() => {
+              triggerHaptic("light");
+              setActionSheetOpen(true);
+            }}
+            aria-label="More actions"
+            title="More actions"
+            className="h-8.5 w-8.5 rounded-full border border-white/10 bg-zinc-900/80 text-zinc-300 hover:text-white hover:bg-zinc-800 active:scale-95 touch-manipulation cursor-pointer"
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* 2. Desktop Top Bar (Hidden on Mobile) */}
+      <div className="hidden sm:flex items-center justify-between gap-2 sm:gap-3 border-b border-white/[0.08] bg-zinc-950/40 px-3 py-1.5 sm:px-6 sm:py-2 backdrop-blur-md">
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="text-[11px] sm:text-xs text-zinc-500 font-mono">
             {sessionKind === "friend" ? "Direct Line" : "Open Orbit"}
@@ -301,7 +466,7 @@ export function LineView({
             }}
             disabled={busy}
             aria-label="Leave this chat"
-            className="h-7 sm:h-7.5 px-2 sm:px-2.5 gap-1 text-xs text-zinc-400 hover:text-zinc-100 hover:bg-zinc-855 cursor-pointer touch-manipulation active:scale-95"
+            className="h-7 sm:h-7.5 px-2 sm:px-2.5 gap-1 text-xs text-zinc-400 hover:text-zinc-100 hover:bg-zinc-850 cursor-pointer touch-manipulation active:scale-95"
             title="Leave this chat"
           >
             <DoorOpen className="h-3.5 w-3.5" />
@@ -498,6 +663,201 @@ export function LineView({
                 Submit Report & Block
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {actionSheetOpen && !closed && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Chat Actions"
+          onClick={closeActionSheet}
+          className="fixed inset-0 z-50 flex flex-col justify-end bg-black/65 backdrop-blur-sm animate-fade-up sm:hidden"
+        >
+          <div
+            className="w-full rounded-t-3xl border-t border-white/[0.14] bg-zinc-950/95 p-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-2xl animate-sheet-up space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mx-auto h-1 w-10 rounded-full bg-white/20 mb-1" />
+
+            <div className="flex items-center justify-between px-1 pb-2 border-b border-white/10">
+              <span className="text-xs font-mono font-semibold text-zinc-300 uppercase tracking-wider">
+                Chat Controls
+              </span>
+              <button
+                type="button"
+                onClick={closeActionSheet}
+                className="p-1.5 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 cursor-pointer"
+                aria-label="Close menu"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-1.5">
+              {canQsl ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("medium");
+                    closeActionSheet();
+                    onQsl();
+                  }}
+                  disabled={busy}
+                  className="flex items-center gap-3 w-full px-3.5 py-2.5 rounded-xl bg-zinc-900/80 border border-white/10 text-xs font-medium text-zinc-200 hover:bg-zinc-800 active:scale-[0.98] transition-all cursor-pointer text-left"
+                >
+                  <HeartHandshake className="h-4 w-4 text-emerald-400 shrink-0" />
+                  <div className="flex-1">
+                    <div className="text-zinc-100 font-semibold">Add to Contacts</div>
+                    <div className="text-[10px] text-zinc-400">Save stranger for direct line reconnection</div>
+                  </div>
+                </button>
+              ) : qslState === "pending" ? (
+                <div className="flex items-center gap-3 w-full px-3.5 py-2.5 rounded-xl bg-zinc-900/40 border border-white/5 text-xs text-zinc-400">
+                  <HeartHandshake className="h-4 w-4 text-amber-400 shrink-0" />
+                  <span>Contact invite sent (waiting for peer)</span>
+                </div>
+              ) : null}
+
+              {onToggleSound && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("light");
+                    onToggleSound();
+                  }}
+                  className="flex items-center gap-3 w-full px-3.5 py-2.5 rounded-xl bg-zinc-900/80 border border-white/10 text-xs font-medium text-zinc-200 hover:bg-zinc-800 active:scale-[0.98] transition-all cursor-pointer text-left"
+                >
+                  {soundEnabled ? (
+                    <Volume2 className="h-4 w-4 text-sky-400 shrink-0" />
+                  ) : (
+                    <VolumeX className="h-4 w-4 text-zinc-500 shrink-0" />
+                  )}
+                  <div className="flex-1">
+                    <div className="text-zinc-100 font-semibold">
+                      {soundEnabled ? "Sound Effects: ON" : "Sound Effects: OFF"}
+                    </div>
+                    <div className="text-[10px] text-zinc-400">Toggle chime, pop tones and micro-audio</div>
+                  </div>
+                </button>
+              )}
+
+              {hasHistory && onToggleHistory && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("light");
+                    closeActionSheet();
+                    onToggleHistory();
+                  }}
+                  className="flex items-center gap-3 w-full px-3.5 py-2.5 rounded-xl bg-zinc-900/80 border border-white/10 text-xs font-medium text-zinc-200 hover:bg-zinc-800 active:scale-[0.98] transition-all cursor-pointer text-left"
+                >
+                  <History className="h-4 w-4 text-zinc-300 shrink-0" />
+                  <div className="flex-1">
+                    <div className="text-zinc-100 font-semibold">24h Chat History</div>
+                    <div className="text-[10px] text-zinc-400">Review recent encrypted conversations</div>
+                  </div>
+                </button>
+              )}
+
+              {onToggleSettings && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("light");
+                    closeActionSheet();
+                    onToggleSettings();
+                  }}
+                  className="flex items-center gap-3 w-full px-3.5 py-2.5 rounded-xl bg-zinc-900/80 border border-white/10 text-xs font-medium text-zinc-200 hover:bg-zinc-800 active:scale-[0.98] transition-all cursor-pointer text-left"
+                >
+                  <Settings className="h-4 w-4 text-zinc-300 shrink-0" />
+                  <div className="flex-1">
+                    <div className="text-zinc-100 font-semibold">Settings</div>
+                    <div className="text-[10px] text-zinc-400">Preferences and cryptographic key info</div>
+                  </div>
+                </button>
+              )}
+
+              {onToggleLog && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("light");
+                    closeActionSheet();
+                    onToggleLog();
+                  }}
+                  className="flex items-center gap-3 w-full px-3.5 py-2.5 rounded-xl bg-zinc-900/80 border border-white/10 text-xs font-medium text-zinc-200 hover:bg-zinc-800 active:scale-[0.98] transition-all cursor-pointer text-left"
+                >
+                  <HeartHandshake className="h-4 w-4 text-zinc-300 shrink-0" />
+                  <div className="flex-1">
+                    <div className="text-zinc-100 font-semibold">Connections Log</div>
+                    <div className="text-[10px] text-zinc-400">Friends, station info and inbound lines</div>
+                  </div>
+                </button>
+              )}
+
+              {onReport && sessionKind === "stranger" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    closeActionSheet();
+                    setShowReportModal(true);
+                  }}
+                  className="flex items-center gap-3 w-full px-3.5 py-2.5 rounded-xl bg-zinc-900/80 border border-white/10 text-xs font-medium text-zinc-200 hover:bg-zinc-800 active:scale-[0.98] transition-all cursor-pointer text-left"
+                >
+                  <Flag className="h-4 w-4 text-amber-400 shrink-0" />
+                  <div className="flex-1">
+                    <div className="text-zinc-100 font-semibold">Report Stranger</div>
+                    <div className="text-[10px] text-zinc-400">Report spam, abuse, or safety violations</div>
+                  </div>
+                </button>
+              )}
+
+              {sessionKind === "stranger" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("heavy");
+                    closeActionSheet();
+                    onBlock();
+                  }}
+                  className="flex items-center gap-3 w-full px-3.5 py-2.5 rounded-xl bg-rose-950/30 border border-rose-500/20 text-xs font-medium text-rose-300 hover:bg-rose-950/50 active:scale-[0.98] transition-all cursor-pointer text-left"
+                >
+                  <Ban className="h-4 w-4 text-rose-400 shrink-0" />
+                  <div className="flex-1">
+                    <div className="font-semibold">Block Stranger</div>
+                    <div className="text-[10px] text-rose-400/80">Block this stranger from matching</div>
+                  </div>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic("light");
+                  closeActionSheet();
+                  onLeave();
+                }}
+                className="flex items-center gap-3 w-full px-3.5 py-2.5 rounded-xl bg-zinc-900/80 border border-white/10 text-xs font-medium text-zinc-300 hover:bg-zinc-800 active:scale-[0.98] transition-all cursor-pointer text-left"
+              >
+                <DoorOpen className="h-4 w-4 text-zinc-400 shrink-0" />
+                <div className="flex-1">
+                  <div className="text-zinc-200 font-semibold">Leave Chat</div>
+                  <div className="text-[10px] text-zinc-500">End session and return to desk</div>
+                </div>
+              </button>
+            </div>
+
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={closeActionSheet}
+              className="w-full h-10 text-xs font-mono text-zinc-400 hover:text-white hover:bg-zinc-900 rounded-xl"
+            >
+              Cancel
+            </Button>
           </div>
         </div>
       )}

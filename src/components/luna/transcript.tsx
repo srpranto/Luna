@@ -344,7 +344,6 @@ export function Transcript({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
-  const [showInterests, setShowInterests] = useState(true);
   const [linkPreviewsEnabled] = useState(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("luna_link_previews_enabled") !== "false";
@@ -396,13 +395,6 @@ export function Transcript({
   }
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setShowInterests(false);
-    }, 20000);
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
     const container = endRef.current?.closest(".overflow-y-auto") as HTMLElement | null;
     const lastMsg = messages[messages.length - 1];
     const isMine = lastMsg?.mine;
@@ -447,41 +439,36 @@ export function Transcript({
 
   return (
     <div className="flex flex-1 flex-col justify-end p-3 sm:p-6 space-y-3 sm:space-y-4 select-none">
-      <div className="animate-fade-up mx-auto my-1 w-full max-w-xs sm:max-w-sm rounded-xl border border-white/10 bg-zinc-950/75 p-2.5 sm:p-3 text-center backdrop-blur-md shadow-sm transition-all duration-500">
-        <div className="flex items-center justify-center gap-1.5 text-[11px] text-zinc-400 font-mono">
-          <Lock className="h-3 w-3 text-zinc-100 shrink-0" />
-          <span className="font-semibold text-zinc-300">End-to-End Encrypted</span>
-          {!showInterests && (
-            <>
-              <span className="text-zinc-600">•</span>
-              <span className="text-zinc-500">Expires in 24h</span>
-            </>
-          )}
+      <div className="animate-fade-up mx-auto my-1.5 w-full max-w-xs sm:max-w-md rounded-2xl border border-white/[0.08] bg-zinc-950/75 p-3.5 sm:p-4 text-center backdrop-blur-xl shadow-lg transition-all select-none">
+        <div className="flex items-center justify-center gap-1.5 text-[11px] font-mono text-zinc-400">
+          <Lock className="h-3 w-3 text-emerald-400 shrink-0" />
+          <span className="font-semibold text-zinc-200">End-to-End Encrypted</span>
+          <span className="text-zinc-600">•</span>
+          <span className="text-zinc-500">Ephemeral (24h)</span>
         </div>
-        <p className="mt-1 text-xs text-zinc-200 font-medium">
-          You are chatting with a stranger. Say hello!
-        </p>
-        {showInterests && (
-          <p className="mt-0.5 text-[10px] text-zinc-500 transition-opacity">
-            Private & ephemeral • Expires automatically after 24 hours
-          </p>
-        )}
-        {showInterests && interests.length > 0 && (
-          <div className="mt-2 pt-2 border-t border-white/5 flex flex-col items-center gap-1.5 transition-all">
-            <span className="text-[11px] text-zinc-400 font-medium">
-              You both like
+
+        {interests && interests.length > 0 ? (
+          <div className="mt-2 text-xs sm:text-[13px] text-zinc-200 leading-relaxed font-normal">
+            <span>You&apos;re chatting with a stranger. You both like </span>
+            <span className="inline-flex flex-wrap items-center justify-center gap-1 align-baseline my-0.5">
+              {interests.map((tag) => {
+                const cleanTag = tag.trim().startsWith("#") ? tag.trim().slice(1) : tag.trim();
+                return (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-mono font-semibold bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 shadow-sm"
+                  >
+                    #{cleanTag}
+                  </span>
+                );
+              })}
             </span>
-            <div className="flex flex-wrap items-center justify-center gap-1.5">
-              {interests.map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded-full bg-zinc-900 border border-white/10 px-2.5 py-0.5 text-[10px] font-mono text-zinc-300 shadow-sm"
-                >
-                  #{tag}
-                </span>
-              ))}
-            </div>
+            <span>. Say hello!</span>
           </div>
+        ) : (
+          <p className="mt-1.5 text-xs sm:text-[13px] text-zinc-200 font-normal">
+            You&apos;re chatting with a stranger. Say hello!
+          </p>
         )}
       </div>
 
