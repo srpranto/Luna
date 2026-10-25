@@ -46,6 +46,7 @@ import {
   blockUser,
   reportUser,
   requestReconnect,
+  markSeen,
 } from "@/lib/luna/client";
 import {
   isSoundEnabled,
@@ -119,6 +120,9 @@ const subscribeNetwork = (cb: () => void) => {
     window.removeEventListener("offline", cb);
   };
 };
+
+const isWindowFocused = () =>
+  typeof document !== "undefined" && !document.hidden && (document.hasFocus ? document.hasFocus() : true);
 
 let lastTypingReport = 0;
 
@@ -380,6 +384,9 @@ export default function Home() {
           if (!leftSessionIdsRef.current.has(packId)) {
             setSessionView(pack.session);
             mergeAndStoreMessages(pack.session.id, pack.session, displayMsgs, true);
+            if (isWindowFocused() && !pack.session.closed) {
+              void markSeen({ deviceId, sessionId: pack.session.id }).catch(() => {});
+            }
           }
         }
       } else if (eventType === "message_edited") {
@@ -510,7 +517,8 @@ export default function Home() {
 
     const syncSessionMessages = () => {
       const targetSessionId = currentSession.id;
-      listMessages({ deviceId, sessionId: targetSessionId })
+      const focused = isWindowFocused();
+      listMessages({ deviceId, sessionId: targetSessionId, markSeen: focused })
         .then(async (pack) => {
           if (
             cancelled ||
@@ -534,6 +542,24 @@ export default function Home() {
       window.clearInterval(interval);
     };
   }, [deviceId, currentSession?.id, decryptPack, mergeAndStoreMessages]);
+
+  useEffect(() => {
+    if (!deviceId || !currentSession?.id || currentSession.closed) return;
+    const sessionId = currentSession.id;
+
+    const onFocusOrVisible = () => {
+      if (isWindowFocused() && activeSessionRef.current?.id === sessionId && !activeSessionRef.current?.closed) {
+        void markSeen({ deviceId, sessionId }).catch(() => {});
+      }
+    };
+
+    window.addEventListener("focus", onFocusOrVisible);
+    document.addEventListener("visibilitychange", onFocusOrVisible);
+    return () => {
+      window.removeEventListener("focus", onFocusOrVisible);
+      document.removeEventListener("visibilitychange", onFocusOrVisible);
+    };
+  }, [deviceId, currentSession?.id, currentSession?.closed]);
 
   useEffect(() => {
     if (currentSession?.id) {

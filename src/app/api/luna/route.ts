@@ -23,6 +23,7 @@ import {
   blockUser,
   reportUser,
   requestReconnect,
+  markMessagesSeen,
 } from "@/lib/luna/server";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +50,7 @@ interface RequestBody {
   reason?: string;
   recentPeerIds?: string[];
   isReaction?: boolean;
+  markSeen?: boolean;
 }
 
 interface RateLimitBucket {
@@ -134,7 +136,15 @@ const actionHandlers: Record<string, ActionHandler> = {
   },
   listMessages: (p) => {
     requireFields(p, "sessionId");
-    return listMessages({ deviceId: p.deviceId!, sessionId: p.sessionId! });
+    return listMessages({
+      deviceId: p.deviceId!,
+      sessionId: p.sessionId!,
+      markSeen: p.markSeen !== undefined ? Boolean(p.markSeen) : undefined,
+    });
+  },
+  markSeen: (p) => {
+    requireFields(p, "sessionId");
+    return markMessagesSeen({ deviceId: p.deviceId!, sessionId: p.sessionId! });
   },
   sendMessage: (p) => {
     if (!p.sessionId || typeof p.body !== "string") throw new Error("Missing sessionId or message body.");

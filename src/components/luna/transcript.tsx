@@ -102,7 +102,7 @@ function CodeBlock({
   return (
     <div
       className={cn(
-        "my-2 rounded-xl overflow-hidden border font-mono text-xs select-text shadow-sm text-left bg-zinc-950 text-zinc-100",
+        "my-2 rounded-xl overflow-hidden border font-mono text-xs select-text shadow-sm text-left bg-zinc-950 text-zinc-100 max-w-full min-w-0",
         isMine ? "border-zinc-800" : "border-white/10",
       )}
     >
@@ -422,7 +422,6 @@ export function Transcript({
 
   const [mountStamp] = useState(() => (now ? now.getTime() : Date.now()));
   const stamp = now ? now.getTime() : mountStamp;
-  const lastMineMsgId = [...messages].reverse().find((m) => m.mine && !m.system)?.id;
 
   function handleStartEditing(id: string, currentText: string) {
     setEditingId(id);
@@ -632,7 +631,7 @@ export function Transcript({
                     </div>
                   </div>
                 ) : (
-                  <div className="relative inline-flex items-center max-w-[85%] sm:max-w-[70%]">
+                  <div className="relative inline-flex items-center max-w-[88%] sm:max-w-[76%] md:max-w-[68%] min-w-0">
                     <div
                       onTouchStart={(e) => handleTouchStart(e, msg.id)}
                       onTouchMove={(e) => handleTouchMove(e, msg.id)}
@@ -643,14 +642,16 @@ export function Transcript({
                         transition: isSwipingThis ? "none" : "transform 0.2s cubic-bezier(0.2, 0, 0, 1)",
                       }}
                       className={cn(
-                        "relative inline-block w-fit rounded-2xl px-3.5 py-2 text-xs sm:text-sm leading-relaxed break-words shadow-sm touch-pan-y",
+                        "relative flex flex-col w-fit rounded-2xl px-3.5 py-2.5 sm:px-4 sm:py-3 text-xs sm:text-sm leading-relaxed break-words [overflow-wrap:anywhere] [word-break:break-word] shadow-sm touch-pan-y min-w-[72px] select-text transition-all duration-150",
                         isMine
-                          ? "bg-zinc-100 text-zinc-950 rounded-br-xs font-normal"
-                          : "bg-zinc-900 border border-white/10 text-zinc-100 rounded-bl-xs",
+                          ? "bg-zinc-100 text-zinc-950 rounded-tr-xs font-normal shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
+                          : "bg-zinc-900/90 border border-white/[0.08] text-zinc-100 rounded-tl-xs shadow-[0_1px_3px_rgba(0,0,0,0.2)] backdrop-blur-xs",
                       )}
                       title={formatClock(new Date(msg.createdAt))}
                     >
-                      <div className="inline">{renderFormattedBody(msg.body, isMine)}</div>
+                      <div className="w-full text-left font-sans select-text leading-relaxed break-words [overflow-wrap:anywhere] [word-break:break-word]">
+                        {renderFormattedBody(msg.body, isMine)}
+                      </div>
                       {linkPreviewsEnabled && (() => {
                         const previewUrl = extractFirstUrl(msg.body);
                         if (!previewUrl) return null;
@@ -674,31 +675,34 @@ export function Transcript({
                           )}
                         </div>
                       )}
-                      <span className="inline-flex items-center gap-1 float-right mt-1.5 ml-2.5 text-[10px] font-mono select-none">
-                        <span className="hidden group-hover:inline text-[10px] text-zinc-500 transition-opacity">
+                      <div
+                        className={cn(
+                          "flex items-center gap-1.5 mt-1 pt-0.5 select-none text-[10px] font-mono leading-none",
+                          isMine ? "justify-end text-zinc-500" : "justify-start text-zinc-500",
+                        )}
+                      >
+                        <span className="tabular-nums opacity-80 text-[10px]">
                           {formatClock(new Date(msg.createdAt))}
                         </span>
                         {msg.editedAt && (
-                          <span className="text-[9px] italic text-zinc-500">
+                          <span className="text-[9px] italic opacity-70">
                             edited
                           </span>
                         )}
                         {remaining && (
-                          <span className="text-[9px] hidden group-hover:inline text-zinc-500">
+                          <span className="text-[9px] hidden group-hover:inline opacity-70">
                             ({remaining})
                           </span>
                         )}
                         {isMine && !isSystem && (
                           <span
                             className={cn(
-                              "inline-flex items-center text-[10px] select-none transition-colors ml-0.5",
+                              "inline-flex items-center text-[11px] font-bold tracking-tighter transition-colors ml-0.5",
                               msg.status === "failed"
                                 ? "text-rose-500 font-bold"
                                 : msg.seenAt || msg.status === "seen"
-                                  ? "text-zinc-950 font-bold"
-                                  : msg.status === "sending"
-                                    ? "text-zinc-500 font-normal opacity-70"
-                                    : "text-zinc-500 font-medium",
+                                  ? "text-sky-400 drop-shadow-[0_0_6px_rgba(56,189,248,0.4)]"
+                                  : "text-zinc-400 font-normal",
                             )}
                             title={
                               msg.status === "failed"
@@ -714,12 +718,12 @@ export function Transcript({
                           >
                             {msg.status === "failed"
                               ? "!"
-                              : (msg.seenAt || msg.status === "seen")
+                              : msg.seenAt || msg.status === "seen"
                                 ? "✓✓"
                                 : "✓"}
                           </span>
                         )}
-                      </span>
+                      </div>
                     </div>
 
                     {isSwipingThis && currentOffset < -5 && (
@@ -738,17 +742,6 @@ export function Transcript({
                   </div>
                 )}
               </div>
-
-              {msg.id === lastMineMsgId && !closed && (
-                <div className="flex items-center justify-end px-1 pt-0.5 text-[10px] font-mono select-none animate-fade-up">
-                  <span className={cn("text-[10px] flex items-center gap-1", msg.seenAt ? "text-zinc-100 font-medium" : "text-zinc-400")}>
-                    <span>{msg.seenAt ? "Seen" : "Delivered"}</span>
-                    <span className={cn("text-[11px] font-bold tracking-tighter", msg.seenAt ? "text-zinc-100 drop-shadow-[0_0_4px_rgba(255,255,255,0.4)]" : "text-zinc-400")}>
-                      {msg.seenAt ? "✓✓" : "✓"}
-                    </span>
-                  </span>
-                </div>
-              )}
             </div>
           );
         })}

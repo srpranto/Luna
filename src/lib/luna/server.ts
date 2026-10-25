@@ -408,6 +408,7 @@ async function loadMessagesPack(
   deviceId: string,
   sessionId: string,
   skipEmit = false,
+  markSeen = true,
 ): Promise<MessagesPack> {
   const sql = await getSql();
   await sql`update stations set last_seen = now() where device_id = ${deviceId}`;
@@ -453,7 +454,7 @@ async function loadMessagesPack(
   `;
 
   let markedSeen = false;
-  if (!isAway) {
+  if (!isAway && markSeen) {
     try {
       const updated = await sql<{ id: string }>`
         update messages
@@ -1051,9 +1052,10 @@ export async function requestReconnect(input: {
 export async function listMessages(input: {
   deviceId: string;
   sessionId: string;
+  markSeen?: boolean;
 }): Promise<MessagesPack> {
   const deviceId = requireDeviceId(input.deviceId);
-  return loadMessagesPack(deviceId, input.sessionId);
+  return loadMessagesPack(deviceId, input.sessionId, false, input.markSeen !== false);
 }
 
 export async function sendMessage(input: {
@@ -1312,6 +1314,43 @@ export async function reportPresence(input: {
       }
     }
   }
+
+  return { ok: true };
+}
+
+export async function markMessagesSeen(input: {
+  deviceId: string;
+  sessionId: string;
+}): Promise<{ ok: boolean }> {
+  const deviceId = requireDeviceId(input.deviceId);
+  const sql = await getSql();
+
+  const sessionRows = await sql<SessionRow>`
+    select id, a_id, b_id, kind, closed_at
+    from sessions
+    where id = ${input.sessionId}
+      and (a_id = ${deviceId} or b_id = ${deviceId})
+  `;
+  const session = sessionRows[0];
+  if (!session || session.closed_at) return { ok: false };
+
+  const peerId = peerOf(session, deviceId);
+  try {
+    const updated = await sql<{ id: string }>`
+      update messages
+      set seen_at = coalesce(seen_at, now())
+      where session_id = ${session.id}
+        and from_id = ${peerId}
+        and seen_at is null
+      returning id
+    `;
+    if (updated.length > 0) {
+      emitToDevice(peerId, "messages_seen", {
+        sessionId: session.id,
+        seenAt: new Date().toISOString(),
+      });
+    }
+  } catch {}
 
   return { ok: true };
 }
