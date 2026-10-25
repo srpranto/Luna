@@ -1245,20 +1245,7 @@ export default function Home() {
           </div>
         )}
 
-        {settingsOpen ? (
-          <SettingsPanel
-            isOpen={settingsOpen}
-            desk={fallbackDesk}
-            onClose={() => closeOverlayModal("settings")}
-            onCallsignUpdated={handleDeskUpdate}
-            onStationReset={() => {
-              setDeviceId(null);
-              const nextId = getOrCreateDeviceId();
-              setDeviceId(nextId);
-              if (nextId) void getDesk({ deviceId: nextId }).then(handleDeskUpdate).catch(() => {});
-            }}
-          />
-        ) : logOpen ? (
+        {logOpen && !currentSession ? (
           <LogPanel
             desk={fallbackDesk}
             onOpenFriend={handleOpenFriendLine}
@@ -1366,6 +1353,46 @@ export default function Home() {
           setHistorySessions([]);
         }}
       />
+
+      {settingsOpen && (
+        <SettingsPanel
+          isOpen={settingsOpen}
+          desk={fallbackDesk}
+          onClose={() => closeOverlayModal("settings")}
+          onCallsignUpdated={handleDeskUpdate}
+          onStationReset={() => {
+            setDeviceId(null);
+            const nextId = getOrCreateDeviceId();
+            setDeviceId(nextId);
+            if (nextId) void getDesk({ deviceId: nextId }).then(handleDeskUpdate).catch(() => {});
+          }}
+        />
+      )}
+
+      {logOpen && currentSession && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Connections Log"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeOverlayModal("log");
+          }}
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+        >
+          <div className="relative flex flex-col w-full max-w-lg max-h-[90vh] sm:max-h-[85vh] rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 bg-zinc-950/95 shadow-2xl overflow-hidden animate-sheet-up sm:animate-none">
+            <LogPanel
+              desk={fallbackDesk}
+              onOpenFriend={(fid) => {
+                closeOverlayModal("log");
+                handleOpenFriendLine(fid);
+              }}
+              onRespond={handleRespondQsl}
+              onClose={() => closeOverlayModal("log")}
+              busy={busy}
+            />
+          </div>
+        </div>
+      )}
 
       {voidOpen && (
         <VoidLetters

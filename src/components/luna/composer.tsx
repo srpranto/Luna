@@ -342,7 +342,7 @@ export function Composer({
                 clearTypingTimer();
                 onTyping?.(false);
               }}
-              className="min-h-[40px] max-h-[200px] w-full resize-none rounded-xl border border-zinc-800 bg-zinc-900/60 pl-3.5 pr-14 py-2.5 text-base sm:text-sm text-zinc-100 placeholder:text-zinc-400 shadow-inner transition-colors focus:border-white/30 focus:ring-1 focus:ring-white/20 focus:outline-none disabled:opacity-40 leading-relaxed overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+              className="min-h-[40px] max-h-[200px] w-full resize-none rounded-2xl border border-zinc-800 bg-zinc-900/60 pl-3.5 pr-14 py-2.5 text-base sm:text-sm text-zinc-100 placeholder:text-zinc-400 shadow-inner transition-colors focus:border-white/30 focus:ring-1 focus:ring-white/20 focus:outline-none disabled:opacity-40 leading-relaxed overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             />
             {value.length > 0 && (
               <span
@@ -370,7 +370,7 @@ export function Composer({
               aria-label="Celestial reactions"
               title="Celestial reactions"
               className={cn(
-                "h-10 w-10 min-h-[44px] min-w-[44px] sm:min-h-[40px] sm:min-w-[40px] p-0 rounded-xl text-zinc-400 hover:text-zinc-100 hover:bg-zinc-850 shrink-0 cursor-pointer transition-all duration-200 ease-coloros active:scale-[0.94] touch-manipulation",
+                "h-10 w-10 min-h-[40px] min-w-[40px] p-0 rounded-2xl text-zinc-400 hover:text-zinc-100 hover:bg-zinc-850 shrink-0 cursor-pointer transition-all duration-200 ease-coloros active:scale-[0.94] touch-manipulation flex items-center justify-center",
                 showReactions && "text-zinc-100 bg-zinc-800 ring-1 ring-white/20",
               )}
             >
@@ -384,7 +384,7 @@ export function Composer({
             size="sm"
             aria-label="Send message"
             title="Send message (Enter, Shift+Enter for new line)"
-            className="h-10 min-h-[44px] sm:min-h-[40px] px-3.5 min-w-[44px] sm:min-w-0 shrink-0 bg-zinc-100 text-zinc-950 hover:bg-white shadow-[0_0_15px_rgba(255,255,255,0.15)] active:scale-[0.94] transition-all duration-200 ease-coloros rounded-xl font-medium cursor-pointer touch-manipulation"
+            className="h-10 min-h-[40px] px-3.5 min-w-[40px] shrink-0 bg-zinc-100 text-zinc-950 hover:bg-white shadow-[0_0_15px_rgba(255,255,255,0.15)] active:scale-[0.94] transition-all duration-200 ease-coloros rounded-2xl font-medium cursor-pointer touch-manipulation flex items-center justify-center gap-1"
           >
             <ArrowUp className="h-4 w-4" />
             <span className="hidden sm:inline">Send</span>

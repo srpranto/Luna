@@ -137,9 +137,11 @@ export function StatusHeader({
       </div>
 
       <div className="relative z-10 flex items-center gap-2 sm:gap-3 min-w-0 shrink-0">
-        <div className="flex h-7.5 w-7.5 sm:h-8 sm:w-8 items-center justify-center rounded-xl border border-white/10 bg-zinc-900/90 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_2px_8px_rgba(0,0,0,0.4)] backdrop-blur-md">
-          <LunaMoon className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-zinc-100" glow />
-        </div>
+        {!activeChat && (
+          <div className="flex h-7.5 w-7.5 sm:h-8 sm:w-8 items-center justify-center rounded-xl border border-white/10 bg-zinc-900/90 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_2px_8px_rgba(0,0,0,0.4)] backdrop-blur-md">
+            <LunaMoon className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-zinc-100" glow />
+          </div>
+        )}
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold tracking-tight text-zinc-100">Luna</span>
@@ -168,7 +170,7 @@ export function StatusHeader({
 
       {activeChat ? (
         <div className="relative z-10 flex-1 min-w-0 flex items-center justify-center gap-2 sm:gap-3 px-2 overflow-hidden">
-          <div className="flex items-center gap-1.5 min-w-0 max-w-[140px] sm:max-w-[220px]">
+          <div className="flex items-center gap-1.5 min-w-0">
             <span
               className={cn(
                 "h-2 w-2 rounded-full shrink-0",
@@ -186,16 +188,17 @@ export function StatusHeader({
                     : "Active"
               }
             />
-            <span className="text-xs sm:text-sm font-semibold font-mono text-zinc-100 truncate">
+            <span className="text-xs sm:text-sm font-semibold font-mono text-zinc-100">
               {activeChat.peerCallsign}
             </span>
-            {activeChat.peerPresence === "away" && (
-              <span className="text-[10px] font-mono text-amber-400/90 shrink-0">(away)</span>
-            )}
-            {activeChat.peerTyping && (
-              <span className="text-[10px] font-mono text-emerald-400/90 animate-pulse hidden sm:inline shrink-0">
+            {activeChat.peerTyping ? (
+              <span className="text-[10px] font-mono text-emerald-400/90 animate-pulse shrink-0">
                 (typing...)
               </span>
+            ) : activeChat.peerPresence === "away" ? (
+              <span className="text-[10px] font-mono text-amber-400/90 shrink-0">(away)</span>
+            ) : (
+              <span className="text-[10px] font-mono text-emerald-400/90 shrink-0">(active)</span>
             )}
           </div>
           <div className="flex items-center justify-center">

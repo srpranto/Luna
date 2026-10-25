@@ -235,14 +235,14 @@
 
 .animate-bubble-mine {
   transform-origin: bottom right;
-  animation: bubble-in-mine 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+  animation: bubble-in-mine 0.16s cubic-bezier(0.175, 0.885, 0.32, 1.15) both;
   will-change: transform, opacity;
   backface-visibility: hidden;
 }
 
 .animate-bubble-peer {
   transform-origin: bottom left;
-  animation: bubble-in-peer 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+  animation: bubble-in-peer 0.16s cubic-bezier(0.175, 0.885, 0.32, 1.15) both;
   will-change: transform, opacity;
   backface-visibility: hidden;
 }

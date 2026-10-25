@@ -226,6 +226,8 @@ export async function establishSharedKey(
   peerPublicKeyHex: string,
 ): Promise<CryptoKey | null> {
   if (typeof window === "undefined" || !crypto?.subtle) return null;
+  const existing = ecdhStore.get(sessionId);
+  if (existing?.sharedKey) return existing.sharedKey;
   const keyPair = await getOrCreateDeviceKeyPair(deviceId);
   if (!keyPair) return null;
 

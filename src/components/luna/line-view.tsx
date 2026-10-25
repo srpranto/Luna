@@ -26,7 +26,6 @@ import { Composer } from "@/components/luna/composer";
 import { triggerHaptic } from "@/lib/luna/sound";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@/lib/luna/types";
-import { LunaMoon } from "@/components/luna/luna-moon";
 import { SessionElapsedBadge } from "@/components/luna/status-header";
 
 export function LineView({
@@ -149,9 +148,10 @@ export function LineView({
     };
   }, [actionSheetOpen]);
 
-  const closeActionSheet = () => {
+  const closeActionSheet = (popHistory: boolean | unknown = true) => {
     setActionSheetOpen(false);
-    if (typeof window !== "undefined" && window.history.state?.sheet === "actions") {
+    const shouldPop = typeof popHistory === "boolean" ? popHistory : true;
+    if (shouldPop && typeof window !== "undefined" && window.history.state?.sheet === "actions") {
       window.history.back();
     }
   };
@@ -294,47 +294,46 @@ export function LineView({
     <section className="flex min-h-0 flex-1 flex-col">
       {/* 1. Mobile Phone Unified Dynamic Island Capsule Header */}
       <div className="sm:hidden flex items-center justify-between gap-1.5 mx-2 mt-2 px-3 py-2 rounded-2xl border border-white/[0.12] bg-zinc-900/60 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.12)] shrink-0 z-30">
-        {/* Left: Stranger Avatar + Callsign + Electric Jade Dot */}
-        <div className="flex items-center gap-2 min-w-0 max-w-[130px]">
-          <div className="relative flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-zinc-950/80 shrink-0">
-            <LunaMoon className="h-4 w-4 text-zinc-100" glow />
-            <span
-              className={cn(
-                "absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-zinc-950 shrink-0",
-                peerPresence === "away"
-                  ? "bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.6)]"
-                  : peerPresence === "disconnected"
-                    ? "bg-zinc-600"
-                    : "bg-emerald-400 shadow-[0_0_8px_rgba(5,223,114,0.8)] animate-pulse",
-              )}
-            />
-          </div>
-          <div className="min-w-0">
-            <span className="text-xs font-semibold font-mono text-zinc-100 truncate block">
+        {/* Left: Full Callsign + Active/Away Status in Stranger's Location */}
+        <div className="flex items-center gap-2 min-w-0 max-w-[150px]">
+          <div className="min-w-0 flex flex-col">
+            <span className="text-xs sm:text-sm font-semibold font-mono text-zinc-100 truncate block">
               {peerCallsign}
             </span>
-            {peerTyping ? (
-              <span className="text-[10px] font-mono text-emerald-400 animate-pulse block leading-none">
-                typing...
-              </span>
-            ) : peerPresence === "away" ? (
-              <span className="text-[10px] font-mono text-amber-400/90 block leading-none">
-                away
-              </span>
-            ) : (
-              <span className="text-[10px] font-mono text-zinc-400 block leading-none">
-                {sessionKind === "friend" ? "friend" : "stranger"}
-              </span>
-            )}
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span
+                className={cn(
+                  "h-1.5 w-1.5 rounded-full shrink-0",
+                  peerPresence === "away"
+                    ? "bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.6)]"
+                    : peerPresence === "disconnected"
+                      ? "bg-zinc-600"
+                      : "bg-emerald-400 shadow-[0_0_8px_rgba(5,223,114,0.8)] animate-pulse",
+                )}
+              />
+              {peerTyping ? (
+                <span className="text-[10px] font-mono text-emerald-400 animate-pulse block leading-none">
+                  typing...
+                </span>
+              ) : peerPresence === "away" ? (
+                <span className="text-[10px] font-mono text-amber-400/90 block leading-none">
+                  away
+                </span>
+              ) : (
+                <span className="text-[10px] font-mono text-emerald-400/90 block leading-none">
+                  active
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Center: Centered Elapsed Timer (Topic moved to chat welcome banner) */}
+        {/* Center: Centered Elapsed Timer */}
         <div className="flex items-center justify-center min-w-0 flex-1 px-1">
           <SessionElapsedBadge createdAt={createdAt} />
         </div>
 
-        {/* Right: Next button + Action Menu (•••) */}
+        {/* Right: Next + Leave + 3 Dots (•••) */}
         <div className="flex items-center gap-1.5 shrink-0">
           {sessionKind === "stranger" && (
             <Button
@@ -362,6 +361,23 @@ export function LineView({
 
           <Button
             type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              triggerHaptic("light");
+              onLeave();
+            }}
+            disabled={busy}
+            aria-label="Leave chat"
+            title="Leave chat"
+            className="h-7.5 px-2.5 gap-1 text-xs cursor-pointer rounded-full border border-white/10 bg-zinc-900/60 text-zinc-300 hover:text-white hover:bg-zinc-800 active:scale-95 touch-manipulation font-medium shadow-sm"
+          >
+            <DoorOpen className="h-3.5 w-3.5 text-zinc-400" />
+            <span className="text-xs">Leave</span>
+          </Button>
+
+          <Button
+            type="button"
             size="icon"
             variant="ghost"
             onClick={() => {
@@ -370,7 +386,7 @@ export function LineView({
             }}
             aria-label="More actions"
             title="More actions"
-            className="h-8.5 w-8.5 rounded-full border border-white/10 bg-zinc-900/80 text-zinc-300 hover:text-white hover:bg-zinc-800 active:scale-95 touch-manipulation cursor-pointer"
+            className="h-7.5 w-7.5 rounded-full border border-white/10 bg-zinc-900/80 text-zinc-300 hover:text-white hover:bg-zinc-800 active:scale-95 touch-manipulation cursor-pointer"
           >
             <MoreHorizontal className="h-4 w-4" />
           </Button>
@@ -748,7 +764,7 @@ export function LineView({
                   type="button"
                   onClick={() => {
                     triggerHaptic("light");
-                    closeActionSheet();
+                    closeActionSheet(false);
                     onToggleHistory();
                   }}
                   className="flex items-center gap-3 w-full px-3.5 py-2.5 rounded-xl bg-zinc-900/80 border border-white/10 text-xs font-medium text-zinc-200 hover:bg-zinc-800 active:scale-[0.98] transition-all cursor-pointer text-left"
@@ -766,7 +782,7 @@ export function LineView({
                   type="button"
                   onClick={() => {
                     triggerHaptic("light");
-                    closeActionSheet();
+                    closeActionSheet(false);
                     onToggleSettings();
                   }}
                   className="flex items-center gap-3 w-full px-3.5 py-2.5 rounded-xl bg-zinc-900/80 border border-white/10 text-xs font-medium text-zinc-200 hover:bg-zinc-800 active:scale-[0.98] transition-all cursor-pointer text-left"
@@ -784,7 +800,7 @@ export function LineView({
                   type="button"
                   onClick={() => {
                     triggerHaptic("light");
-                    closeActionSheet();
+                    closeActionSheet(false);
                     onToggleLog();
                   }}
                   className="flex items-center gap-3 w-full px-3.5 py-2.5 rounded-xl bg-zinc-900/80 border border-white/10 text-xs font-medium text-zinc-200 hover:bg-zinc-800 active:scale-[0.98] transition-all cursor-pointer text-left"
@@ -802,7 +818,7 @@ export function LineView({
                   type="button"
                   onClick={() => {
                     triggerHaptic("selection");
-                    closeActionSheet();
+                    closeActionSheet(false);
                     setShowReportModal(true);
                   }}
                   className="flex items-center gap-3 w-full px-3.5 py-2.5 rounded-xl bg-zinc-900/80 border border-white/10 text-xs font-medium text-zinc-200 hover:bg-zinc-800 active:scale-[0.98] transition-all cursor-pointer text-left"
