@@ -384,7 +384,7 @@ export function Composer({
             size="sm"
             aria-label="Send message"
             title="Send message (Enter, Shift+Enter for new line)"
-            className="h-10 min-h-[40px] px-3.5 sm:px-4 w-10 sm:w-auto min-w-[40px] shrink-0 bg-white text-zinc-950 hover:bg-zinc-100 disabled:bg-zinc-800 disabled:text-zinc-500 disabled:border-white/5 border border-transparent shadow-[0_0_20px_rgba(255,255,255,0.15)] active:scale-95 transition-all duration-150 ease-coloros rounded-full font-semibold cursor-pointer touch-manipulation flex items-center justify-center gap-1.5"
+            className="h-10 min-h-[40px] p-0 sm:px-4 w-10 sm:w-auto min-w-[40px] shrink-0 bg-white text-zinc-950 hover:bg-zinc-100 disabled:bg-zinc-800 disabled:text-zinc-500 disabled:border-white/5 border border-transparent shadow-[0_0_20px_rgba(255,255,255,0.15)] active:scale-95 transition-all duration-150 ease-coloros rounded-full font-semibold cursor-pointer touch-manipulation flex items-center justify-center gap-1.5"
           >
             <ArrowUp className="h-4 w-4 stroke-[2.5]" />
             <span className="hidden sm:inline text-xs font-semibold">Send</span>

@@ -1,4 +1,5 @@
 const STORAGE_PREFIX = "luna.user";
+const SECRET_PREFIX = "luna.secret";
 
 export function deskName(): string {
   if (typeof window === "undefined") return "main";
@@ -14,6 +15,19 @@ export function getOrCreateDeviceId(): string {
   const id = crypto.randomUUID();
   localStorage.setItem(key, id);
   return id;
+}
+
+export function getOrCreateDeviceSecret(): string {
+  if (typeof window === "undefined") return "server-secret-placeholder";
+  const key = `${SECRET_PREFIX}.${deskName()}`;
+  const existing = localStorage.getItem(key);
+  if (existing) return existing;
+  const secret =
+    typeof crypto !== "undefined" && crypto.randomUUID
+      ? `${crypto.randomUUID()}-${crypto.randomUUID()}`.replace(/-/g, "")
+      : Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+  localStorage.setItem(key, secret);
+  return secret;
 }
 
 export const getCachedCustomName = (): string | null =>

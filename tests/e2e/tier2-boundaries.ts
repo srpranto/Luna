@@ -592,4 +592,67 @@ export function registerTier2Tests() {
       expect(res.status).toBe(400);
     });
   });
+
+  describe('Tier 2: Feature 14 Boundary - Device Authentication & Architecture Hardening', () => {
+    it('TC-2.14.1: Impersonator using victim deviceId with invalid secret is rejected with 401', async () => {
+      const victimId = 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1';
+      const victimSecret = 'valid-victim-secret-1234567890abcdef';
+      // Register legitimate station with its secret
+      const reg = await callApi('registerStation', { deviceId: victimId, deviceSecret: victimSecret });
+      expect(reg.status).toBe(200);
+
+      // Attacker learns victimId (e.g. from peerId) and attempts to delete station with attacker's secret
+      const forged = await callApi('deleteStation', {
+        deviceId: victimId,
+        deviceSecret: 'attacker-unauthorized-secret-999',
+      });
+      expect(forged.status).toBe(401);
+      expect(forged.ok).toBe(false);
+      expect(forged.error).toContain('Unauthorized');
+    });
+
+    it('TC-2.14.2: Legitimate device with valid secret successfully authorizes operations', async () => {
+      const legitId = 'b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2';
+      const legitSecret = 'legit-device-secret-1234567890abcdef';
+      const reg = await callApi('registerStation', { deviceId: legitId, deviceSecret: legitSecret });
+      expect(reg.status).toBe(200);
+
+      const deskRes = await callApi('getDesk', { deviceId: legitId, deviceSecret: legitSecret });
+      expect(deskRes.status).toBe(200);
+      expect(deskRes.ok).toBe(true);
+    });
+
+    it('TC-2.14.3: deriveSafetyNumber produces identical 12-digit fingerprint for both participants', async () => {
+      const { deriveSafetyNumber } = await import('@/lib/luna/crypto.ts');
+      const keyAlice = '04a1b2c3d4e5f60102030405060708091011121314151617181920212223242526';
+      const keyBob = '04f6e5d4c3b2a12625242322212019181716151413121110090807060504030201';
+
+      const safetyA = await deriveSafetyNumber(keyAlice, keyBob);
+      const safetyB = await deriveSafetyNumber(keyBob, keyAlice);
+
+      expect(safetyA).toBe(safetyB);
+      expect(/^\d{4} \d{4} \d{4}$/.test(safetyA)).toBe(true);
+    });
+
+    it('TC-2.14.4: device_events retention policy prunes entries older than 6 hours during cleanup', async () => {
+      const { getSql } = await import('@/lib/luna/db.ts');
+      const { runPeriodicCleanup } = await import('@/lib/luna/server.ts');
+      const sql = await getSql();
+
+      // Insert an expired event from 12 hours ago
+      await sql`
+        insert into device_events (device_id, type, data, created_at)
+        values ('c3c3c3c3-c3c3-4c3c-8c3c-c3c3c3c3c3c3', 'ping', '"old"', now() - interval '12 hours')
+      `;
+
+      // Trigger cleanup forcibly
+      await runPeriodicCleanup(sql, true);
+
+      // Verify the 12-hour old event was pruned
+      const rows = await sql<{ count: number }>`
+        select count(*)::int as count from device_events where device_id = 'c3c3c3c3-c3c3-4c3c-8c3c-c3c3c3c3c3c3'
+      `;
+      expect(rows[0]?.count).toBe(0);
+    });
+  });
 }

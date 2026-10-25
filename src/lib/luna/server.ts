@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { getSql, type Sql } from "./db";
 import {
   ABANDON_AFTER_MINUTES,
@@ -43,6 +44,7 @@ interface StationRow {
   is_custom?: boolean | null;
   public_key?: string | null;
   is_away?: boolean | null;
+  secret_hash?: string | null;
 }
 
 interface QueueRow {
@@ -90,6 +92,33 @@ function requireDeviceId(value: unknown): string {
     throw new Error("Unknown guest.");
   }
   return value;
+}
+
+export function hashDeviceSecret(secret: string): string {
+  return createHash("sha256").update(secret).digest("hex");
+}
+
+export async function verifyStationAuth(deviceId: string, deviceSecret?: string): Promise<boolean> {
+  if (!isDeviceId(deviceId)) return false;
+  const sql = await getSql();
+  const rows = await sql<{ secret_hash: string | null }>`
+    select secret_hash from stations where device_id = ${deviceId}
+  `;
+  if (rows.length === 0) {
+    return true;
+  }
+  const storedHash = rows[0]?.secret_hash;
+  if (!storedHash) {
+    if (deviceSecret && typeof deviceSecret === "string" && deviceSecret.length >= 16) {
+      const hash = hashDeviceSecret(deviceSecret);
+      await sql`update stations set secret_hash = ${hash} where device_id = ${deviceId} and secret_hash is null`;
+    }
+    return true;
+  }
+  if (!deviceSecret || typeof deviceSecret !== "string") {
+    return false;
+  }
+  return hashDeviceSecret(deviceSecret) === storedHash;
 }
 
 function requireText(value: unknown, max: number): string {
@@ -173,18 +202,25 @@ async function touchStation(
   deviceId: string,
   clientIp?: string,
   publicKey?: string,
+  deviceSecret?: string,
 ): Promise<Station> {
   const ip = clientIp?.trim() || "127.0.0.1";
   const sql = await getSql();
+  const secretHash =
+    deviceSecret && typeof deviceSecret === "string" && deviceSecret.length >= 16
+      ? hashDeviceSecret(deviceSecret)
+      : null;
+
   const existing = await sql<StationRow>`
-    select device_id, callsign, ip, is_custom, public_key, is_away from stations where device_id = ${deviceId}
+    select device_id, callsign, ip, is_custom, public_key, is_away, secret_hash from stations where device_id = ${deviceId}
   `;
 
   if (existing[0]) {
     const row = existing[0];
     const keyToSave = publicKey ?? row.public_key ?? null;
+    const hashToSave = row.secret_hash ?? secretHash;
     if (row.is_custom) {
-      await sql`update stations set last_seen = now(), ip = ${ip}, public_key = ${keyToSave} where device_id = ${deviceId}`;
+      await sql`update stations set last_seen = now(), ip = ${ip}, public_key = ${keyToSave}, secret_hash = coalesce(stations.secret_hash, ${hashToSave}) where device_id = ${deviceId}`;
       return { deviceId: row.device_id, callsign: row.callsign, publicKey: keyToSave ?? undefined };
     }
 
@@ -195,31 +231,35 @@ async function touchStation(
       const nextCallsign = await findAvailableStrangerName(sql, ip, deviceId);
       await sql`
         update stations
-        set callsign = ${nextCallsign}, ip = ${ip}, last_seen = now(), is_custom = false, public_key = ${keyToSave}
+        set callsign = ${nextCallsign}, ip = ${ip}, last_seen = now(), is_custom = false, public_key = ${keyToSave}, secret_hash = coalesce(stations.secret_hash, ${hashToSave})
         where device_id = ${deviceId}
       `;
       return { deviceId: row.device_id, callsign: nextCallsign, publicKey: keyToSave ?? undefined };
     }
 
-    await sql`update stations set last_seen = now(), ip = ${ip}, public_key = ${keyToSave} where device_id = ${deviceId}`;
+    await sql`update stations set last_seen = now(), ip = ${ip}, public_key = ${keyToSave}, secret_hash = coalesce(stations.secret_hash, ${hashToSave}) where device_id = ${deviceId}`;
     return { deviceId: row.device_id, callsign: row.callsign, publicKey: keyToSave ?? undefined };
   }
 
   const callsign = await findAvailableStrangerName(sql, ip);
   const keyToSave = publicKey ?? null;
   await sql`
-    insert into stations (device_id, callsign, ip, is_custom, last_seen, public_key, is_away)
-    values (${deviceId}, ${callsign}, ${ip}, false, now(), ${keyToSave}, false)
-    on conflict (device_id) do update set last_seen = now(), ip = ${ip}, public_key = coalesce(${keyToSave}, stations.public_key)
+    insert into stations (device_id, callsign, ip, is_custom, last_seen, public_key, is_away, secret_hash)
+    values (${deviceId}, ${callsign}, ${ip}, false, now(), ${keyToSave}, false, ${secretHash})
+    on conflict (device_id) do update set
+      last_seen = now(),
+      ip = ${ip},
+      public_key = coalesce(${keyToSave}, stations.public_key),
+      secret_hash = coalesce(stations.secret_hash, ${secretHash})
   `;
   return { deviceId, callsign, publicKey: keyToSave ?? undefined };
 }
 
 let lastCleanupAt = 0;
 
-async function cleanup(sql?: Sql): Promise<void> {
+export async function runPeriodicCleanup(sql?: Sql, force = false): Promise<void> {
   const now = Date.now();
-  if (now - lastCleanupAt < 10_000) {
+  if (!force && now - lastCleanupAt < 10_000) {
     return;
   }
   lastCleanupAt = now;
@@ -238,7 +278,12 @@ async function cleanup(sql?: Sql): Promise<void> {
     )
   `;
   await sql`delete from messages where expires_at < now()`;
+  await sql`delete from device_events where created_at < now() - interval '6 hours'`;
   await reapAbandonedSessions(sql);
+}
+
+async function cleanup(sql?: Sql): Promise<void> {
+  return runPeriodicCleanup(sql, false);
 }
 
 export async function touchLastSeen(deviceId: string): Promise<void> {
@@ -520,8 +565,9 @@ async function loadDesk(
   deviceId: string,
   clientIp?: string,
   publicKey?: string,
+  deviceSecret?: string,
 ): Promise<DeskView> {
-  const station = await touchStation(deviceId, clientIp, publicKey);
+  const station = await touchStation(deviceId, clientIp, publicKey, deviceSecret);
   const sql = await getSql();
   const [friendRows, inboundRows, activeSessionRow, queueRows, onlineCountRows, activeQueueRows] = await Promise.all([
     sql<{ user_a: string; user_b: string }>`
@@ -794,18 +840,20 @@ export async function registerStation(input: {
   deviceId: string;
   clientIp?: string;
   publicKey?: string;
+  deviceSecret?: string;
 }): Promise<DeskView> {
   const deviceId = requireDeviceId(input.deviceId);
-  return loadDesk(deviceId, input.clientIp, input.publicKey);
+  return loadDesk(deviceId, input.clientIp, input.publicKey, input.deviceSecret);
 }
 
 export async function getDesk(input: {
   deviceId: string;
   clientIp?: string;
   publicKey?: string;
+  deviceSecret?: string;
 }): Promise<DeskView> {
   const deviceId = requireDeviceId(input.deviceId);
-  return loadDesk(deviceId, input.clientIp, input.publicKey);
+  return loadDesk(deviceId, input.clientIp, input.publicKey, input.deviceSecret);
 }
 
 export async function joinQueue(input: {

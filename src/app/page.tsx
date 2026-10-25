@@ -17,7 +17,7 @@ import { useLunaPresence } from "@/hooks/luna/use-luna-presence";
 import { useLunaMessages } from "@/hooks/luna/use-luna-messages";
 import { useLunaStream } from "@/hooks/luna/use-luna-stream";
 import { sanitizeInterests } from "@/lib/luna/constants";
-import { deskName, getCachedCustomName, getOrCreateDeviceId } from "@/lib/luna/identity";
+import { deskName, getCachedCustomName, getOrCreateDeviceId, getOrCreateDeviceSecret } from "@/lib/luna/identity";
 import {
   sweepExpiredCaches,
   exportDevicePublicKeyHex,
@@ -1157,16 +1157,20 @@ export default function Home() {
       const dId = deviceId;
       if (!dId) return;
       const sId = activeSessionRef.current?.id;
+      const secret = getOrCreateDeviceSecret();
       if (sId && !activeSessionRef.current?.closed) {
         const payload = JSON.stringify({
           action: "leaveSession",
-          payload: { deviceId: dId, sessionId: sId },
+          deviceId: dId,
+          deviceSecret: secret,
+          sessionId: sId,
         });
         navigator.sendBeacon("/api/luna", new Blob([payload], { type: "application/json" }));
       } else if (listeningRef.current) {
         const payload = JSON.stringify({
           action: "leaveQueue",
-          payload: { deviceId: dId },
+          deviceId: dId,
+          deviceSecret: secret,
         });
         navigator.sendBeacon("/api/luna", new Blob([payload], { type: "application/json" }));
       }

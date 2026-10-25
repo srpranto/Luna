@@ -25,7 +25,8 @@ create table if not exists stations (
   ip           text,
   is_custom    boolean default false,
   public_key   text,
-  is_away      boolean default false
+  is_away      boolean default false,
+  secret_hash  text
 );
 
 create table if not exists queue (
@@ -175,6 +176,13 @@ const MIGRATIONS: { name: string; sql: string }[] = [
     sql: `
       alter table sessions add column if not exists reconnect_a boolean default false;
       alter table sessions add column if not exists reconnect_b boolean default false;
+    `,
+  },
+  {
+    name: "006_station_secret_and_event_retention",
+    sql: `
+      alter table stations add column if not exists secret_hash text;
+      create index if not exists device_events_created_idx on device_events (created_at);
     `,
   },
 ];

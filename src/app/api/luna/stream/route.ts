@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { subscribeDevice, type LunaEvent } from "@/lib/luna/events";
-import { touchLastSeen } from "@/lib/luna/server";
+import { touchLastSeen, verifyStationAuth } from "@/lib/luna/server";
 import { getSql } from "@/lib/luna/db";
 
 export const dynamic = "force-dynamic";
@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const deviceId = searchParams.get("deviceId");
+  const secretParam = searchParams.get("secret");
 
   if (!deviceId) {
     return new Response(JSON.stringify({ error: "Missing deviceId." }), {
@@ -16,33 +17,39 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  if (secretParam) {
+    const isAuthed = await verifyStationAuth(deviceId, secretParam);
+    if (!isAuthed) {
+      return new Response(JSON.stringify({ error: "Unauthorized device." }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }
+
   const queryLastId = searchParams.get("lastEventId");
   const headerLastId = req.headers.get("last-event-id");
   let lastEventId = 0;
   const parsedCursor = Number(queryLastId || headerLastId);
   if (!Number.isNaN(parsedCursor) && parsedCursor > 0) {
     lastEventId = parsedCursor;
-  } else {
-    try {
-      const sql = await getSql();
-      const rows = await sql<{ max_id: number | null }>`
-        select max(id) as max_id from device_events where device_id = ${deviceId}
-      `;
-      if (rows[0]?.max_id) {
-        lastEventId = Number(rows[0].max_id);
-      }
-    } catch {}
   }
 
   const encoder = new TextEncoder();
+  const deliveredIds = new Set<number>();
 
   let pingInterval: NodeJS.Timeout | null = null;
+  let pollInterval: NodeJS.Timeout | null = null;
   let unsubscribe: (() => void) | null = null;
 
   const cleanup = () => {
     if (pingInterval) {
       clearInterval(pingInterval);
       pingInterval = null;
+    }
+    if (pollInterval) {
+      clearInterval(pollInterval);
+      pollInterval = null;
     }
     if (unsubscribe) {
       unsubscribe();
@@ -56,46 +63,154 @@ export async function GET(req: NextRequest) {
         encoder.encode(`event: connected\ndata: ${JSON.stringify({ ok: true })}\n\n`),
       );
 
-      if (parsedCursor > 0) {
-        try {
-          const sql = await getSql();
-          const catchupRows = await sql<{ id: number; type: string; data: string }>`
-            select id, type, data from device_events
-            where device_id = ${deviceId} and id > ${parsedCursor}
-            order by id asc
-            limit 100
-          `;
-          for (const row of catchupRows) {
-            lastEventId = Math.max(lastEventId, Number(row.id));
-            controller.enqueue(
-              encoder.encode(`id: ${row.id}\nevent: ${row.type}\ndata: ${row.data}\n\n`),
-            );
-          }
-        } catch {}
-      }
+      const buffer: LunaEvent[] = [];
+      let isCatchingUp = true;
 
+      const sendEvent = (event: LunaEvent) => {
+        const eventId = typeof event.id === "number" && event.id > 0 ? event.id : undefined;
+        if (eventId) {
+          if (deliveredIds.has(eventId)) return;
+          deliveredIds.add(eventId);
+          lastEventId = Math.max(lastEventId, eventId);
+        }
+        const idPrefix = eventId ? `id: ${eventId}\n` : "";
+        controller.enqueue(
+          encoder.encode(`${idPrefix}event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`),
+        );
+      };
+
+      // 1. Subscribe immediately to local in-memory bus to eliminate race gaps
       unsubscribe = subscribeDevice(deviceId, (event: LunaEvent) => {
         try {
-          if (typeof event.id === "number" && event.id > 0) {
-            lastEventId = Math.max(lastEventId, event.id);
+          if (isCatchingUp) {
+            buffer.push(event);
+          } else {
+            sendEvent(event);
           }
-          const idPrefix = typeof event.id === "number" && event.id > 0 ? `id: ${event.id}\n` : "";
-          controller.enqueue(
-            encoder.encode(`${idPrefix}event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`),
-          );
-        } catch {}
+        } catch (err) {
+          console.error("[Luna Stream Local Dispatch Error]", {
+            deviceId,
+            type: event.type,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       });
 
+      // 2. Catch up from database with pagination (no 100-event drop)
+      if (parsedCursor > 0) {
+        try {
+          let cursor = parsedCursor;
+          let hasMore = true;
+          while (hasMore) {
+            const sql = await getSql();
+            const rows = await sql<{ id: number; type: string; data: string }>`
+              select id, type, data from device_events
+              where device_id = ${deviceId} and id > ${cursor}
+              order by id asc
+              limit 100
+            `;
+            if (rows.length === 0) {
+              hasMore = false;
+              break;
+            }
+            for (const row of rows) {
+              const rowId = Number(row.id);
+              cursor = Math.max(cursor, rowId);
+              if (!deliveredIds.has(rowId)) {
+                deliveredIds.add(rowId);
+                lastEventId = Math.max(lastEventId, rowId);
+                let parsedData: unknown = row.data;
+                try {
+                  parsedData = JSON.parse(row.data);
+                } catch {}
+                controller.enqueue(
+                  encoder.encode(`id: ${row.id}\nevent: ${row.type}\ndata: ${JSON.stringify(parsedData)}\n\n`),
+                );
+              }
+            }
+            if (rows.length < 100) {
+              hasMore = false;
+            }
+          }
+        } catch (err) {
+          console.error("[Luna Stream DB Catchup Error]", {
+            deviceId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      } else {
+        try {
+          const sql = await getSql();
+          const rows = await sql<{ max_id: number | null }>`
+            select max(id) as max_id from device_events where device_id = ${deviceId}
+          `;
+          if (rows[0]?.max_id) {
+            lastEventId = Number(rows[0].max_id);
+          }
+        } catch (err) {
+          console.error("[Luna Stream Max ID Error]", {
+            deviceId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      // 3. Drain in-memory buffer, de-duplicating against DB events
+      isCatchingUp = false;
+      for (const buffered of buffer) {
+        sendEvent(buffered);
+      }
+      buffer.length = 0;
+
+      // 4. Cross-instance realtime delivery via adaptive 800ms DB cursor poll
+      pollInterval = setInterval(async () => {
+        try {
+          const sql = await getSql();
+          const rows = await sql<{ id: number; type: string; data: string }>`
+            select id, type, data from device_events
+            where device_id = ${deviceId} and id > ${lastEventId}
+            order by id asc
+            limit 50
+          `;
+          for (const row of rows) {
+            const rowId = Number(row.id);
+            if (!deliveredIds.has(rowId)) {
+              deliveredIds.add(rowId);
+              lastEventId = Math.max(lastEventId, rowId);
+              let parsedData: unknown = row.data;
+              try {
+                parsedData = JSON.parse(row.data);
+              } catch {}
+              controller.enqueue(
+                encoder.encode(`id: ${row.id}\nevent: ${row.type}\ndata: ${JSON.stringify(parsedData)}\n\n`),
+              );
+            }
+          }
+        } catch (err) {
+          console.error("[Luna Stream Cross-Instance Poll Error]", {
+            deviceId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }, 800);
+
+      // Initial last seen touch
       void touchLastSeen(deviceId).catch(() => {});
 
+      let lastSeenCounter = 0;
       pingInterval = setInterval(() => {
         try {
           controller.enqueue(
             encoder.encode(`event: ping\ndata: "${new Date().toISOString()}"\n\n`),
           );
-          void touchLastSeen(deviceId).catch(() => {});
+          lastSeenCounter += 1;
+          // Touch last-seen every 15 seconds (every 3 pings) instead of every 5 seconds
+          if (lastSeenCounter >= 3) {
+            lastSeenCounter = 0;
+            void touchLastSeen(deviceId).catch(() => {});
+          }
         } catch {
-          if (pingInterval) clearInterval(pingInterval);
+          cleanup();
         }
       }, 5000);
 

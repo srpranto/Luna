@@ -1,4 +1,5 @@
 import type { DeskView, MessagesPack, QueueHeartbeatResult, VoidLetter } from "./types";
+import { getOrCreateDeviceSecret } from "./identity";
 
 interface ApiSuccess<T> {
   ok: true;
@@ -13,10 +14,14 @@ interface ApiFailure {
 type ApiResponse<T> = ApiSuccess<T> | ApiFailure;
 
 async function request<T>(action: string, payload: Record<string, unknown>): Promise<T> {
+  const secret = getOrCreateDeviceSecret();
   const res = await fetch("/api/luna", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action, ...payload }),
+    headers: {
+      "Content-Type": "application/json",
+      "x-luna-device-secret": secret,
+    },
+    body: JSON.stringify({ action, deviceSecret: secret, ...payload }),
   });
 
   const json = (await res.json()) as ApiResponse<T>;
@@ -101,7 +106,9 @@ export function subscribeDeskStream(
     if (stopped) return;
     source?.close();
     const cursorParam = lastSeenEventId > 0 ? `&lastEventId=${lastSeenEventId}` : "";
-    const next = new EventSource(`/api/luna/stream?deviceId=${encodeURIComponent(deviceId)}${cursorParam}`);
+    const secret = getOrCreateDeviceSecret();
+    const secretParam = secret ? `&secret=${encodeURIComponent(secret)}` : "";
+    const next = new EventSource(`/api/luna/stream?deviceId=${encodeURIComponent(deviceId)}${cursorParam}${secretParam}`);
     source = next;
 
     next.addEventListener("open", () => {

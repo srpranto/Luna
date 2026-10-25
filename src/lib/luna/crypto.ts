@@ -310,3 +310,20 @@ export async function decryptText(payload: string, sessionId: string): Promise<s
     return "🔒 [Decryption failed]";
   }
 }
+
+export async function deriveSafetyNumber(pubKeyA: string, pubKeyB: string): Promise<string> {
+  if (typeof window === "undefined" || !crypto?.subtle || !pubKeyA || !pubKeyB) {
+    return "0000 0000 0000";
+  }
+  try {
+    const combined = [pubKeyA.toLowerCase().trim(), pubKeyB.toLowerCase().trim()].sort().join("::");
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(combined));
+    const view = new DataView(digest);
+    const num1 = String(view.getUint16(0) % 10000).padStart(4, "0");
+    const num2 = String(view.getUint16(2) % 10000).padStart(4, "0");
+    const num3 = String(view.getUint16(4) % 10000).padStart(4, "0");
+    return `${num1} ${num2} ${num3}`;
+  } catch {
+    return "0000 0000 0000";
+  }
+}

@@ -80,7 +80,13 @@ export function emitToDevice<T = unknown>(deviceId: string, type: LunaEventType,
       if (rows[0]?.id) {
         eventId = Number(rows[0].id);
       }
-    } catch {}
+    } catch (err) {
+      console.error("[Luna Event Persistence Error]", {
+        deviceId,
+        type,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
 
     const event: LunaEvent<T> = {
       id: eventId,
@@ -94,7 +100,13 @@ export function emitToDevice<T = unknown>(deviceId: string, type: LunaEventType,
       for (const listener of listeners) {
         try {
           listener(event as LunaEvent);
-        } catch {}
+        } catch (err) {
+          console.error("[Luna Event Listener Error]", {
+            deviceId,
+            type,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
     }
   })();

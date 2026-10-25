@@ -24,6 +24,7 @@ import {
   reportUser,
   requestReconnect,
   markMessagesSeen,
+  verifyStationAuth,
 } from "@/lib/luna/server";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +32,7 @@ export const dynamic = "force-dynamic";
 interface RequestBody {
   action?: string;
   deviceId?: string;
+  deviceSecret?: string;
   sessionId?: string;
   messageId?: string;
   friendId?: string;
@@ -98,8 +100,20 @@ function requireFields<T extends RequestBody>(payload: T, ...fields: (keyof T)[]
 type ActionHandler = (payload: RequestBody, clientIp: string) => Promise<unknown>;
 
 const actionHandlers: Record<string, ActionHandler> = {
-  registerStation: (p, ip) => registerStation({ deviceId: p.deviceId!, clientIp: ip, publicKey: p.publicKey }),
-  getDesk: (p, ip) => getDesk({ deviceId: p.deviceId!, clientIp: ip, publicKey: p.publicKey }),
+  registerStation: (p, ip) =>
+    registerStation({
+      deviceId: p.deviceId!,
+      clientIp: ip,
+      publicKey: p.publicKey,
+      deviceSecret: p.deviceSecret,
+    }),
+  getDesk: (p, ip) =>
+    getDesk({
+      deviceId: p.deviceId!,
+      clientIp: ip,
+      publicKey: p.publicKey,
+      deviceSecret: p.deviceSecret,
+    }),
   joinQueue: (p, ip) =>
     joinQueue({
       deviceId: p.deviceId!,
@@ -207,17 +221,58 @@ export async function POST(req: Request) {
     const clientIp = extractClientIp(req);
     const payload = (await req.json()) as RequestBody;
     const { action, deviceId } = payload;
+    const headerSecret = req.headers.get("x-luna-device-secret")?.trim() || undefined;
+    const deviceSecret = payload.deviceSecret || headerSecret;
+    payload.deviceSecret = deviceSecret;
 
+    // 1. Enforce independent global IP rate limit (prevents deviceId rotation bypass)
+    if (!checkRateLimit(`ip:${clientIp}`, 120, 60000)) {
+      return NextResponse.json(
+        { ok: false, error: "Too many requests from this network. Please slow down." },
+        { status: 429, headers: { ...NO_CACHE_HEADERS, "Retry-After": "5" } },
+      );
+    }
+
+    // 2. Enforce per-IP + per-device rate limit
     const rateKey = `${clientIp}:${deviceId ?? "anon"}`;
-    if (!checkRateLimit(rateKey)) {
+    if (!checkRateLimit(rateKey, 180, 60000)) {
       return NextResponse.json(
         { ok: false, error: "Too many requests. Please slow down." },
         { status: 429, headers: { ...NO_CACHE_HEADERS, "Retry-After": "5" } },
       );
     }
 
+    // 3. Action-specific rate limits
+    if (action === "sendMessage" && !checkRateLimit(`msg:${clientIp}:${deviceId}`, 45, 60000)) {
+      return NextResponse.json(
+        { ok: false, error: "Sending messages too fast. Please wait a moment." },
+        { status: 429, headers: { ...NO_CACHE_HEADERS, "Retry-After": "3" } },
+      );
+    }
+    if (action === "castVoidLetter" && !checkRateLimit(`letter:${clientIp}`, 8, 60000)) {
+      return NextResponse.json(
+        { ok: false, error: "Too many letters cast. Please wait before writing another." },
+        { status: 429, headers: { ...NO_CACHE_HEADERS, "Retry-After": "15" } },
+      );
+    }
+    if (action === "reportUser" && !checkRateLimit(`report:${clientIp}`, 5, 60000)) {
+      return NextResponse.json(
+        { ok: false, error: "Too many reports submitted." },
+        { status: 429, headers: { ...NO_CACHE_HEADERS, "Retry-After": "30" } },
+      );
+    }
+
     if (!deviceId) {
       return NextResponse.json({ ok: false, error: "Missing deviceId." }, { status: 400, headers: NO_CACHE_HEADERS });
+    }
+
+    // 4. Verify cryptographic device ownership (prevents peerId impersonation)
+    const isAuthorized = await verifyStationAuth(deviceId, deviceSecret);
+    if (!isAuthorized) {
+      return NextResponse.json(
+        { ok: false, error: "Unauthorized device operation. Secret mismatch." },
+        { status: 401, headers: NO_CACHE_HEADERS },
+      );
     }
 
     if (payload.body && payload.body.length > 10000) {
