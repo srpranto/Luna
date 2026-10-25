@@ -22,6 +22,7 @@ import {
   starVoidLetter,
   blockUser,
   reportUser,
+  requestReconnect,
 } from "@/lib/luna/server";
 
 export const dynamic = "force-dynamic";
@@ -46,6 +47,8 @@ interface RequestBody {
   clientMsgId?: string;
   targetId?: string;
   reason?: string;
+  recentPeerIds?: string[];
+  isReaction?: boolean;
 }
 
 interface RateLimitBucket {
@@ -100,13 +103,23 @@ const actionHandlers: Record<string, ActionHandler> = {
       deviceId: p.deviceId!,
       interests: p.interests ?? [],
       blockedIds: p.blockedIds ?? [],
+      recentPeerIds: p.recentPeerIds ?? [],
       clientIp: ip,
       publicKey: p.publicKey,
       leaveSessionId: p.sessionId,
     }),
   leaveQueue: (p) => leaveQueue({ deviceId: p.deviceId! }),
   heartbeatQueue: (p, ip) =>
-    heartbeatQueue({ deviceId: p.deviceId!, blockedIds: p.blockedIds ?? [], clientIp: ip }),
+    heartbeatQueue({
+      deviceId: p.deviceId!,
+      blockedIds: p.blockedIds ?? [],
+      recentPeerIds: p.recentPeerIds ?? [],
+      clientIp: ip,
+    }),
+  requestReconnect: (p) => {
+    requireFields(p, "sessionId");
+    return requestReconnect({ deviceId: p.deviceId!, sessionId: p.sessionId! });
+  },
   reportTyping: (p) => {
     requireFields(p, "sessionId");
     return reportTyping({ deviceId: p.deviceId!, sessionId: p.sessionId!, isTyping: Boolean(p.isTyping) });
@@ -125,7 +138,13 @@ const actionHandlers: Record<string, ActionHandler> = {
   },
   sendMessage: (p) => {
     if (!p.sessionId || typeof p.body !== "string") throw new Error("Missing sessionId or message body.");
-    return sendMessage({ deviceId: p.deviceId!, sessionId: p.sessionId, body: p.body, clientMsgId: p.clientMsgId });
+    return sendMessage({
+      deviceId: p.deviceId!,
+      sessionId: p.sessionId,
+      body: p.body,
+      clientMsgId: p.clientMsgId,
+      isReaction: p.isReaction,
+    });
   },
   editMessage: (p) => {
     if (!p.sessionId || !p.messageId || typeof p.body !== "string") {
@@ -176,15 +195,16 @@ const NO_CACHE_HEADERS = { "Cache-Control": "no-store" } as const;
 export async function POST(req: Request) {
   try {
     const clientIp = extractClientIp(req);
-    if (!checkRateLimit(clientIp)) {
+    const payload = (await req.json()) as RequestBody;
+    const { action, deviceId } = payload;
+
+    const rateKey = `${clientIp}:${deviceId ?? "anon"}`;
+    if (!checkRateLimit(rateKey)) {
       return NextResponse.json(
         { ok: false, error: "Too many requests. Please slow down." },
         { status: 429, headers: { ...NO_CACHE_HEADERS, "Retry-After": "5" } },
       );
     }
-
-    const payload = (await req.json()) as RequestBody;
-    const { action, deviceId } = payload;
 
     if (!deviceId) {
       return NextResponse.json({ ok: false, error: "Missing deviceId." }, { status: 400, headers: NO_CACHE_HEADERS });

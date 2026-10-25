@@ -46,6 +46,9 @@ export function LineView({
   replyingTo,
   onReply,
   onCancelReply,
+  onReconnect,
+  outboundReconnect,
+  inboundReconnect,
 }: {
   sessionKind: "stranger" | "friend";
   peerCallsign: string;
@@ -79,6 +82,9 @@ export function LineView({
   replyingTo?: { id: string; fromCallsign: string; body: string } | null;
   onReply?: (target: { id: string; fromCallsign: string; body: string }) => void;
   onCancelReply?: () => void;
+  onReconnect?: () => void;
+  outboundReconnect?: boolean;
+  inboundReconnect?: boolean;
 }) {
   const [locked, setLocked] = useState(() => {
     if (closed || !createdAt) return false;
@@ -110,6 +116,33 @@ export function LineView({
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportReason, setReportReason] = useState("Spam or unwanted advertising");
+  const [confirmNext, setConfirmNext] = useState(false);
+  const confirmNextTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (confirmNextTimerRef.current) clearTimeout(confirmNextTimerRef.current);
+    };
+  }, []);
+
+  function handleNextClick() {
+    triggerHaptic("medium");
+    if (!closed && messages.length > 0) {
+      if (confirmNext) {
+        if (confirmNextTimerRef.current) clearTimeout(confirmNextTimerRef.current);
+        setConfirmNext(false);
+        onNext();
+      } else {
+        setConfirmNext(true);
+        if (confirmNextTimerRef.current) clearTimeout(confirmNextTimerRef.current);
+        confirmNextTimerRef.current = setTimeout(() => {
+          setConfirmNext(false);
+        }, 2500);
+      }
+    } else {
+      onNext();
+    }
+  }
 
   useEffect(() => {
     if (!showReportModal) return;
@@ -223,7 +256,7 @@ export function LineView({
             </Badge>
           ) : qslState === "accepted" ? (
             <Badge variant="success" className="text-[10px] sm:text-[11px] py-0.5 px-1.5 sm:px-2">
-              ✓
+              Connected
             </Badge>
           ) : null}
 
@@ -232,26 +265,27 @@ export function LineView({
               type="button"
               size="sm"
               variant={closed ? "default" : "secondary"}
-              onClick={() => {
-                triggerHaptic("medium");
-                onNext();
-              }}
+              onClick={handleNextClick}
               disabled={busy || locked}
-              aria-label={closed ? "Search for someone" : "Leave and find next stranger"}
+              aria-label={closed ? "Search for someone" : confirmNext ? "Confirm next stranger" : "Leave and find next stranger"}
               className={cn(
                 "h-7 sm:h-7.5 px-2 sm:px-2.5 gap-1 sm:gap-1.5 text-xs cursor-pointer transition-all touch-manipulation active:scale-95",
                 closed
                   ? "bg-white text-zinc-950 hover:bg-zinc-200 font-medium shadow-[0_0_15px_rgba(255,255,255,0.18)]"
-                  : "text-zinc-100 hover:bg-zinc-800 disabled:opacity-50",
+                  : confirmNext
+                    ? "bg-amber-500/20 border border-amber-500/50 text-amber-200 hover:bg-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.2)]"
+                    : "text-zinc-100 hover:bg-zinc-800 disabled:opacity-50",
               )}
               title={
                 closed
                   ? "Search for someone"
-                  : "Leave and find next stranger"
+                  : confirmNext
+                    ? "Click again to confirm"
+                    : "Leave and find next stranger"
               }
             >
               <span className="text-[11px] sm:text-xs font-medium">
-                {closed ? "Next (Search)" : "Next"}
+                {closed ? "Next (Search)" : confirmNext ? "Sure?" : "Next"}
               </span>
               <ArrowRight className="h-3 w-3" />
             </Button>
@@ -372,6 +406,10 @@ export function LineView({
           onDeleteMessage={onDeleteMessage}
           onReply={onReply}
           onRetryMessage={onRetryMessage}
+          sessionKind={sessionKind}
+          onReconnect={onReconnect}
+          outboundReconnect={outboundReconnect}
+          inboundReconnect={inboundReconnect}
         />
         <ScrollBottomPill visible={showScrollBottom} onClick={handleScrollToBottom} />
       </div>
@@ -473,16 +511,17 @@ export function LineView({
         onActivity={onActivity}
         disabled={closed}
         placeholder={
-          closed ? "This chat has ended. Click Next to search for someone." : "Say something…"
+          closed ? "This chat has ended. Click Next to search for someone." : "Say something..."
         }
         autoFocus
         replyingTo={replyingTo}
         onCancelReply={onCancelReply}
         onNext={onNext}
+        sessionKind={sessionKind}
+        onReconnect={onReconnect}
+        outboundReconnect={outboundReconnect}
+        inboundReconnect={inboundReconnect}
       />
     </section>
   );
 }
-
-export { LineView as Chat };
-export default LineView;

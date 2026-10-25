@@ -60,8 +60,8 @@ function checkTokenBucket(
 }
 
 export function checkMessageRateLimit(deviceId: string): RateLimitResult {
-  // Max 5 messages burst, refills at 1.5 msg/sec (~5 per 3 seconds)
-  return checkTokenBucket(messageBuckets, deviceId, 5, 1.67);
+  // Max 8 messages burst, refills at 2.5 msg/sec
+  return checkTokenBucket(messageBuckets, deviceId, 8, 2.5);
 }
 
 export function checkMatchmakerRateLimit(deviceId: string): RateLimitResult {

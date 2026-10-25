@@ -5,6 +5,8 @@ export type LunaEventType =
   | "message"
   | "message_edited"
   | "message_deleted"
+  | "messages_seen"
+  | "reconnect_requested"
   | "presence_update"
   | "typing"
   | "session_started"
@@ -64,45 +66,36 @@ export function isDeviceConnected(deviceId: string): boolean {
   return Boolean(listeners && listeners.size > 0);
 }
 
-export async function isDeviceOnline(deviceId: string, thresholdSeconds = 45): Promise<boolean> {
-  if (isDeviceConnected(deviceId)) return true;
-  try {
-    const sql = await getSql();
-    const rows = await sql<{ online: boolean }>`
-      select (last_seen > now() - (${thresholdSeconds} || ' seconds')::interval) as online
-      from stations
-      where device_id = ${deviceId}
-    `;
-    return Boolean(rows[0]?.online);
-  } catch {
-    return false;
-  }
-}
-
 export function emitToDevice<T = unknown>(deviceId: string, type: LunaEventType, data: T): void {
-  const event: LunaEvent<T> = {
-    type,
-    data,
-    timestamp: new Date().toISOString(),
-  };
-
-  const listeners = deviceListeners.get(deviceId);
-  if (listeners && listeners.size > 0) {
-    for (const listener of listeners) {
-      try {
-        listener(event as LunaEvent);
-      } catch {}
-    }
-  }
-
   void (async () => {
+    let eventId: number | undefined;
     try {
       const sql = await getSql();
       const serialized = JSON.stringify(data);
-      await sql`
+      const rows = await sql<{ id: number }>`
         insert into device_events (device_id, type, data, instance_id, created_at)
         values (${deviceId}, ${type}, ${serialized}, ${SERVER_INSTANCE_ID}, now())
+        returning id
       `;
+      if (rows[0]?.id) {
+        eventId = Number(rows[0].id);
+      }
     } catch {}
+
+    const event: LunaEvent<T> = {
+      id: eventId,
+      type,
+      data,
+      timestamp: new Date().toISOString(),
+    };
+
+    const listeners = deviceListeners.get(deviceId);
+    if (listeners && listeners.size > 0) {
+      for (const listener of listeners) {
+        try {
+          listener(event as LunaEvent);
+        } catch {}
+      }
+    }
   })();
 }

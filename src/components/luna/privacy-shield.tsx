@@ -33,6 +33,15 @@ export function PrivacyShield() {
     }
 
     function handleFocusChange() {
+      const isShieldEnabled =
+        typeof window !== "undefined" &&
+        localStorage.getItem("luna.privacy_shield_enabled") === "true";
+
+      if (!isShieldEnabled) {
+        setBlurred(false);
+        return;
+      }
+
       if (document.hidden || !document.hasFocus()) {
         setBlurred(true);
       } else {

@@ -144,7 +144,7 @@ export function StatusHeader({
                 <div className="hidden sm:flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.7)]" />
                   <span className="text-xs font-mono text-zinc-400 font-medium">
-                    {callsign ?? "connecting…"}
+                    {callsign ?? "connecting..."}
                   </span>
                 </div>
               </>
@@ -153,7 +153,7 @@ export function StatusHeader({
           {!activeChat && (
             <div className="flex items-center gap-1.5 sm:hidden">
               <span className="text-[11px] font-mono text-zinc-400 truncate max-w-[110px]">
-                {callsign ?? "connecting…"}
+                {callsign ?? "connecting..."}
               </span>
             </div>
           )}
@@ -188,7 +188,7 @@ export function StatusHeader({
             )}
             {activeChat.peerTyping && (
               <span className="text-[10px] font-mono text-zinc-400 animate-pulse hidden sm:inline shrink-0">
-                (typing…)
+                (typing...)
               </span>
             )}
           </div>

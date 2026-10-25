@@ -35,7 +35,25 @@ export async function GET(req: NextRequest) {
   }
 
   const encoder = new TextEncoder();
-  const deliveredLocalEvents = new Set<string>();
+
+  let pollInterval: NodeJS.Timeout | null = null;
+  let pingInterval: NodeJS.Timeout | null = null;
+  let unsubscribe: (() => void) | null = null;
+
+  const cleanup = () => {
+    if (pollInterval) {
+      clearInterval(pollInterval);
+      pollInterval = null;
+    }
+    if (pingInterval) {
+      clearInterval(pingInterval);
+      pingInterval = null;
+    }
+    if (unsubscribe) {
+      unsubscribe();
+      unsubscribe = null;
+    }
+  };
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -61,23 +79,21 @@ export async function GET(req: NextRequest) {
         } catch {}
       }
 
-      const unsubscribe = subscribeDevice(deviceId, (event: LunaEvent) => {
+      unsubscribe = subscribeDevice(deviceId, (event: LunaEvent) => {
         try {
-          const eventKey = `${event.type}:${JSON.stringify(event.data)}`;
-          deliveredLocalEvents.add(eventKey);
-          if (deliveredLocalEvents.size > 200) {
-            const first = deliveredLocalEvents.values().next().value;
-            if (first) deliveredLocalEvents.delete(first);
+          if (typeof event.id === "number" && event.id > 0) {
+            lastEventId = Math.max(lastEventId, event.id);
           }
+          const idPrefix = typeof event.id === "number" && event.id > 0 ? `id: ${event.id}\n` : "";
           controller.enqueue(
-            encoder.encode(`event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`),
+            encoder.encode(`${idPrefix}event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`),
           );
         } catch {}
       });
 
       void touchLastSeen(deviceId).catch(() => {});
 
-      const pollInterval = setInterval(async () => {
+      pollInterval = setInterval(async () => {
         try {
           const sql = await getSql();
           const rows = await sql<{ id: number; type: string; data: string }>`
@@ -89,16 +105,12 @@ export async function GET(req: NextRequest) {
           `;
           for (const row of rows) {
             lastEventId = Math.max(lastEventId, Number(row.id));
-            const eventKey = `${row.type}:${row.data}`;
-            if (deliveredLocalEvents.has(eventKey)) {
-              continue;
-            }
             try {
               controller.enqueue(
                 encoder.encode(`id: ${row.id}\nevent: ${row.type}\ndata: ${row.data}\n\n`),
               );
             } catch {
-              clearInterval(pollInterval);
+              if (pollInterval) clearInterval(pollInterval);
               return;
             }
           }
@@ -109,25 +121,26 @@ export async function GET(req: NextRequest) {
         } catch {}
       }, 1000);
 
-      const pingInterval = setInterval(() => {
+      pingInterval = setInterval(() => {
         try {
           controller.enqueue(
             encoder.encode(`event: ping\ndata: "${new Date().toISOString()}"\n\n`),
           );
           void touchLastSeen(deviceId).catch(() => {});
         } catch {
-          clearInterval(pingInterval);
+          if (pingInterval) clearInterval(pingInterval);
         }
       }, 5000);
 
       req.signal.addEventListener("abort", () => {
-        clearInterval(pollInterval);
-        clearInterval(pingInterval);
-        unsubscribe();
+        cleanup();
         try {
           controller.close();
         } catch {}
       });
+    },
+    cancel() {
+      cleanup();
     },
   });
 

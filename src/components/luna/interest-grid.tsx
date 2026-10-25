@@ -30,9 +30,10 @@ interface InterestInputProps {
   value: string[];
   onChange: (next: string[]) => void;
   onSubmit?: () => void;
+  activeQueueTopics?: string[];
 }
 
-export function InterestGrid({ value, onChange, onSubmit }: InterestInputProps) {
+export function InterestGrid({ value, onChange, onSubmit, activeQueueTopics }: InterestInputProps) {
   const [draft, setDraft] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
 
@@ -125,7 +126,7 @@ export function InterestGrid({ value, onChange, onSubmit }: InterestInputProps) 
             onKeyDown={handleKeyDown}
             onBlur={handleBlur}
             disabled={reachedMax}
-            placeholder={reachedMax ? "10 topics max" : "Type a topic (e.g. philosophy, lo-fi)…"}
+            placeholder={reachedMax ? "10 topics max" : "Type a topic (e.g. philosophy, lo-fi)..."}
             className="lowercase text-base sm:text-sm pr-9 bg-zinc-900/80 border-white/10 text-zinc-100 placeholder:text-zinc-400 focus-visible:border-white/30 rounded-xl h-10"
           />
           <Hash className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 pointer-events-none" />
@@ -162,6 +163,38 @@ export function InterestGrid({ value, onChange, onSubmit }: InterestInputProps) 
               </button>
             </Badge>
           ))}
+        </div>
+      )}
+
+      {activeQueueTopics && activeQueueTopics.length > 0 && (
+        <div className="flex flex-col gap-1.5 pt-1">
+          <div className="flex items-center gap-1.5 text-[11px] text-zinc-400">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+            </span>
+            <span className="font-medium text-zinc-300">Live in queue now:</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {activeQueueTopics.map((topic) => {
+              const isSelected = value.includes(topic);
+              return (
+                <button
+                  key={topic}
+                  type="button"
+                  onClick={() => handleToggleTag(topic)}
+                  className={cn(
+                    "rounded-full px-2.5 py-1 text-[11px] font-mono transition-all cursor-pointer active:scale-95 touch-manipulation border",
+                    isSelected
+                      ? "bg-zinc-100 text-zinc-950 border-white shadow-sm"
+                      : "bg-zinc-900/80 text-emerald-300/90 border-emerald-500/20 hover:bg-emerald-950/30 hover:border-emerald-500/40",
+                  )}
+                >
+                  #{topic}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 

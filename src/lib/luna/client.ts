@@ -31,14 +31,15 @@ const rpc = <TResult, TPayload extends Record<string, unknown> = Record<string, 
 
 export const registerStation = rpc<DeskView, { deviceId: string; publicKey?: string }>("registerStation");
 export const getDesk = rpc<DeskView, { deviceId: string; publicKey?: string }>("getDesk");
-export const joinQueue = rpc<QueueHeartbeatResult, { deviceId: string; interests: string[]; blockedIds?: string[]; publicKey?: string; sessionId?: string }>("joinQueue");
+export const joinQueue = rpc<QueueHeartbeatResult, { deviceId: string; interests: string[]; blockedIds?: string[]; recentPeerIds?: string[]; publicKey?: string; sessionId?: string }>("joinQueue");
 export const leaveQueue = rpc<DeskView, { deviceId: string }>("leaveQueue");
-export const heartbeatQueue = rpc<QueueHeartbeatResult, { deviceId: string; blockedIds?: string[] }>("heartbeatQueue");
+export const heartbeatQueue = rpc<QueueHeartbeatResult, { deviceId: string; blockedIds?: string[]; recentPeerIds?: string[] }>("heartbeatQueue");
+export const requestReconnect = rpc<DeskView, { deviceId: string; sessionId: string }>("requestReconnect");
 export const reportTyping = rpc<{ ok: boolean }, { deviceId: string; sessionId: string; isTyping: boolean }>("reportTyping");
 export const openFriendLine = rpc<DeskView, { deviceId: string; friendId: string }>("openFriendLine");
 export const leaveSession = rpc<DeskView, { deviceId: string; sessionId: string }>("leaveSession");
 export const listMessages = rpc<MessagesPack, { deviceId: string; sessionId: string }>("listMessages");
-export const sendMessage = rpc<MessagesPack, { deviceId: string; sessionId: string; body: string; clientMsgId?: string }>("sendMessage");
+export const sendMessage = rpc<MessagesPack, { deviceId: string; sessionId: string; body: string; clientMsgId?: string; isReaction?: boolean }>("sendMessage");
 export const editMessage = rpc<MessagesPack, { deviceId: string; sessionId: string; messageId: string; body: string }>("editMessage");
 export const deleteMessage = rpc<{ ok: boolean; messageId: string }, { deviceId: string; sessionId: string; messageId: string }>("deleteMessage");
 export const reportPresence = rpc<{ ok: boolean }, { deviceId: string; sessionId?: string; isAway: boolean }>("reportPresence");
@@ -64,6 +65,8 @@ const STREAM_EVENT_TYPES = [
   "presence_update",
   "message_edited",
   "message_deleted",
+  "messages_seen",
+  "reconnect_requested",
 ] as const;
 
 export function subscribeDeskStream(

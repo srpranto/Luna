@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import type { ChatMessage, HistorySession, MessagesPack, SessionView } from "@/lib/luna/types";
 import type { FloatingItem } from "@/components/luna/floating-reactions";
 import {
   decryptText,
   encryptText,
+  loadCachedMessages,
   saveCachedMessages,
   updateCachedMessage,
   deleteCachedMessage,
@@ -21,10 +22,11 @@ import {
 } from "@/lib/luna/client";
 import { playMessagePop, playMessageReceived, triggerHaptic } from "@/lib/luna/sound";
 
-const REACTION_REGEX = /^\[reaction:(🌙|✨)\]$/;
+const REACTION_REGEX = /^\[reaction:(.+?)\]$/u;
 
 interface UseLunaMessagesOptions {
   deviceId: string | null;
+  sessionId?: string | null;
   onActivity?: () => void;
   onHistoryUpdated?: (sessions: HistorySession[]) => void;
   onSessionEndedNotice?: () => void;
@@ -32,13 +34,39 @@ interface UseLunaMessagesOptions {
 
 export function useLunaMessages({
   deviceId,
+  sessionId,
   onActivity,
   onHistoryUpdated,
   onSessionEndedNotice,
 }: UseLunaMessagesOptions) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    if (sessionId) {
+      return loadCachedMessages(sessionId);
+    }
+    return [];
+  });
+  const messagesRef = useRef(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
   const [floatingReactions, setFloatingReactions] = useState<FloatingItem[]>([]);
   const [replyingTo, setReplyingTo] = useState<{ id: string; fromCallsign: string; body: string } | null>(null);
+
+  const hydrateCached = useCallback((sid: string) => {
+    const cached = loadCachedMessages(sid);
+    if (cached.length > 0) {
+      setMessages(cached);
+    }
+    return cached;
+  }, []);
+
+  useEffect(() => {
+    if (sessionId) {
+      queueMicrotask(() => {
+        hydrateCached(sessionId);
+      });
+    }
+  }, [sessionId, hydrateCached]);
 
   const seenReactionsRef = useRef<Set<string>>(new Set());
   const sendQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -204,6 +232,11 @@ export function useLunaMessages({
         setReplyingTo(null);
       }
 
+      const currentMsgs = messagesRef.current;
+      const lastTimestamp =
+        currentMsgs.length > 0 ? new Date(currentMsgs[currentMsgs.length - 1]!.createdAt).getTime() : 0;
+      const optimisticCreatedAt = new Date(Math.max(Date.now(), lastTimestamp + 1)).toISOString();
+
       const clientMsgId = crypto.randomUUID();
       const optimisticMsg: ChatMessage = {
         id: clientMsgId,
@@ -211,7 +244,7 @@ export function useLunaMessages({
         fromId: deviceId,
         fromCallsign: senderCallsign,
         body: textToSend,
-        createdAt: new Date().toISOString(),
+        createdAt: optimisticCreatedAt,
         expiresAt: new Date(Date.now() + 86400000).toISOString(),
         mine: true,
         system: false,
@@ -227,6 +260,9 @@ export function useLunaMessages({
         .catch(() => {})
         .then(async () => {
           try {
+            if (currentSession.peerPublicKey) {
+              await establishSharedKey(deviceId, currentSession.id, currentSession.peerPublicKey);
+            }
             const bodyToSend = await encryptText(textToSend, currentSession.id);
             const pack = await apiSendMessage({
               deviceId,
@@ -279,6 +315,9 @@ export function useLunaMessages({
         .catch(() => {})
         .then(async () => {
           try {
+            if (currentSession.peerPublicKey) {
+              await establishSharedKey(deviceId, currentSession.id, currentSession.peerPublicKey);
+            }
             const bodyToSend = await encryptText(textToSend, currentSession.id);
             const pack = await apiSendMessage({
               deviceId,
@@ -386,11 +425,15 @@ export function useLunaMessages({
       onActivity?.();
       triggerFloatingReaction(emoji);
       try {
+        if (currentSession.peerPublicKey) {
+          await establishSharedKey(deviceId, currentSession.id, currentSession.peerPublicKey);
+        }
         const bodyToSend = await encryptText(`[reaction:${emoji}]`, currentSession.id);
         await apiSendMessage({
           deviceId,
           sessionId: currentSession.id,
           body: bodyToSend,
+          isReaction: true,
         });
       } catch {}
     },
@@ -413,5 +456,6 @@ export function useLunaMessages({
     decryptPack,
     mergeAndStoreMessages,
     clearUnread,
+    hydrateCachedMessages: hydrateCached,
   };
 }

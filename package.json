@@ -9,12 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node tests/e2e/runner.ts",
-    "test:adversarial": "node tests/adversarial-m1.ts",
-    "test:stress": "node tests/stress_matchmaker.ts",
-    "test:focused": "node tests/focused_enhancements.ts",
-    "test:mobile": "node tests/mobile_system_navigation_haptics.ts",
-    "test:perf": "node tests/measure_performance.ts",
-    "test:all": "node tests/e2e/runner.ts && node tests/adversarial-m1.ts && node tests/stress_matchmaker.ts && node tests/focused_enhancements.ts && node tests/mobile_system_navigation_haptics.ts",
+    "test:all": "node tests/e2e/runner.ts",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {

@@ -318,6 +318,10 @@ export function Transcript({
   onDeleteMessage,
   onReply,
   onRetryMessage,
+  sessionKind,
+  onReconnect,
+  outboundReconnect,
+  inboundReconnect,
 }: {
   messages: ChatMessage[];
   now?: Date | null;
@@ -331,6 +335,10 @@ export function Transcript({
   onDeleteMessage?: (messageId: string) => Promise<void>;
   onReply?: (target: { id: string; fromCallsign: string; body: string }) => void;
   onRetryMessage?: (messageId: string) => void;
+  sessionKind?: "stranger" | "friend";
+  onReconnect?: () => void;
+  outboundReconnect?: boolean;
+  inboundReconnect?: boolean;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -399,12 +407,16 @@ export function Transcript({
     const lastMsg = messages[messages.length - 1];
     const isMine = lastMsg?.mine;
     if (container) {
-      const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-      if (isMine || distanceToBottom < 160) {
-        endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      if (isMine) {
+        container.scrollTop = container.scrollHeight;
+      } else {
+        const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+        if (distanceToBottom < 160) {
+          endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+        }
       }
     } else {
-      endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      endRef.current?.scrollIntoView({ behavior: isMine ? "auto" : "smooth", block: "end" });
     }
   }, [messages, peerTyping]);
 
@@ -696,7 +708,7 @@ export function Transcript({
                                   : msg.status === "delivered"
                                     ? "Delivered"
                                     : msg.status === "sending"
-                                      ? "Sending…"
+                                      ? "Sending..."
                                       : "Sent"
                             }
                           >
@@ -760,19 +772,56 @@ export function Transcript({
               User is no longer available right now
             </p>
             <p className="text-[11px] text-zinc-400">
-              The stranger disconnected or left the conversation.
+              {inboundReconnect
+                ? "The stranger has requested to reconnect with you!"
+                : outboundReconnect
+                  ? "Waiting for stranger to accept reconnect..."
+                  : "The stranger disconnected or left the conversation."}
             </p>
             <div className="flex flex-col items-center gap-2 pt-1">
-              <div className="flex items-center justify-center gap-2">
-                {onNext && (
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                {sessionKind === "stranger" && onReconnect && (
                   <Button
                     type="button"
                     size="sm"
                     onClick={() => {
                       triggerHaptic("medium");
+                      onReconnect();
+                    }}
+                    disabled={outboundReconnect}
+                    className={cn(
+                      "h-10 px-4 text-xs font-semibold cursor-pointer gap-1.5 touch-manipulation active:scale-[0.97]",
+                      inboundReconnect
+                        ? "bg-emerald-500 hover:bg-emerald-400 text-zinc-950 shadow-[0_0_20px_rgba(16,185,129,0.3)] animate-pulse"
+                        : outboundReconnect
+                          ? "bg-zinc-800 text-zinc-400 border border-white/10 cursor-not-allowed"
+                          : "bg-white text-zinc-950 hover:bg-zinc-200 shadow-[0_0_20px_rgba(255,255,255,0.2)]",
+                    )}
+                  >
+                    <span>
+                      {inboundReconnect
+                        ? "Accept Reconnect"
+                        : outboundReconnect
+                          ? "Reconnect Requested..."
+                          : "Reconnect"}
+                    </span>
+                  </Button>
+                )}
+                {onNext && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={inboundReconnect ? "outline" : "default"}
+                    onClick={() => {
+                      triggerHaptic("medium");
                       onNext();
                     }}
-                    className="h-10 px-4 text-xs font-semibold bg-white text-zinc-950 hover:bg-zinc-200 cursor-pointer gap-1.5 shadow-[0_0_20px_rgba(255,255,255,0.2)] touch-manipulation active:scale-[0.97]"
+                    className={cn(
+                      "h-10 px-4 text-xs font-semibold cursor-pointer gap-1.5 touch-manipulation active:scale-[0.97]",
+                      inboundReconnect
+                        ? "border-zinc-800 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900"
+                        : "bg-white text-zinc-950 hover:bg-zinc-200 shadow-[0_0_20px_rgba(255,255,255,0.2)]",
+                    )}
                   >
                     <span>Find Next Stranger</span>
                     <ArrowRight className="h-3.5 w-3.5" />

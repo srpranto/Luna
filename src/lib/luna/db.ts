@@ -36,13 +36,15 @@ create table if not exists queue (
 );
 
 create table if not exists sessions (
-  id         text primary key,
-  a_id       text not null,
-  b_id       text not null,
-  kind       text not null,
-  interests  text not null default '[]',
-  created_at timestamptz not null default now(),
-  closed_at  timestamptz
+  id          text primary key,
+  a_id        text not null,
+  b_id        text not null,
+  kind        text not null,
+  interests   text not null default '[]',
+  created_at  timestamptz not null default now(),
+  closed_at   timestamptz,
+  reconnect_a boolean default false,
+  reconnect_b boolean default false
 );
 
 create index if not exists sessions_open_a_idx on sessions (a_id) where closed_at is null;
@@ -168,6 +170,13 @@ const MIGRATIONS: { name: string; sql: string }[] = [
       create index if not exists device_events_device_idx on device_events (device_id, id);
     `,
   },
+  {
+    name: "005_session_reconnect",
+    sql: `
+      alter table sessions add column if not exists reconnect_a boolean default false;
+      alter table sessions add column if not exists reconnect_b boolean default false;
+    `,
+  },
 ];
 
 type QueryRunner = <T>(text: string, params: unknown[]) => Promise<T[]>;
@@ -261,15 +270,32 @@ async function initPglite(): Promise<Sql> {
   return createSqlInterface(run);
 }
 
+function resolveDatabaseUrl(): string | undefined {
+  if (typeof process === "undefined") return undefined;
+  const direct =
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.POSTGRES_URL_NON_POOLING ||
+    process.env.POSTGRES_PRISMA_URL;
+  if (direct?.trim()) {
+    return direct.trim();
+  }
+  const { PGHOST, PGUSER, PGPASSWORD, PGDATABASE } = process.env;
+  if (PGHOST && PGUSER && PGDATABASE) {
+    const pass = PGPASSWORD ? `:${encodeURIComponent(PGPASSWORD)}` : "";
+    return `postgres://${encodeURIComponent(PGUSER)}${pass}@${PGHOST}/${encodeURIComponent(PGDATABASE)}?sslmode=require`;
+  }
+  return undefined;
+}
+
 export async function getSql(): Promise<Sql> {
   if (!globalRef.__lunaSqlPromise__) {
-    const databaseUrl =
-      typeof process !== "undefined" ? process.env.DATABASE_URL?.trim() : undefined;
+    const databaseUrl = resolveDatabaseUrl();
     const isProduction =
       typeof process !== "undefined" && process.env.NODE_ENV === "production";
 
     if (isProduction && !databaseUrl) {
-      throw new Error("DATABASE_URL environment variable is required in production.");
+      throw new Error("DATABASE_URL or POSTGRES_URL environment variable is required in production.");
     }
 
     const promise = databaseUrl ? initNeon(databaseUrl) : initPglite();

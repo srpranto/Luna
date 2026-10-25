@@ -86,7 +86,7 @@ export function Searching({
 
       <div className="relative z-10 flex flex-col items-center w-full max-w-sm sm:max-w-md px-4 text-center">
         <p className="animate-fade-up stagger-1 text-base sm:text-lg font-medium text-zinc-100 tracking-tight">
-          {isTimeout ? "No strangers online right now" : "Finding someone to chat with…"}
+          {isTimeout ? "No strangers online right now" : "Finding someone to chat with..."}
         </p>
 
         <div className="animate-fade-up stagger-2 mt-2.5 inline-flex items-center gap-2 rounded-full bg-zinc-900/95 border border-white/15 px-3 py-1 text-xs font-mono text-zinc-200 shadow-inner">
@@ -100,8 +100,8 @@ export function Searching({
                 ? `Searched for 2 minutes with #${interests.join(", #")}. Nobody with matching topics is online at this quiet hour.`
                 : "Searched for 2 minutes. The midnight cosmos is still quiet right now.")
             : (waitMs < 4000 && interests.length > 0
-                ? "Searching for someone with matching interests…"
-                : "Traversing the cosmos for matching night owls…")}
+                ? "Searching for someone with matching interests..."
+                : "Traversing the cosmos for matching night owls...")}
         </p>
 
         {interests.length > 0 && (

@@ -10,19 +10,23 @@ export function Start({
   onInterests,
   onCall,
   busy,
+  onlineCount,
+  activeQueueTopics,
 }: {
   interests: string[];
   onInterests: (next: string[]) => void;
   onCall: () => void;
   busy: boolean;
+  onlineCount?: number;
+  activeQueueTopics?: string[];
 }) {
   return (
     <section className="flex min-h-0 flex-1 flex-col items-center justify-center p-4 sm:p-8 overflow-y-auto">
       <div className="flex flex-col items-center text-center select-none mb-1">
         <div className="animate-fade-up inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-full border border-white/10 bg-zinc-900/70 backdrop-blur-md mb-2 sm:mb-3 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]">
-          <span className="h-1.5 w-1.5 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.7)] animate-pulse" />
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)] animate-pulse" />
           <span className="text-[10px] sm:text-[11px] font-mono text-zinc-400 tracking-wide">
-            anonymous
+            {onlineCount && onlineCount > 0 ? `anonymous • ${onlineCount} online` : "anonymous"}
           </span>
         </div>
 
@@ -36,7 +40,12 @@ export function Start({
       </div>
 
       <div className="animate-fade-up stagger-3 mt-4 sm:mt-6 w-full max-w-md rounded-xl sm:rounded-2xl border border-white/10 bg-zinc-950/70 p-3.5 sm:p-5 shadow-[0_20px_50px_rgba(0,0,0,0.6),inset_0_1px_0_0_rgba(255,255,255,0.06)] backdrop-blur-xl">
-        <InterestGrid value={interests} onChange={onInterests} onSubmit={onCall} />
+        <InterestGrid
+          value={interests}
+          onChange={onInterests}
+          onSubmit={onCall}
+          activeQueueTopics={activeQueueTopics}
+        />
       </div>
 
       <div className="animate-fade-up stagger-4 mt-5 sm:mt-6 flex flex-col items-center gap-2 w-full max-w-xs sm:max-w-none">

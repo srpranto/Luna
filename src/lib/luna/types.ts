@@ -54,6 +54,8 @@ export interface SessionView {
   peerLastSeen?: string;
   peerPresence?: "active" | "away" | "disconnected";
   peerIsAway?: boolean;
+  outboundReconnect?: boolean;
+  inboundReconnect?: boolean;
 }
 
 export interface DeskView {
@@ -64,6 +66,8 @@ export interface DeskView {
   queued: boolean;
   queuedInterests: string[];
   enteredAt: string | null;
+  onlineCount?: number;
+  activeQueueTopics?: string[];
 }
 
 export interface QueueHeartbeatResult {

@@ -23,6 +23,7 @@ import type { DeskView } from "@/lib/luna/types";
 import { cn } from "@/lib/utils";
 
 interface SettingsPanelProps {
+  isOpen?: boolean;
   desk: DeskView;
   onClose: () => void;
   onCallsignUpdated: (next: DeskView) => void;
@@ -30,6 +31,7 @@ interface SettingsPanelProps {
 }
 
 export function SettingsPanel({
+  isOpen = true,
   desk,
   onClose,
   onCallsignUpdated,
@@ -50,6 +52,7 @@ export function SettingsPanel({
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
+    if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
@@ -59,13 +62,20 @@ export function SettingsPanel({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  }, [isOpen, onClose]);
 
   const [linkPreviews, setLinkPreviews] = useState(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("luna_link_previews_enabled") !== "false";
     }
     return true;
+  });
+
+  const [privacyShield, setPrivacyShield] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("luna.privacy_shield_enabled") === "true";
+    }
+    return false;
   });
 
   const [haptics, setHaptics] = useState(() => isHapticEnabled());
@@ -75,6 +85,15 @@ export function SettingsPanel({
     setHaptics(next);
     setHapticEnabled(next);
     if (next) triggerHaptic("tap");
+  };
+
+  const togglePrivacyShield = () => {
+    triggerHaptic("selection");
+    const next = !privacyShield;
+    setPrivacyShield(next);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("luna.privacy_shield_enabled", String(next));
+    }
   };
 
   const toggleLinkPreviews = () => {
@@ -142,29 +161,45 @@ export function SettingsPanel({
     }
   }
 
+  if (!isOpen) return null;
+
   return (
-    <div className="flex flex-col gap-6 p-4 sm:p-6 overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-      <div className="flex items-center justify-between border-b border-white/10 pb-3">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]">
-            <Settings className="h-4 w-4 text-zinc-100" />
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="settings-modal-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          triggerHaptic("light");
+          onClose();
+        }
+      }}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+    >
+      <div className="relative flex flex-col w-full max-w-lg max-h-[90vh] sm:max-h-[85vh] rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 bg-zinc-950/95 shadow-2xl overflow-hidden animate-sheet-up sm:animate-none pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-0">
+        <div className="w-10 h-1 bg-zinc-700/60 rounded-full mx-auto my-2.5 sm:hidden" />
+        <div className="flex flex-col gap-6 p-4 sm:p-6 overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+          <div className="flex items-center justify-between border-b border-white/10 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]">
+                <Settings className="h-4 w-4 text-zinc-100" />
+              </div>
+              <div>
+                <h2 id="settings-modal-title" className="text-base font-semibold tracking-tight text-zinc-100">Settings</h2>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("light");
+                onClose();
+              }}
+              aria-label="Close settings"
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors cursor-pointer touch-manipulation"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
-          <div>
-            <span className="text-base font-semibold tracking-tight text-zinc-100">Your name</span>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => {
-            triggerHaptic("light");
-            onClose();
-          }}
-          aria-label="Close"
-          className="text-zinc-500 hover:text-zinc-200 transition-colors cursor-pointer p-1 touch-manipulation"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
 
       {status && (
         <div className="flex items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-3.5 py-2 text-xs text-zinc-100 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]">
@@ -286,6 +321,35 @@ export function SettingsPanel({
               />
             </button>
           </div>
+
+          <div className="flex items-center justify-between gap-3 pt-3 border-t border-white/5">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-xs font-semibold text-zinc-200">
+                Stealth Blur Shield
+              </span>
+              <span className="text-[11px] text-zinc-400">
+                Blur conversation screen whenever window loses focus or switches tabs
+              </span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={privacyShield}
+              aria-label="Toggle stealth blur shield"
+              onClick={togglePrivacyShield}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400",
+                privacyShield ? "bg-zinc-100" : "bg-zinc-800",
+              )}
+            >
+              <span
+                className={cn(
+                  "pointer-events-none inline-block h-5 w-5 transform rounded-full shadow-lg ring-0 transition duration-200 ease-in-out",
+                  privacyShield ? "translate-x-5 bg-zinc-950" : "translate-x-0 bg-zinc-400",
+                )}
+              />
+            </button>
+          </div>
           <p className="text-[11px] text-zinc-500 leading-relaxed border-t border-white/5 pt-2">
             Notice: When enabled, preview metadata is fetched by the Luna preview proxy for the requested URL. Disabling prevents any link preview requests.
           </p>
@@ -379,5 +443,7 @@ export function SettingsPanel({
         </div>
       </div>
     </div>
+  </div>
+</div>
   );
 }

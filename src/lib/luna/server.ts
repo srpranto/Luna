@@ -60,26 +60,8 @@ interface SessionRow {
   interests: unknown;
   created_at: Date | string;
   closed_at: Date | string | null;
-}
-
-interface SessionWithStationsRow {
-  id: string;
-  a_id: string;
-  b_id: string;
-  kind: SessionKind;
-  interests: unknown;
-  created_at: Date | string;
-  closed_at: Date | string | null;
-  a_callsign: string | null;
-  a_public_key: string | null;
-  a_is_away: boolean | null;
-  a_last_seen: Date | string | null;
-  a_typing_until: Date | string | null;
-  b_callsign: string | null;
-  b_public_key: string | null;
-  b_is_away: boolean | null;
-  b_last_seen: Date | string | null;
-  b_typing_until: Date | string | null;
+  reconnect_a?: boolean | null;
+  reconnect_b?: boolean | null;
 }
 
 interface MessageRow {
@@ -233,7 +215,15 @@ async function touchStation(
   return { deviceId, callsign, publicKey: keyToSave ?? undefined };
 }
 
+let lastCleanupAt = 0;
+
 async function cleanup(sql?: Sql): Promise<void> {
+  const now = Date.now();
+  if (now - lastCleanupAt < 10_000) {
+    return;
+  }
+  lastCleanupAt = now;
+
   if (!sql) {
     sql = await getSql();
   }
@@ -365,6 +355,21 @@ async function loadSessionView(session: SessionRow, deviceId: string): Promise<S
         ? "active"
         : "disconnected";
 
+  let reconnectA = session.reconnect_a;
+  let reconnectB = session.reconnect_b;
+  if (reconnectA === undefined || reconnectB === undefined) {
+    const sRows = await sql<{ reconnect_a: boolean | null; reconnect_b: boolean | null }>`
+      select reconnect_a, reconnect_b from sessions where id = ${session.id}
+    `;
+    if (sRows[0]) {
+      reconnectA = sRows[0].reconnect_a;
+      reconnectB = sRows[0].reconnect_b;
+    }
+  }
+
+  const outboundReconnect = session.a_id === deviceId ? Boolean(reconnectA) : Boolean(reconnectB);
+  const inboundReconnect = session.a_id === deviceId ? Boolean(reconnectB) : Boolean(reconnectA);
+
   return {
     id: session.id,
     kind: session.kind,
@@ -381,13 +386,15 @@ async function loadSessionView(session: SessionRow, deviceId: string): Promise<S
     peerLastSeen,
     peerPresence,
     peerIsAway,
+    outboundReconnect,
+    inboundReconnect,
   };
 }
 
 async function openSessionFor(deviceId: string): Promise<SessionRow | undefined> {
   const sql = await getSql();
   const rows = await sql<SessionRow>`
-    select id, a_id, b_id, kind, interests, created_at, closed_at
+    select id, a_id, b_id, kind, interests, created_at, closed_at, reconnect_a, reconnect_b
     from sessions
     where closed_at is null
       and (a_id = ${deviceId} or b_id = ${deviceId})
@@ -404,10 +411,9 @@ async function loadMessagesPack(
 ): Promise<MessagesPack> {
   const sql = await getSql();
   await sql`update stations set last_seen = now() where device_id = ${deviceId}`;
-  await sql`delete from messages where expires_at < now()`;
 
   const sessions = await sql<SessionRow>`
-    select id, a_id, b_id, kind, interests, created_at, closed_at
+    select id, a_id, b_id, kind, interests, created_at, closed_at, reconnect_a, reconnect_b
     from sessions
     where id = ${sessionId}
       and (a_id = ${deviceId} or b_id = ${deviceId})
@@ -497,12 +503,10 @@ async function loadMessagesPack(
   }));
 
   if (markedSeen && !skipEmit) {
-    void (async () => {
-      try {
-        const senderPack = await loadMessagesPack(peerId, session.id, true);
-        emitToDevice(peerId, "message", senderPack);
-      } catch {}
-    })();
+    emitToDevice(peerId, "messages_seen", {
+      sessionId: session.id,
+      seenAt: new Date().toISOString(),
+    });
   }
 
   return {
@@ -518,7 +522,7 @@ async function loadDesk(
 ): Promise<DeskView> {
   const station = await touchStation(deviceId, clientIp, publicKey);
   const sql = await getSql();
-  const [friendRows, inboundRows, activeSessionRow, queueRows] = await Promise.all([
+  const [friendRows, inboundRows, activeSessionRow, queueRows, onlineCountRows, activeQueueRows] = await Promise.all([
     sql<{ user_a: string; user_b: string }>`
         select user_a, user_b from friendships
         where user_a = ${deviceId} or user_b = ${deviceId}
@@ -534,7 +538,26 @@ async function loadDesk(
         select device_id, interests, entered_at, last_beat
         from queue where device_id = ${deviceId}
       `,
+    sql<{ n: number }>`
+        select count(*)::int as n from stations where last_seen > now() - interval '60 seconds'
+      `,
+    sql<{ interests: string }>`
+        select interests from queue where last_beat > now() - interval '15 seconds' and device_id <> ${deviceId} limit 50
+      `,
   ]);
+
+  const onlineCount = onlineCountRows[0]?.n ?? 0;
+  const topicCounts = new Map<string, number>();
+  for (const r of activeQueueRows) {
+    const tags = parseInterests(r.interests);
+    for (const tag of tags) {
+      topicCounts.set(tag, (topicCounts.get(tag) ?? 0) + 1);
+    }
+  }
+  const activeQueueTopics = Array.from(topicCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([tag]) => tag);
 
   const friendIds = friendRows.map((row) => (row.user_a === deviceId ? row.user_b : row.user_a));
   const neededIds = [...new Set([...friendIds, ...inboundRows.map((r) => r.from_id)])];
@@ -570,6 +593,8 @@ async function loadDesk(
     queued: Boolean(queuedRow),
     queuedInterests: parseInterests(queuedRow?.interests),
     enteredAt: queuedRow ? asIso(queuedRow.entered_at) : null,
+    onlineCount,
+    activeQueueTopics,
   };
 }
 
@@ -594,6 +619,7 @@ async function heartbeatQueueHandler(
   deviceId: string,
   blockedIds: string[] = [],
   clientIp?: string,
+  recentPeerIds: string[] = [],
 ): Promise<QueueHeartbeatResult> {
   return runWithMatchmakerQueueLock(async () => {
     const sql = await getSql();
@@ -623,74 +649,60 @@ async function heartbeatQueueHandler(
       select blocker_id as peer_id from blocks where blocked_id = ${deviceId}
     `;
     const blockedSet = new Set([...blockedIds, ...serverBlocks.map((b) => b.peer_id)]);
+    const recentSet = new Set(recentPeerIds);
 
-    for (let matchAttempt = 0; matchAttempt < 4; matchAttempt++) {
-      const openNow = await openSessionFor(deviceId);
-      if (openNow) {
+    const meRows = await sql<QueueRow>`
+      select device_id, interests, entered_at, last_beat
+      from queue where device_id = ${deviceId}
+    `;
+    const me = meRows[0];
+    if (!me) {
+      const openAfterMe = await openSessionFor(deviceId);
+      if (openAfterMe) {
         await sql`delete from queue where device_id = ${deviceId}`;
         return { status: "matched", desk: await loadDesk(deviceId, clientIp) };
       }
+      return { status: "idle", desk: await loadDesk(deviceId, clientIp) };
+    }
 
-      const meRows = await sql<QueueRow>`
-        select device_id, interests, entered_at, last_beat
-        from queue where device_id = ${deviceId}
-      `;
-      const me = meRows[0];
-      if (!me) {
-        let openAfterMe = await openSessionFor(deviceId);
-        if (!openAfterMe) {
-          for (let attempt = 0; attempt < 5; attempt++) {
-            await new Promise((r) => setTimeout(r, 20));
-            openAfterMe = await openSessionFor(deviceId);
-            if (openAfterMe) break;
-          }
-        }
-        if (openAfterMe) {
-          await sql`delete from queue where device_id = ${deviceId}`;
-          return { status: "matched", desk: await loadDesk(deviceId, clientIp) };
-        }
-        await touchStation(deviceId, clientIp);
-        await sql`
-          insert into queue (device_id, interests, entered_at, last_beat)
-          values (${deviceId}, '[]', now(), now())
-          on conflict (device_id) do update set last_beat = now()
-        `;
-        return { status: "waiting", desk: await loadDesk(deviceId, clientIp) };
+    const myInterests = parseInterests(me.interests);
+    const stale = `${QUEUE_STALE_SECONDS} seconds`;
+    const myWaitMs = Date.now() - new Date(me.entered_at).getTime();
+
+    const others = await sql<QueueRow>`
+      select q.device_id, q.interests, q.entered_at, q.last_beat
+      from queue q
+      inner join stations s on s.device_id = q.device_id
+      where q.device_id <> ${deviceId}
+        and q.last_beat > now() - ${stale}::interval
+        and s.last_seen > now() - ${stale}::interval
+        and not exists (
+          select 1 from sessions ses
+          where ses.closed_at is null
+            and (ses.a_id = q.device_id or ses.b_id = q.device_id)
+        )
+      order by q.entered_at asc
+    `;
+
+    let best: { row: QueueRow; shared: string[] } | null = null;
+
+    // 1. First pass: look for candidate with highest shared interests.
+    // If myInterests.length === 0, match with earliest candidate with theirInterests.length === 0.
+    for (const row of others) {
+      if (blockedSet.has(row.device_id)) {
+        continue;
       }
+      if (recentSet.has(row.device_id) && myWaitMs < 15000) {
+        continue;
+      }
+      const theirInterests = parseInterests(row.interests);
 
-      const myInterests = parseInterests(me.interests);
-      const stale = `${QUEUE_STALE_SECONDS} seconds`;
-
-      const others = await sql<QueueRow>`
-        select q.device_id, q.interests, q.entered_at, q.last_beat
-        from queue q
-        inner join stations s on s.device_id = q.device_id
-        where q.device_id <> ${deviceId}
-          and q.last_beat > now() - ${stale}::interval
-          and s.last_seen > now() - ${stale}::interval
-          and not exists (
-            select 1 from sessions ses
-            where ses.closed_at is null
-              and (ses.a_id = q.device_id or ses.b_id = q.device_id)
-          )
-        order by q.entered_at asc
-      `;
-
-      let best: { row: QueueRow; shared: string[] } | null = null;
-      for (const row of others) {
-        if (blockedSet.has(row.device_id)) {
-          continue;
-        }
-        const theirInterests = parseInterests(row.interests);
-
-        if (myInterests.length === 0) {
-          if (theirInterests.length > 0) {
-            continue;
-          }
+      if (myInterests.length === 0) {
+        if (theirInterests.length === 0) {
           best = { row, shared: [] };
           break;
         }
-
+      } else {
         const shared = sharedInterests(myInterests, theirInterests);
         if (shared.length > 0) {
           if (!best || shared.length > best.shared.length) {
@@ -698,77 +710,63 @@ async function heartbeatQueueHandler(
           }
         }
       }
-
-      if (!best) {
-        const payload = JSON.stringify(myInterests);
-        await sql`
-          insert into queue (device_id, interests, entered_at, last_beat)
-          values (${deviceId}, ${payload}, ${me.entered_at}, now())
-          on conflict (device_id) do update set last_beat = now()
-        `;
-
-        const desk = await loadDesk(deviceId, clientIp);
-        if (desk.activeSession) {
-          await sql`delete from queue where device_id = ${deviceId}`;
-          return { status: "matched", desk };
-        }
-
-        continue;
-      }
-
-      const claimed = await sql<{ device_id: string }>`
-        delete from queue
-        where device_id = ${best.row.device_id}
-          and exists (select 1 from queue where device_id = ${deviceId})
-        returning device_id
-      `;
-      if (claimed.length === 0) {
-        let openAfterFailedClaim = await openSessionFor(deviceId);
-        if (!openAfterFailedClaim) {
-          for (let retry = 0; retry < 5; retry++) {
-            await new Promise((r) => setTimeout(r, 20));
-            openAfterFailedClaim = await openSessionFor(deviceId);
-            if (openAfterFailedClaim) break;
-          }
-        }
-        if (openAfterFailedClaim) {
-          await sql`delete from queue where device_id = ${deviceId}`;
-          return { status: "matched", desk: await loadDesk(deviceId, clientIp) };
-        }
-        continue;
-      }
-
-      await sql`delete from queue where device_id = ${deviceId}`;
-
-      const activeCheck = await sql<{ id: string }>`
-        select id from sessions
-        where closed_at is null
-          and (a_id in (${deviceId}, ${best.row.device_id}) or b_id in (${deviceId}, ${best.row.device_id}))
-        limit 1
-      `;
-      if (activeCheck.length > 0) {
-        return { status: "matched", desk: await loadDesk(deviceId, clientIp) };
-      }
-
-      const sessionId = newId();
-      const shared = JSON.stringify(best.shared);
-      await sql`
-        insert into sessions (id, a_id, b_id, kind, interests)
-        values (${sessionId}, ${deviceId}, ${best.row.device_id}, 'stranger', ${shared})
-      `;
-
-      const deskA = await loadDesk(deviceId, clientIp);
-      const deskB = await loadDesk(best.row.device_id);
-      emitToDevice(deviceId, "session_started", { sessionId, desk: deskA });
-      emitToDevice(best.row.device_id, "session_started", { sessionId, desk: deskB });
-
-      return { status: "matched", desk: deskA };
     }
 
-    return {
-      status: "waiting",
-      desk: await loadDesk(deviceId, clientIp),
-    };
+    // 2. Fallback pass: if no exact topic match is found and user has waited >= 5000ms
+    if (!best && myWaitMs >= 5000) {
+      for (const row of others) {
+        if (blockedSet.has(row.device_id)) {
+          continue;
+        }
+        if (recentSet.has(row.device_id) && myWaitMs < 15000) {
+          continue;
+        }
+        const theirInterests = parseInterests(row.interests);
+        const theirWaitMs = Date.now() - new Date(row.entered_at).getTime();
+        if (theirInterests.length === 0 || theirWaitMs >= 5000) {
+          best = { row, shared: sharedInterests(myInterests, theirInterests) };
+          break;
+        }
+      }
+    }
+
+    if (!best) {
+      return {
+        status: "waiting",
+        desk: await loadDesk(deviceId, clientIp),
+      };
+    }
+
+    const claimed = await sql<{ device_id: string }>`
+      delete from queue
+      where device_id = ${best.row.device_id}
+        and exists (select 1 from queue where device_id = ${deviceId})
+      returning device_id
+    `;
+    if (claimed.length === 0) {
+      const openAfterFailedClaim = await openSessionFor(deviceId);
+      if (openAfterFailedClaim) {
+        await sql`delete from queue where device_id = ${deviceId}`;
+        return { status: "matched", desk: await loadDesk(deviceId, clientIp) };
+      }
+      return { status: "waiting", desk: await loadDesk(deviceId, clientIp) };
+    }
+
+    await sql`delete from queue where device_id = ${deviceId}`;
+
+    const sessionId = newId();
+    const shared = JSON.stringify(best.shared);
+    await sql`
+      insert into sessions (id, a_id, b_id, kind, interests)
+      values (${sessionId}, ${deviceId}, ${best.row.device_id}, 'stranger', ${shared})
+    `;
+
+    const deskA = await loadDesk(deviceId, clientIp);
+    const deskB = await loadDesk(best.row.device_id);
+    emitToDevice(deviceId, "session_started", { sessionId, desk: deskA });
+    emitToDevice(best.row.device_id, "session_started", { sessionId, desk: deskB });
+
+    return { status: "matched", desk: deskA };
   });
 }
 
@@ -816,6 +814,7 @@ export async function joinQueue(input: {
   clientIp?: string;
   publicKey?: string;
   leaveSessionId?: string;
+  recentPeerIds?: string[];
 }): Promise<QueueHeartbeatResult> {
   const deviceId = requireDeviceId(input.deviceId);
   const interests = sanitizeInterests(input.interests);
@@ -878,7 +877,7 @@ export async function joinQueue(input: {
     set interests = ${payload}, entered_at = now(), last_beat = now()
   `;
 
-  return heartbeatQueueHandler(deviceId, input.blockedIds ?? [], input.clientIp);
+  return heartbeatQueueHandler(deviceId, input.blockedIds ?? [], input.clientIp, input.recentPeerIds ?? []);
 }
 
 export async function leaveQueue(input: { deviceId: string }): Promise<DeskView> {
@@ -892,9 +891,10 @@ export async function heartbeatQueue(input: {
   deviceId: string;
   blockedIds?: string[];
   clientIp?: string;
+  recentPeerIds?: string[];
 }): Promise<QueueHeartbeatResult> {
   const deviceId = requireDeviceId(input.deviceId);
-  return heartbeatQueueHandler(deviceId, input.blockedIds ?? [], input.clientIp);
+  return heartbeatQueueHandler(deviceId, input.blockedIds ?? [], input.clientIp, input.recentPeerIds ?? []);
 }
 
 export async function reportTyping(input: {
@@ -953,6 +953,7 @@ export async function openFriendLine(input: {
     `;
   }
 
+  emitToDevice(friendId, "desk_update", await loadDesk(friendId));
   return loadDesk(deviceId);
 }
 
@@ -984,6 +985,69 @@ export async function leaveSession(input: {
   return loadDesk(deviceId);
 }
 
+export async function requestReconnect(input: {
+  deviceId: string;
+  sessionId: string;
+}): Promise<DeskView> {
+  const deviceId = requireDeviceId(input.deviceId);
+  const sql = await getSql();
+  const rows = await sql<SessionRow>`
+    select id, a_id, b_id, kind, interests, created_at, closed_at, reconnect_a, reconnect_b
+    from sessions where id = ${input.sessionId} and (a_id = ${deviceId} or b_id = ${deviceId})
+  `;
+  const session = rows[0];
+  if (!session || session.kind !== "stranger") {
+    throw new Error("Chat session not found or ineligible for reconnect.");
+  }
+  const peerId = peerOf(session, deviceId);
+  const blocks = await sql<{ n: number }>`
+    select count(*)::int as n from blocks
+    where (blocker_id = ${deviceId} and blocked_id = ${peerId})
+       or (blocker_id = ${peerId} and blocked_id = ${deviceId})
+  `;
+  if (blocks[0] && blocks[0].n > 0) {
+    throw new Error("Cannot reconnect with this stranger.");
+  }
+  const peerOpen = await openSessionFor(peerId);
+  if (peerOpen && peerOpen.id !== session.id) {
+    throw new Error("Stranger is already in another conversation.");
+  }
+  const isA = session.a_id === deviceId;
+  const updated = await sql<SessionRow>`
+    update sessions
+    set ${isA ? sql`reconnect_a = true` : sql`reconnect_b = true`}
+    where id = ${session.id}
+    returning id, a_id, b_id, kind, interests, created_at, closed_at, reconnect_a, reconnect_b
+  `;
+  const current = updated[0] ?? session;
+  if (current.reconnect_a && current.reconnect_b) {
+    await sql`
+      update sessions
+      set closed_at = null, reconnect_a = false, reconnect_b = false
+      where id = ${session.id}
+    `;
+    await sql`delete from queue where device_id in (${session.a_id}, ${session.b_id})`;
+    const ttl = ttlInterval(session.kind);
+    await sql`
+      insert into messages (id, session_id, from_id, body, expires_at)
+      values (${newId()}, ${session.id}, 'system', 'Reconnected! Conversation resumed.', now() + ${ttl}::interval)
+    `;
+    const deskA = await loadDesk(session.a_id);
+    const deskB = await loadDesk(session.b_id);
+    emitToDevice(session.a_id, "session_started", { sessionId: session.id, desk: deskA });
+    emitToDevice(session.b_id, "session_started", { sessionId: session.id, desk: deskB });
+    return isA ? deskA : deskB;
+  } else {
+    const senderCallsign = await callsignOf(deviceId);
+    emitToDevice(peerId, "reconnect_requested", {
+      sessionId: session.id,
+      fromCallsign: senderCallsign,
+      session: await loadSessionView(current, peerId),
+    });
+    return loadDesk(deviceId);
+  }
+}
+
 export async function listMessages(input: {
   deviceId: string;
   sessionId: string;
@@ -997,15 +1061,19 @@ export async function sendMessage(input: {
   sessionId: string;
   body: string;
   clientMsgId?: string;
+  isReaction?: boolean;
 }): Promise<MessagesPack> {
   const deviceId = requireDeviceId(input.deviceId);
-  const rateCheck = checkMessageRateLimit(deviceId);
-  if (!rateCheck.allowed) {
-    throw new Error(`Rate limit exceeded. Please wait ${Math.ceil(rateCheck.retryAfterMs / 1000)}s.`);
+  if (!input.isReaction && !input.body.startsWith("[reaction:")) {
+    const rateCheck = checkMessageRateLimit(deviceId);
+    if (!rateCheck.allowed) {
+      throw new Error(`Rate limit exceeded. Please wait ${Math.ceil(rateCheck.retryAfterMs / 1000)}s.`);
+    }
   }
 
   const body = requireText(input.body, MAX_LINE_CHARS);
   const sql = await getSql();
+  await sql`update stations set last_seen = now() where device_id = ${deviceId}`;
 
   if (!body.startsWith("e2e:")) {
     const safety = evaluateSafety(body);
@@ -1014,73 +1082,26 @@ export async function sendMessage(input: {
     }
   }
 
-  const rows = await sql<SessionWithStationsRow>`
-    select
-      s.id,
-      s.a_id,
-      s.b_id,
-      s.kind,
-      s.interests,
-      s.created_at,
-      s.closed_at,
-      sa.callsign as a_callsign,
-      sa.public_key as a_public_key,
-      sa.is_away as a_is_away,
-      sa.last_seen as a_last_seen,
-      sa.typing_until as a_typing_until,
-      sb.callsign as b_callsign,
-      sb.public_key as b_public_key,
-      sb.is_away as b_is_away,
-      sb.last_seen as b_last_seen,
-      sb.typing_until as b_typing_until
-    from sessions s
-    left join stations sa on sa.device_id = s.a_id
-    left join stations sb on sb.device_id = s.b_id
-    where s.id = ${input.sessionId}
-      and (s.a_id = ${deviceId} or s.b_id = ${deviceId})
+  const rows = await sql<SessionRow>`
+    select id, a_id, b_id, kind, interests, created_at, closed_at, reconnect_a, reconnect_b
+    from sessions
+    where id = ${input.sessionId}
+      and (a_id = ${deviceId} or b_id = ${deviceId})
   `;
   const row = rows[0];
-  if (!row) {
+  if (!row || row.closed_at) {
     return {
       session: {
         id: input.sessionId,
-        kind: "stranger",
+        kind: row?.kind ?? "stranger",
         peerId: "",
         peerCallsign: "Stranger",
-        interests: [],
-        createdAt: new Date().toISOString(),
+        interests: row ? parseInterests(row.interests) : [],
+        createdAt: row ? asIso(row.created_at) : new Date().toISOString(),
         closed: true,
         outboundQsl: null,
         inboundQsl: null,
-        alreadyFriends: false,
-        peerTyping: false,
-        peerPresence: "disconnected",
-      },
-      messages: [],
-    };
-  }
-
-  const isA = row.a_id === deviceId;
-  const peerId = isA ? row.b_id : row.a_id;
-  const senderCallsign = (isA ? row.a_callsign : row.b_callsign) ?? "----";
-  const peerCallsign = (isA ? row.b_callsign : row.a_callsign) ?? "----";
-  const senderPublicKey = (isA ? row.a_public_key : row.b_public_key) ?? undefined;
-  const peerPublicKey = (isA ? row.b_public_key : row.a_public_key) ?? undefined;
-
-  if (row.closed_at) {
-    return {
-      session: {
-        id: row.id,
-        kind: row.kind,
-        peerId,
-        peerCallsign,
-        peerPublicKey,
-        interests: parseInterests(row.interests),
-        createdAt: asIso(row.created_at),
-        closed: true,
-        outboundQsl: null,
-        inboundQsl: null,
-        alreadyFriends: row.kind === "friend",
+        alreadyFriends: row?.kind === "friend",
         peerTyping: false,
         peerPresence: "disconnected",
         peerIsAway: true,
@@ -1089,6 +1110,7 @@ export async function sendMessage(input: {
     };
   }
 
+  const peerId = peerOf(row, deviceId);
   const ttl = ttlInterval(row.kind);
   const messageId = input.clientMsgId || newId();
   const insertedRows = await sql<{
@@ -1107,83 +1129,11 @@ export async function sendMessage(input: {
     expires_at: new Date(Date.now() + 86400000),
   };
 
-  const nowMs = Date.now();
-  const sessionAgeMs = nowMs - new Date(row.created_at).getTime();
-  const isFreshSession = sessionAgeMs < 20000;
-
-  const peerLastSeenRaw = isA ? row.b_last_seen : row.a_last_seen;
-  const peerTypingUntilRaw = isA ? row.b_typing_until : row.a_typing_until;
-  const peerIsAwayRaw = isA ? row.b_is_away : row.a_is_away;
-
-  const senderLastSeenRaw = isA ? row.a_last_seen : row.b_last_seen;
-  const senderTypingUntilRaw = isA ? row.a_typing_until : row.b_typing_until;
-  const senderIsAwayRaw = isA ? row.a_is_away : row.b_is_away;
-
-  const peerLastSeenMs = peerLastSeenRaw ? new Date(peerLastSeenRaw).getTime() : 0;
-  const peerLastSeen = peerLastSeenRaw ? asIso(peerLastSeenRaw) : undefined;
-  const peerTyping = Boolean(
-    peerTypingUntilRaw && new Date(peerTypingUntilRaw).getTime() > nowMs,
-  );
-  const peerRecentlySeen = peerLastSeenMs > 0 && nowMs - peerLastSeenMs < 60000;
-  const peerOnline = isDeviceConnected(peerId) || peerRecentlySeen || isFreshSession;
-  const peerIsAway = Boolean(peerIsAwayRaw);
-  const peerPresence: "active" | "away" | "disconnected" = peerIsAway
-    ? "away"
-    : peerOnline
-      ? "active"
-      : "disconnected";
-
-  const senderLastSeenMs = senderLastSeenRaw ? new Date(senderLastSeenRaw).getTime() : 0;
-  const senderLastSeen = senderLastSeenRaw ? asIso(senderLastSeenRaw) : undefined;
-  const senderTyping = Boolean(
-    senderTypingUntilRaw && new Date(senderTypingUntilRaw).getTime() > nowMs,
-  );
-  const senderRecentlySeen = senderLastSeenMs > 0 && nowMs - senderLastSeenMs < 60000;
-  const senderOnline = isDeviceConnected(deviceId) || senderRecentlySeen || isFreshSession;
-  const senderIsAway = Boolean(senderIsAwayRaw);
-  const senderPresence: "active" | "away" | "disconnected" = senderIsAway
-    ? "away"
-    : senderOnline
-      ? "active"
-      : "disconnected";
-
-  const interests = parseInterests(row.interests);
-
-  const mySessionView: SessionView = {
-    id: row.id,
-    kind: row.kind,
-    peerId,
-    peerCallsign,
-    peerPublicKey,
-    interests,
-    createdAt: asIso(row.created_at),
-    closed: false,
-    outboundQsl: null,
-    inboundQsl: null,
-    alreadyFriends: row.kind === "friend",
-    peerTyping,
-    peerLastSeen,
-    peerPresence,
-    peerIsAway,
-  };
-
-  const peerSessionView: SessionView = {
-    id: row.id,
-    kind: row.kind,
-    peerId: deviceId,
-    peerCallsign: senderCallsign,
-    peerPublicKey: senderPublicKey,
-    interests,
-    createdAt: asIso(row.created_at),
-    closed: false,
-    outboundQsl: null,
-    inboundQsl: null,
-    alreadyFriends: row.kind === "friend",
-    peerTyping: senderTyping,
-    peerLastSeen: senderLastSeen,
-    peerPresence: senderPresence,
-    peerIsAway: senderIsAway,
-  };
+  const [mySessionView, peerSessionView, senderCallsign] = await Promise.all([
+    loadSessionView(row, deviceId),
+    loadSessionView(row, peerId),
+    callsignOf(deviceId),
+  ]);
 
   const messageCreatedAt = asIso(inserted.created_at);
   const messageExpiresAt = asIso(inserted.expires_at);
@@ -1265,8 +1215,10 @@ export async function editMessage(input: {
   const pack = await loadMessagesPack(deviceId, session.id, true);
 
   emitToDevice(peerId, "message_edited", {
-    session: await loadSessionView(session, peerId),
-    messages: (await loadMessagesPack(peerId, session.id, true)).messages,
+    sessionId: session.id,
+    messageId: input.messageId,
+    body,
+    editedAt: asIso(updated[0]?.edited_at ?? new Date()),
   });
 
   return pack;
@@ -1351,8 +1303,10 @@ export async function reportPresence(input: {
             returning id
           `;
           if (updated.length > 0) {
-            const peerPack = await loadMessagesPack(peerId, session.id, true);
-            emitToDevice(peerId, "message", peerPack);
+            emitToDevice(peerId, "messages_seen", {
+              sessionId: session.id,
+              seenAt: new Date().toISOString(),
+            });
           }
         } catch {}
       }

@@ -23,7 +23,7 @@ interface CachedEnvelope {
   savedAt: number;
 }
 
-function loadCachedMessages(sessionId: string): ChatMessage[] {
+export function loadCachedMessages(sessionId: string): ChatMessage[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(`${CHAT_CACHE_PREFIX}.${sessionId}`);
@@ -159,7 +159,7 @@ async function getOrCreateDeviceKeyPair(deviceId: string): Promise<CryptoKeyPair
   const storageKey = `luna.device.ecdh.${deviceId}`;
 
   try {
-    const cached = sessionStorage.getItem(storageKey);
+    const cached = localStorage.getItem(storageKey);
     if (cached) {
       const parsed = JSON.parse(cached) as { priv?: JsonWebKey; pub?: JsonWebKey };
       if (parsed.priv && parsed.pub) {
@@ -195,7 +195,7 @@ async function getOrCreateDeviceKeyPair(deviceId: string): Promise<CryptoKeyPair
     try {
       const priv = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
       const pub = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
-      sessionStorage.setItem(storageKey, JSON.stringify({ priv, pub }));
+      localStorage.setItem(storageKey, JSON.stringify({ priv, pub }));
     } catch {}
 
     const entry = ecdhStore.get(`device:${deviceId}`) ?? {};
@@ -310,11 +310,18 @@ export async function decryptText(payload: string, sessionId: string): Promise<s
     const parts = payload.split(":");
     let ivHex = "";
     let dataHex = "";
+    let key: CryptoKey;
 
     if (parts.length === 4 && parts[1] === "v2") {
+      const sharedKey = ecdhStore.get(sessionId)?.sharedKey;
+      if (!sharedKey) {
+        return payload;
+      }
+      key = sharedKey;
       ivHex = parts[2] ?? "";
       dataHex = parts[3] ?? "";
     } else if (parts.length === 3) {
+      key = await deriveFallbackSessionKey(sessionId);
       ivHex = parts[1] ?? "";
       dataHex = parts[2] ?? "";
     } else {
@@ -324,9 +331,6 @@ export async function decryptText(payload: string, sessionId: string): Promise<s
     const iv = hexToBytes(ivHex);
     const encrypted = hexToBytes(dataHex);
     if (iv.length === 0 || encrypted.length === 0) return payload;
-
-    const entry = ecdhStore.get(sessionId);
-    const key = entry?.sharedKey ?? (await deriveFallbackSessionKey(sessionId));
 
     const decrypted = await crypto.subtle.decrypt(
       { name: "AES-GCM", iv: iv as unknown as BufferSource },

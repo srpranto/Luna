@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { triggerHaptic } from "@/lib/luna/sound";
 import { cn } from "@/lib/utils";
 
-const CELESTIAL_REACTIONS = ["🌙", "✨"];
+const CELESTIAL_REACTIONS = ["✨", "🌙", "💫", "🤍", "🔥", "🫂"];
 
 const useIsomorphicLayoutEffect =
   typeof window !== "undefined" ? useLayoutEffect : useEffect;
@@ -33,6 +33,10 @@ export function Composer({
   replyingTo,
   onCancelReply,
   onNext,
+  sessionKind,
+  onReconnect,
+  outboundReconnect,
+  inboundReconnect,
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -46,6 +50,10 @@ export function Composer({
   replyingTo?: { id: string; fromCallsign: string; body: string } | null;
   onCancelReply?: () => void;
   onNext?: () => void;
+  sessionKind?: "stranger" | "friend";
+  onReconnect?: () => void;
+  outboundReconnect?: boolean;
+  inboundReconnect?: boolean;
 }) {
   const [showReactions, setShowReactions] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -91,6 +99,25 @@ export function Composer({
       return () => window.clearTimeout(timer);
     }
   }, [autoFocus, disabled]);
+
+  useEffect(() => {
+    if (disabled) return;
+    function handleGlobalKeyDown(e: globalThis.KeyboardEvent) {
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const active = document.activeElement;
+        const isEditable =
+          active &&
+          (active.tagName === "INPUT" ||
+            active.tagName === "TEXTAREA" ||
+            active.getAttribute("contenteditable") === "true");
+        if (!isEditable && textareaRef.current) {
+          textareaRef.current.focus();
+        }
+      }
+    }
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [disabled]);
 
   function doSubmit() {
     if (!disabled && value.trim()) {
@@ -241,18 +268,47 @@ export function Composer({
       </label>
 
       {disabled && onNext ? (
-        <div className="flex items-center justify-between gap-3 py-1">
+        <div className="flex flex-wrap items-center justify-between gap-3 py-1">
           <span className="text-xs text-zinc-400">
-            This chat has ended.
+            {inboundReconnect
+              ? "Stranger wants to reconnect!"
+              : outboundReconnect
+                ? "Reconnect requested..."
+                : "This chat has ended."}
           </span>
-          <Button
-            type="button"
-            onClick={onNext}
-            className="h-10 min-h-[44px] sm:min-h-[40px] px-5 text-xs font-semibold bg-white text-zinc-950 hover:bg-zinc-200 cursor-pointer gap-2 shadow-[0_0_20px_rgba(255,255,255,0.2)] rounded-xl touch-manipulation"
-          >
-            <span>Find Next Stranger</span>
-            <ArrowRight className="h-3.5 w-3.5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            {sessionKind === "stranger" && onReconnect && (
+              <Button
+                type="button"
+                onClick={onReconnect}
+                disabled={outboundReconnect}
+                className={cn(
+                  "h-10 min-h-[44px] sm:min-h-[40px] px-4 text-xs font-semibold cursor-pointer gap-2 rounded-xl touch-manipulation active:scale-[0.97]",
+                  inboundReconnect
+                    ? "bg-emerald-500 hover:bg-emerald-400 text-zinc-950 shadow-[0_0_20px_rgba(16,185,129,0.3)] animate-pulse"
+                    : outboundReconnect
+                      ? "bg-zinc-850 text-zinc-400 border border-white/10 cursor-not-allowed"
+                      : "border border-white/15 bg-zinc-900 hover:bg-zinc-800 text-zinc-200",
+                )}
+              >
+                <span>
+                  {inboundReconnect
+                    ? "Accept Reconnect"
+                    : outboundReconnect
+                      ? "Reconnect Requested..."
+                      : "Reconnect"}
+                </span>
+              </Button>
+            )}
+            <Button
+              type="button"
+              onClick={onNext}
+              className="h-10 min-h-[44px] sm:min-h-[40px] px-5 text-xs font-semibold bg-white text-zinc-950 hover:bg-zinc-200 cursor-pointer gap-2 shadow-[0_0_20px_rgba(255,255,255,0.2)] rounded-xl touch-manipulation"
+            >
+              <span>Find Next Stranger</span>
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
       ) : (
         <div className="flex items-end gap-2">

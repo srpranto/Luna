@@ -11,7 +11,7 @@ import { WelcomeModal } from "@/components/luna/welcome-modal";
 import { ExitConfirmModal } from "@/components/luna/exit-confirm-modal";
 import { Start } from "@/components/luna/start";
 import { Searching } from "@/components/luna/searching";
-import { Chat } from "@/components/luna/chat";
+import { LineView as Chat } from "@/components/luna/line-view";
 import { NetworkBanner } from "@/components/luna/network-banner";
 import { useLunaPresence } from "@/hooks/luna/use-luna-presence";
 import { useLunaMessages } from "@/hooks/luna/use-luna-messages";
@@ -26,6 +26,9 @@ import {
   deleteHistorySession,
   clearAllChatHistory,
   destroySessionKey,
+  decryptText,
+  saveCachedMessages,
+  loadCachedMessages,
 } from "@/lib/luna/crypto";
 import {
   getDesk,
@@ -42,6 +45,7 @@ import {
   updateCallsign,
   blockUser,
   reportUser,
+  requestReconnect,
 } from "@/lib/luna/client";
 import {
   isSoundEnabled,
@@ -145,6 +149,8 @@ export default function Home() {
   const peerTypingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const busyRef = useRef(busy);
   const isQueueingRef = useRef(false);
+  const isLeavingQueueRef = useRef(false);
+  const isLeavingSessionRef = useRef(false);
   const interestsRef = useRef(interests);
   const settingsOpenRef = useRef(settingsOpen);
   const logOpenRef = useRef(logOpen);
@@ -152,34 +158,20 @@ export default function Home() {
   const voidOpenRef = useRef(voidOpen);
   const exitConfirmRef = useRef(exitConfirm);
   const listeningRef = useRef(false);
+  const recentPeersRef = useRef<Map<string, number>>(new Map());
 
-  useEffect(() => {
-    busyRef.current = busy;
-  }, [busy]);
-
-  useEffect(() => {
-    interestsRef.current = interests;
-  }, [interests]);
-
-  useEffect(() => {
-    settingsOpenRef.current = settingsOpen;
-  }, [settingsOpen]);
-
-  useEffect(() => {
-    logOpenRef.current = logOpen;
-  }, [logOpen]);
-
-  useEffect(() => {
-    historyOpenRef.current = historyOpen;
-  }, [historyOpen]);
-
-  useEffect(() => {
-    voidOpenRef.current = voidOpen;
-  }, [voidOpen]);
-
-  useEffect(() => {
-    exitConfirmRef.current = exitConfirm;
-  }, [exitConfirm]);
+  const getRecentPeerIds = useCallback((): string[] => {
+    const now = Date.now();
+    const valid: string[] = [];
+    for (const [peerId, ts] of recentPeersRef.current.entries()) {
+      if (now - ts < 120_000) {
+        valid.push(peerId);
+      } else {
+        recentPeersRef.current.delete(peerId);
+      }
+    }
+    return valid;
+  }, []);
 
   const notifyError = useCallback((err: unknown) => {
     const msg = errorMessage(err);
@@ -189,11 +181,10 @@ export default function Home() {
   const handleDeskUpdate = useCallback((refreshed: DeskView) => {
     setDesk((prev) => {
       if (!prev) return refreshed;
-      const isSearching = Boolean(prev.queued) || isQueueingRef.current;
       const validSession =
         refreshed.activeSession && !leftSessionIdsRef.current.has(refreshed.activeSession.id);
 
-      if (isSearching && !validSession && !refreshed.queued) {
+      if (isQueueingRef.current && !validSession && !refreshed.queued) {
         return {
           ...refreshed,
           activeSession: null,
@@ -222,12 +213,16 @@ export default function Home() {
   const listening = Boolean(desk?.queued) && !currentSession;
 
   useEffect(() => {
+    busyRef.current = busy;
+    interestsRef.current = interests;
+    settingsOpenRef.current = settingsOpen;
+    logOpenRef.current = logOpen;
+    historyOpenRef.current = historyOpen;
+    voidOpenRef.current = voidOpen;
+    exitConfirmRef.current = exitConfirm;
     listeningRef.current = listening;
-  }, [listening]);
-
-  useEffect(() => {
     activeSessionRef.current = currentSession;
-  }, [currentSession]);
+  }, [busy, interests, settingsOpen, logOpen, historyOpen, voidOpen, exitConfirm, listening, currentSession]);
 
   const markSessionClosed = useCallback((sessionId: string | undefined) => {
     if (!sessionId) return;
@@ -252,8 +247,10 @@ export default function Home() {
     decryptPack,
     mergeAndStoreMessages,
     clearUnread,
+    hydrateCachedMessages,
   } = useLunaMessages({
     deviceId,
+    sessionId: currentSession?.id,
     onActivity: () => {},
     onHistoryUpdated: setHistorySessions,
     onSessionEndedNotice: () => {
@@ -370,17 +367,82 @@ export default function Home() {
 
   const handleStreamEvent = useCallback(
     async (eventType: string, data: unknown) => {
-      if (eventType === "message" || eventType === "message_edited") {
+      if (eventType === "message") {
         const pack = data as MessagesPack;
         const packId = pack.session?.id;
-        const isActive = packId && (packId === activeSessionRef.current?.id || (!activeSessionRef.current && !leftSessionIdsRef.current.has(packId) && !pack.session.closed));
+        const isActive =
+          packId &&
+          (packId === activeSessionRef.current?.id ||
+            (!activeSessionRef.current && !leftSessionIdsRef.current.has(packId) && !pack.session.closed));
 
         if (isActive && deviceId) {
           const displayMsgs = await decryptPack(pack, deviceId);
           if (!leftSessionIdsRef.current.has(packId)) {
             setSessionView(pack.session);
-            mergeAndStoreMessages(pack.session.id, pack.session, displayMsgs, eventType === "message");
+            mergeAndStoreMessages(pack.session.id, pack.session, displayMsgs, true);
           }
+        }
+      } else if (eventType === "message_edited") {
+        const payload = data as Record<string, unknown>;
+        if (typeof payload?.messageId === "string" && typeof payload?.sessionId === "string") {
+          const info = payload as { sessionId: string; messageId: string; body: string; editedAt: string };
+          if (info.sessionId === activeSessionRef.current?.id && deviceId) {
+            const decryptedBody = await decryptText(info.body, info.sessionId);
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === info.messageId ? { ...m, body: decryptedBody, editedAt: info.editedAt } : m,
+              ),
+            );
+            const cached = loadCachedMessages(info.sessionId);
+            if (cached.length > 0) {
+              saveCachedMessages(
+                info.sessionId,
+                cached.map((m) =>
+                  m.id === info.messageId ? { ...m, body: decryptedBody, editedAt: info.editedAt } : m,
+                ),
+              );
+            }
+          }
+        } else {
+          const pack = data as MessagesPack;
+          const packId = pack.session?.id;
+          const isActive =
+            packId &&
+            (packId === activeSessionRef.current?.id ||
+              (!activeSessionRef.current && !leftSessionIdsRef.current.has(packId) && !pack.session.closed));
+
+          if (isActive && deviceId) {
+            const displayMsgs = await decryptPack(pack, deviceId);
+            if (!leftSessionIdsRef.current.has(packId)) {
+              setSessionView(pack.session);
+              mergeAndStoreMessages(pack.session.id, pack.session, displayMsgs, false);
+            }
+          }
+        }
+      } else if (eventType === "messages_seen") {
+        const info = data as { sessionId: string; seenAt: string };
+        if (info.sessionId === activeSessionRef.current?.id) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.mine && !m.seenAt ? { ...m, seenAt: info.seenAt, status: "seen" as const } : m,
+            ),
+          );
+          const cached = loadCachedMessages(info.sessionId);
+          if (cached.length > 0) {
+            saveCachedMessages(
+              info.sessionId,
+              cached.map((m) =>
+                m.mine && !m.seenAt ? { ...m, seenAt: info.seenAt, status: "seen" as const } : m,
+              ),
+            );
+          }
+        }
+      } else if (eventType === "reconnect_requested") {
+        const info = data as { sessionId: string; fromCallsign: string; session: SessionView };
+        if (activeSessionRef.current?.id === info.sessionId) {
+          setSessionView(info.session);
+          triggerHaptic("match");
+          setNote(`${info.fromCallsign} wants to reconnect! Click Accept Reconnect.`);
         }
       } else if (eventType === "message_deleted") {
         const info = data as { sessionId: string; messageId: string };
@@ -475,6 +537,7 @@ export default function Home() {
 
   useEffect(() => {
     if (currentSession?.id) {
+      hydrateCachedMessages(currentSession.id);
       if (lastMatchChimeRef.current !== currentSession.id) {
         lastMatchChimeRef.current = currentSession.id;
         playMatchChime();
@@ -484,7 +547,7 @@ export default function Home() {
         void establishSharedKey(deviceId, currentSession.id, currentSession.peerPublicKey);
       }
     }
-  }, [currentSession?.id, currentSession?.peerPublicKey, deviceId]);
+  }, [currentSession?.id, currentSession?.peerPublicKey, deviceId, hydrateCachedMessages]);
 
   useEffect(() => {
     if (!deviceId || !listening) return;
@@ -494,7 +557,11 @@ export default function Home() {
       if (isQueueingRef.current || busyRef.current) return;
       try {
         const blocked = readBlockedStations();
-        const res = await heartbeatQueue({ deviceId, blockedIds: blocked });
+        const res = await heartbeatQueue({
+          deviceId,
+          blockedIds: blocked,
+          recentPeerIds: getRecentPeerIds(),
+        });
         if (!cancelled) {
           if (res.status === "matched") {
             setSessionView(null);
@@ -513,7 +580,7 @@ export default function Home() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [deviceId, listening, setIsAway, setMessages, handleDeskUpdate]);
+  }, [deviceId, listening, setIsAway, setMessages, handleDeskUpdate, getRecentPeerIds]);
 
   useEffect(() => {
     if (!wireCutPrimed) return;
@@ -536,17 +603,21 @@ export default function Home() {
   }, [resetIdle]);
 
   const handleJoinQueue = useCallback(async (overrideInterests?: unknown) => {
-    if (!deviceId || busyRef.current) return;
+    if (!deviceId || busyRef.current || isQueueingRef.current) return;
     const finalInterests = Array.isArray(overrideInterests)
       ? overrideInterests.filter((x): x is string => typeof x === "string")
       : interestsRef.current;
     setBusy(true);
     isQueueingRef.current = true;
+    isLeavingQueueRef.current = false;
+    listeningRef.current = true;
     setNote(null);
     setIsAway(false);
     setReplyingTo(null);
     setMessages([]);
     setSessionView(null);
+    setExitConfirm(null);
+    exitConfirmRef.current = null;
     leftSessionIdsRef.current.clear();
     setDesk((prev) => (prev ? {
       ...prev,
@@ -569,6 +640,7 @@ export default function Home() {
         blockedIds: blocked,
         publicKey: pubKey ?? undefined,
         sessionId: currentSession?.id,
+        recentPeerIds: getRecentPeerIds(),
       });
       if (res.status === "matched") {
         setSessionView(null);
@@ -587,7 +659,7 @@ export default function Home() {
       isQueueingRef.current = false;
       setBusy(false);
     }
-  }, [deviceId, currentSession, notifyError, setIsAway, setMessages, setReplyingTo, handleDeskUpdate]);
+  }, [deviceId, currentSession, notifyError, setIsAway, setMessages, setReplyingTo, handleDeskUpdate, getRecentPeerIds]);
 
   useEffect(() => {
     if (hasAutoQueuedRef.current && deviceId && desk && !desk.activeSession && !desk.queued && !busy) {
@@ -597,17 +669,17 @@ export default function Home() {
   }, [deviceId, desk, busy, handleJoinQueue]);
 
   const handleLeaveQueue = useCallback(async () => {
-    if (!deviceId || busy) return;
+    if (!deviceId || busy || isLeavingQueueRef.current) return;
     setBusy(true);
+    isLeavingQueueRef.current = true;
+    listeningRef.current = false;
+    setExitConfirm(null);
+    exitConfirmRef.current = null;
     triggerHaptic("tap");
     setDesk((prev) => (prev ? { ...prev, queued: false, enteredAt: null } : null));
 
     if (typeof window !== "undefined") {
-      if (window.history.state?.view === "queue") {
-        window.history.back();
-      } else {
-        window.history.replaceState({ luna: true, view: "boot" }, "");
-      }
+      window.history.replaceState({ luna: true, view: "boot" }, "");
     }
 
     try {
@@ -617,14 +689,22 @@ export default function Home() {
     } catch (err) {
       notifyError(err);
     } finally {
+      isLeavingQueueRef.current = false;
       setBusy(false);
     }
   }, [deviceId, busy, notifyError, handleDeskUpdate]);
 
   const handleLeaveSession = useCallback(async () => {
-    if (!deviceId || busy) return;
+    if (!deviceId || busy || isLeavingSessionRef.current) return;
     const targetSessionId = currentSession?.id;
+    if (currentSession?.peerId) {
+      recentPeersRef.current.set(currentSession.peerId, Date.now());
+    }
     setBusy(true);
+    isLeavingSessionRef.current = true;
+    activeSessionRef.current = null;
+    setExitConfirm(null);
+    exitConfirmRef.current = null;
     playLeaveTone();
     triggerHaptic("disconnect");
     setIsAway(false);
@@ -648,16 +728,21 @@ export default function Home() {
       } catch {
         if (deviceId) getDesk({ deviceId }).then(handleDeskUpdate).catch(() => {});
       } finally {
+        isLeavingSessionRef.current = false;
         setBusy(false);
       }
     } else {
+      isLeavingSessionRef.current = false;
       setBusy(false);
     }
-  }, [deviceId, busy, currentSession?.id, setIsAway, setReplyingTo, setMessages, handleDeskUpdate]);
+  }, [deviceId, busy, currentSession, setIsAway, setReplyingTo, setMessages, handleDeskUpdate]);
 
   const handleNextStranger = useCallback(async () => {
     if (!deviceId || busyRef.current) return;
     const targetSessionId = currentSession?.id;
+    if (currentSession?.peerId) {
+      recentPeersRef.current.set(currentSession.peerId, Date.now());
+    }
     setBusy(true);
     isQueueingRef.current = true;
     playLeaveTone();
@@ -682,9 +767,6 @@ export default function Home() {
     if (targetSessionId) {
       leftSessionIdsRef.current.add(targetSessionId);
       destroySessionKey(targetSessionId);
-      try {
-        await leaveSession({ deviceId, sessionId: targetSessionId });
-      } catch {}
     }
 
     try {
@@ -697,6 +779,7 @@ export default function Home() {
         blockedIds: blocked,
         publicKey: pubKey ?? undefined,
         sessionId: targetSessionId,
+        recentPeerIds: getRecentPeerIds(),
       });
       if (res.status === "matched") {
         setSessionView(null);
@@ -715,7 +798,27 @@ export default function Home() {
       isQueueingRef.current = false;
       setBusy(false);
     }
-  }, [deviceId, currentSession?.id, setIsAway, setReplyingTo, setMessages, notifyError, handleDeskUpdate]);
+  }, [deviceId, currentSession, setIsAway, setReplyingTo, setMessages, notifyError, handleDeskUpdate, getRecentPeerIds]);
+
+  const handleReconnect = useCallback(async () => {
+    if (!deviceId || !currentSession?.id || busyRef.current) return;
+    setBusy(true);
+    triggerHaptic("medium");
+    try {
+      setNote(null);
+      const nextDesk = await requestReconnect({
+        deviceId,
+        sessionId: currentSession.id,
+      });
+      handleDeskUpdate(nextDesk);
+      setSessionView((prev) => (prev ? { ...prev, outboundReconnect: true } : prev));
+      setNote("Reconnect requested. Waiting for stranger to accept...");
+    } catch (err) {
+      notifyError(err);
+    } finally {
+      setBusy(false);
+    }
+  }, [deviceId, currentSession, handleDeskUpdate, notifyError]);
 
   const handleSendMessage = () => {
     if (!isOnline) {
@@ -731,6 +834,7 @@ export default function Home() {
   const handleSeverAndBlock = async () => {
     if (!deviceId || busy) return;
     if (currentSession?.peerId) {
+      recentPeersRef.current.set(currentSession.peerId, Date.now());
       saveBlockedStation(currentSession.peerId);
       void blockUser({ deviceId, targetId: currentSession.peerId }).catch(() => {});
     }
@@ -741,6 +845,7 @@ export default function Home() {
   const handleReportAndBlock = async (reason: string) => {
     if (!deviceId || busy) return;
     if (currentSession?.peerId) {
+      recentPeersRef.current.set(currentSession.peerId, Date.now());
       saveBlockedStation(currentSession.peerId);
       void reportUser({ deviceId, targetId: currentSession.peerId, reason }).catch(() => {});
     }
@@ -838,6 +943,10 @@ export default function Home() {
     if (!name || name === "log") setLogOpen(false);
     if (!name || name === "history") setHistoryOpen(false);
     if (!name || name === "void") setVoidOpen(false);
+    settingsOpenRef.current = false;
+    logOpenRef.current = false;
+    historyOpenRef.current = false;
+    voidOpenRef.current = false;
 
     if (typeof window !== "undefined") {
       const current = window.history.state;
@@ -850,9 +959,30 @@ export default function Home() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const handlePopState = () => {
+    const handlePopState = (event: PopStateEvent) => {
+      const state = event.state as { luna?: boolean; view?: string; sessionId?: string; modal?: string } | null;
+
       if (exitConfirmRef.current) {
         setExitConfirm(null);
+        exitConfirmRef.current = null;
+        if (activeSessionRef.current && !activeSessionRef.current.closed) {
+          window.history.pushState(
+            {
+              luna: true,
+              view: "chat",
+              sessionId: activeSessionRef.current.id,
+            },
+            "",
+          );
+        } else if (listeningRef.current && !isLeavingQueueRef.current) {
+          window.history.pushState(
+            {
+              luna: true,
+              view: "queue",
+            },
+            "",
+          );
+        }
         return;
       }
 
@@ -862,15 +992,30 @@ export default function Home() {
         historyOpenRef.current ||
         voidOpenRef.current
       ) {
+        if (state?.modal === "history" && historyOpenRef.current) {
+          return;
+        }
         setSettingsOpen(false);
         setLogOpen(false);
         setHistoryOpen(false);
         setVoidOpen(false);
+        settingsOpenRef.current = false;
+        logOpenRef.current = false;
+        historyOpenRef.current = false;
+        voidOpenRef.current = false;
         return;
       }
 
-      if (activeSessionRef.current) {
+      if (isLeavingSessionRef.current || isLeavingQueueRef.current) {
+        return;
+      }
+
+      if (activeSessionRef.current && !activeSessionRef.current.closed) {
+        if (state?.view === "chat" && state?.sessionId === activeSessionRef.current.id) {
+          return;
+        }
         setExitConfirm({ type: "chat" });
+        exitConfirmRef.current = { type: "chat" };
         window.history.pushState(
           {
             luna: true,
@@ -883,8 +1028,12 @@ export default function Home() {
         return;
       }
 
-      if (listeningRef.current) {
+      if (listeningRef.current && !isLeavingQueueRef.current) {
+        if (state?.view === "queue") {
+          return;
+        }
         setExitConfirm({ type: "queue" });
+        exitConfirmRef.current = { type: "queue" };
         window.history.pushState(
           {
             luna: true,
@@ -903,12 +1052,41 @@ export default function Home() {
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+        const target = e.target as HTMLElement | null;
+        const isInputOrTextarea =
+          target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA");
+        if (
+          !isInputOrTextarea &&
+          activeSessionRef.current?.closed &&
+          !busyRef.current &&
+          !settingsOpenRef.current &&
+          !logOpenRef.current &&
+          !historyOpenRef.current &&
+          !voidOpenRef.current &&
+          !exitConfirmRef.current
+        ) {
+          e.preventDefault();
+          void handleNextStranger();
+          return;
+        }
+      }
+
       if (e.key === "Escape") {
         if (exitConfirmRef.current) {
           e.preventDefault();
+          const type = exitConfirmRef.current.type;
           setExitConfirm(null);
-          if (typeof window !== "undefined" && window.history.state?.modal === "exit_confirm") {
-            window.history.back();
+          exitConfirmRef.current = null;
+          if (typeof window !== "undefined") {
+            if (type === "chat" && activeSessionRef.current) {
+              window.history.replaceState(
+                { luna: true, view: "chat", sessionId: activeSessionRef.current.id },
+                "",
+              );
+            } else if (type === "queue") {
+              window.history.replaceState({ luna: true, view: "queue" }, "");
+            }
           }
           return;
         }
@@ -935,7 +1113,7 @@ export default function Home() {
           return;
         }
 
-        if (listeningRef.current && !busyRef.current) {
+        if (listeningRef.current && !busyRef.current && !isLeavingQueueRef.current) {
           e.preventDefault();
           void handleLeaveQueue();
           return;
@@ -945,7 +1123,31 @@ export default function Home() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [wireCutPrimed, closeOverlayModal, handleLeaveSession, handleLeaveQueue]);
+  }, [wireCutPrimed, closeOverlayModal, handleLeaveSession, handleLeaveQueue, handleNextStranger]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handlePageHide = () => {
+      const dId = deviceId;
+      if (!dId) return;
+      const sId = activeSessionRef.current?.id;
+      if (sId && !activeSessionRef.current?.closed) {
+        const payload = JSON.stringify({
+          action: "leaveSession",
+          payload: { deviceId: dId, sessionId: sId },
+        });
+        navigator.sendBeacon("/api/luna", new Blob([payload], { type: "application/json" }));
+      } else if (listeningRef.current) {
+        const payload = JSON.stringify({
+          action: "leaveQueue",
+          payload: { deviceId: dId },
+        });
+        navigator.sendBeacon("/api/luna", new Blob([payload], { type: "application/json" }));
+      }
+    };
+    window.addEventListener("pagehide", handlePageHide);
+    return () => window.removeEventListener("pagehide", handlePageHide);
+  }, [deviceId]);
 
   const fallbackDesk: DeskView = desk ?? {
     station: { deviceId: deviceId ?? "", callsign: "----" },
@@ -1017,7 +1219,20 @@ export default function Home() {
           </div>
         )}
 
-        {logOpen ? (
+        {settingsOpen ? (
+          <SettingsPanel
+            isOpen={settingsOpen}
+            desk={fallbackDesk}
+            onClose={() => closeOverlayModal("settings")}
+            onCallsignUpdated={handleDeskUpdate}
+            onStationReset={() => {
+              setDeviceId(null);
+              const nextId = getOrCreateDeviceId();
+              setDeviceId(nextId);
+              if (nextId) void getDesk({ deviceId: nextId }).then(handleDeskUpdate).catch(() => {});
+            }}
+          />
+        ) : logOpen ? (
           <LogPanel
             desk={fallbackDesk}
             onOpenFriend={handleOpenFriendLine}
@@ -1069,6 +1284,9 @@ export default function Home() {
             onReactionFinished={handleReactionFinished}
             onEditMessage={(mid, body) => runEditMessage(mid, body, currentSession)}
             onDeleteMessage={(mid) => runDeleteMessage(mid, currentSession)}
+            onReconnect={handleReconnect}
+            outboundReconnect={currentSession.outboundReconnect}
+            inboundReconnect={currentSession.inboundReconnect}
           />
         ) : listening ? (
           <Searching
@@ -1096,21 +1314,11 @@ export default function Home() {
             onInterests={setInterests}
             onCall={() => void handleJoinQueue()}
             busy={busy}
+            onlineCount={desk?.onlineCount}
+            activeQueueTopics={desk?.activeQueueTopics}
           />
         )}
       </PaperShell>
-
-      <SettingsPanel
-        desk={fallbackDesk}
-        onClose={() => closeOverlayModal("settings")}
-        onCallsignUpdated={handleDeskUpdate}
-        onStationReset={() => {
-          setDeviceId(null);
-          const nextId = getOrCreateDeviceId();
-          setDeviceId(nextId);
-          if (nextId) void getDesk({ deviceId: nextId }).then(handleDeskUpdate).catch(() => {});
-        }}
-      />
 
       <HistoryModal
         isOpen={historyOpen}
@@ -1139,14 +1347,24 @@ export default function Home() {
         isOpen={Boolean(exitConfirm)}
         type={exitConfirm?.type ?? "chat"}
         onCancel={() => {
+          const type = exitConfirm?.type;
           setExitConfirm(null);
-          if (typeof window !== "undefined" && window.history.state?.modal === "exit_confirm") {
-            window.history.back();
+          exitConfirmRef.current = null;
+          if (typeof window !== "undefined") {
+            if (type === "chat" && activeSessionRef.current) {
+              window.history.replaceState(
+                { luna: true, view: "chat", sessionId: activeSessionRef.current.id },
+                "",
+              );
+            } else if (type === "queue") {
+              window.history.replaceState({ luna: true, view: "queue" }, "");
+            }
           }
         }}
         onConfirm={() => {
           const type = exitConfirm?.type;
           setExitConfirm(null);
+          exitConfirmRef.current = null;
           if (type === "chat") {
             void handleLeaveSession();
           } else {

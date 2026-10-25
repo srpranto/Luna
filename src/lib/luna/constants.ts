@@ -1,8 +1,8 @@
 export const MAX_LINE_CHARS = 280;
-export const QUEUE_STALE_SECONDS = 90;
+export const QUEUE_STALE_SECONDS = 15;
 export const STRANGER_TTL_MINUTES = 1440;
 export const IDLE_AWAY_THRESHOLD_MS = 60000;
-export const ABANDON_AFTER_MINUTES = 2;
+export const ABANDON_AFTER_MINUTES = 5;
 export const FRIEND_TTL_DAYS = 7;
 
 export function sanitizeInterests(input: unknown): string[] {
