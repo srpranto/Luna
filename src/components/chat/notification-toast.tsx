@@ -14,8 +14,9 @@ export function NotificationToastHost() {
 
   useEffect(() => {
     const unsubscribe = subscribeToToastNotifications((toast) => {
-      // Don't pop in-app toast if user is already actively chatting inside the focused window unless it's a friend request
-      if (!document.hidden && document.hasFocus() && toast.type === "message") {
+      // Friend requests are directly presented via the interactive Accept/Decline card in ChatScreen;
+      // also don't pop in-app toast for messages when the window is focused.
+      if (toast.type === "friend" || (!document.hidden && document.hasFocus() && toast.type === "message")) {
         return;
       }
       setActiveToast(toast);

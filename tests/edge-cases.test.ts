@@ -901,7 +901,7 @@ export function registerTier2Tests() {
       expect(mockInput.blurCalled).toBe(true);
     });
 
-    it('TC-2.15.5: AirDrop water-drop modal container uses correct spring physics class and layout', () => {
+    it('TC-2.15.5: Friend request notification card uses correct spring physics class and layout', () => {
       const containerClass = 'absolute top-16 sm:top-14 inset-x-0 mx-auto z-40 w-[calc(100%-1.5rem)] max-w-md animate-water-drop pointer-events-auto';
       expect(containerClass).toContain('animate-water-drop');
       expect(containerClass).toContain('pointer-events-auto');

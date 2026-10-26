@@ -516,9 +516,9 @@ export function ChatScreen({
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] uppercase font-mono font-semibold tracking-wider text-cyan-400">Friend Request</span>
-                  <span className="text-zinc-600">•</span>
-                  <span className="text-[10px] text-zinc-400 font-mono">AirDrop</span>
+                  <span className="text-[10px] uppercase font-mono font-semibold tracking-wider text-cyan-400">
+                    Friend Request
+                  </span>
                 </div>
                 <p className="text-xs sm:text-sm font-semibold text-zinc-100 truncate mt-0.5">
                   {peerCallsign} wants to be friends
