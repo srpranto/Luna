@@ -80,10 +80,17 @@ function checkRateLimit(key: string, limit = 180, windowMs = 60000): boolean {
 }
 
 function extractClientIp(req: Request): string {
+  // Only trust edge proxy headers when supplied by a verified deployment proxy
+  if (process.env.VERCEL === "1") {
+    const realIp = req.headers.get("x-real-ip")?.trim();
+    if (realIp) return realIp;
+    const vercelForwarded = req.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim();
+    if (vercelForwarded) return vercelForwarded;
+  }
   const forwarded = req.headers.get("x-forwarded-for");
   return (
-    forwarded?.split(",")[0]?.trim() ||
     req.headers.get("x-real-ip")?.trim() ||
+    forwarded?.split(",")[0]?.trim() ||
     req.headers.get("cf-connecting-ip")?.trim() ||
     "127.0.0.1"
   );
@@ -233,11 +240,17 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2. Enforce per-IP + per-device rate limit
+    // 2. Enforce per-IP + per-device rate limit and direct device rate limit
     const rateKey = `${clientIp}:${deviceId ?? "anon"}`;
     if (!checkRateLimit(rateKey, 180, 60000)) {
       return NextResponse.json(
         { ok: false, error: "Too many requests. Please slow down." },
+        { status: 429, headers: { ...NO_CACHE_HEADERS, "Retry-After": "5" } },
+      );
+    }
+    if (deviceId && !checkRateLimit(`dev:${deviceId}`, 180, 60000)) {
+      return NextResponse.json(
+        { ok: false, error: "Too many requests from this device. Please slow down." },
         { status: 429, headers: { ...NO_CACHE_HEADERS, "Retry-After": "5" } },
       );
     }
@@ -267,7 +280,7 @@ export async function POST(req: Request) {
     }
 
     // 4. Verify cryptographic device ownership (prevents peerId impersonation)
-    const isAuthorized = await verifyStationAuth(deviceId, deviceSecret);
+    const isAuthorized = await verifyStationAuth(deviceId, deviceSecret, action);
     if (!isAuthorized) {
       return NextResponse.json(
         { ok: false, error: "Unauthorized device operation. Secret mismatch." },
@@ -287,6 +300,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Text too long." }, { status: 400, headers: NO_CACHE_HEADERS });
     }
 
+    if (Array.isArray(payload.interests) && payload.interests.length > 20) {
+      payload.interests = payload.interests.slice(0, 20);
+    }
+    if (Array.isArray(payload.blockedIds) && payload.blockedIds.length > 100) {
+      payload.blockedIds = payload.blockedIds.slice(0, 100);
+    }
+    if (Array.isArray(payload.recentPeerIds) && payload.recentPeerIds.length > 50) {
+      payload.recentPeerIds = payload.recentPeerIds.slice(0, 50);
+    }
+
     const handler = action ? actionHandlers[action] : undefined;
     if (!handler) {
       return NextResponse.json({ ok: false, error: "Unknown action." }, { status: 400, headers: NO_CACHE_HEADERS });
@@ -303,6 +326,13 @@ export async function POST(req: Request) {
       rawMessage.includes("syntax error") ||
       rawMessage.includes("connection failed") ||
       rawMessage.includes("socket hang up") ||
+      rawMessage.includes("duplicate key") ||
+      rawMessage.includes("violates") ||
+      rawMessage.includes("constraint") ||
+      rawMessage.includes("database") ||
+      rawMessage.includes("PGlite") ||
+      rawMessage.includes("Postgres") ||
+      rawMessage.includes("column") ||
       (error && typeof error === "object" && "code" in error && typeof (error as { code: unknown }).code === "string");
 
     const status = isInternalError ? 500 : 400;

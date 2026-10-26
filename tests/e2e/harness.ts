@@ -193,6 +193,7 @@ export async function cleanDatabase(): Promise<void> {
     const sql = await getSql();
     await sql`delete from queue`;
     await sql`update sessions set closed_at = now() where closed_at is null`;
+    await sql`delete from active_session_participants`;
   } catch {}
 }
 
@@ -208,7 +209,7 @@ export interface ApiCallResult<T = any> {
 let postRouteHandler: ((req: any) => Promise<Response>) | null = null;
 let streamRouteHandler: ((req: any) => Promise<Response>) | null = null;
 
-export async function initApiHandlers(): Promise<void> {
+async function initApiHandlers(): Promise<void> {
   if (!postRouteHandler) {
     const route = await import("@/app/api/luna/route.ts");
     postRouteHandler = route.POST;

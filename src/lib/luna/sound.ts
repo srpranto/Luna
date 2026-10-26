@@ -203,7 +203,7 @@ export type HapticFeedbackPattern =
   | "heavy"
   | "selection";
 
-export const HAPTIC_PATTERNS: Record<HapticFeedbackPattern, number | number[]> = {
+const HAPTIC_PATTERNS: Record<HapticFeedbackPattern, number | number[]> = {
   match: [25, 30, 25],
   "message-sent": [12],
   "message-received": [18],

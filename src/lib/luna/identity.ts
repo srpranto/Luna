@@ -22,10 +22,16 @@ export function getOrCreateDeviceSecret(): string {
   const key = `${SECRET_PREFIX}.${deskName()}`;
   const existing = localStorage.getItem(key);
   if (existing) return existing;
-  const secret =
-    typeof crypto !== "undefined" && crypto.randomUUID
-      ? `${crypto.randomUUID()}-${crypto.randomUUID()}`.replace(/-/g, "")
-      : Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+  let secret: string;
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    secret = `${crypto.randomUUID()}-${crypto.randomUUID()}`.replace(/-/g, "");
+  } else if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    const bytes = new Uint8Array(24);
+    crypto.getRandomValues(bytes);
+    secret = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  } else {
+    secret = `fallback-${Date.now()}`;
+  }
   localStorage.setItem(key, secret);
   return secret;
 }

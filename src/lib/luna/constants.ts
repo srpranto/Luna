@@ -11,8 +11,9 @@ export function sanitizeInterests(input: unknown): string[] {
   return [
     ...new Set(
       items
+        .slice(0, 20)
         .flatMap((i) => (typeof i === "string" ? i.split(",") : []))
-        .map((s) => s.trim().toLowerCase())
+        .map((s) => s.trim().toLowerCase().slice(0, 32))
         .filter(Boolean),
     ),
   ].slice(0, 10);

@@ -41,6 +41,11 @@ function checkTokenBucket(
   let bucket = store.get(key);
 
   if (!bucket) {
+    if (store.size > 10000) {
+      for (const [k, b] of store.entries()) {
+        if (now - b.lastRefill > 60000) store.delete(k);
+      }
+    }
     bucket = { tokens: maxCapacity - 1, lastRefill: now };
     store.set(key, bucket);
     return { allowed: true, retryAfterMs: 0 };

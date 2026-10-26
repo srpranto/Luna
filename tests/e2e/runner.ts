@@ -77,7 +77,7 @@ async function run(): Promise<void> {
         totalFailed += 1;
         failures.push({ suite: suite.name, name: test.name, error: test.error });
         console.error(`  ✗ ${test.name} (${test.duration}ms)`);
-        console.error(`    ${test.error.message}`);
+        console.error(`    ${test.error.stack || test.error.message}`);
       }
     }
   }
@@ -99,7 +99,7 @@ async function run(): Promise<void> {
     console.error(`❌ ${totalFailed} tests failed:\n`);
     for (const fail of failures) {
       console.error(`• [${fail.suite}] ${fail.name}`);
-      console.error(`  ${fail.error?.message}\n`);
+      console.error(`  ${fail.error?.stack || fail.error?.message}\n`);
     }
     process.exit(1);
   } else {

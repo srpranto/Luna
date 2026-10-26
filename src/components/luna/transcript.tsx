@@ -356,19 +356,76 @@ export function Transcript({
   const [swipeOffset, setSwipeOffset] = useState<number>(0);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
-  function handleTouchStart(e: TouchEvent, msgId: string) {
-    touchStartRef.current = {
-      x: e.touches[0].clientX,
-      y: e.touches[0].clientY,
+  // Mobile Tap-and-Hold (Long Press) Action Menu State
+  const [actionMenuMsg, setActionMenuMsg] = useState<ChatMessage | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isLongPressTriggeredRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+      }
     };
-    setSwipingId(msgId);
+  }, []);
+
+  useEffect(() => {
+    if (!actionMenuMsg) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setActionMenuMsg(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [actionMenuMsg]);
+
+  function handleTouchStart(e: TouchEvent, msg: ChatMessage) {
+    if (editingId === msg.id) return;
+    const touch = e.touches[0];
+    if (!touch) return;
+
+    touchStartRef.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+    };
+    isLongPressTriggeredRef.current = false;
+    setSwipingId(msg.id);
     setSwipeOffset(0);
+
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+    }
+    // 450ms long press threshold calibrated for Android and iOS
+    longPressTimerRef.current = setTimeout(() => {
+      isLongPressTriggeredRef.current = true;
+      triggerHaptic("medium");
+      setActionMenuMsg(msg);
+      setSwipingId(null);
+      setSwipeOffset(0);
+    }, 450);
   }
 
   function handleTouchMove(e: TouchEvent, msgId: string) {
     if (!touchStartRef.current || swipingId !== msgId) return;
-    const deltaX = e.touches[0].clientX - touchStartRef.current.x;
-    const deltaY = e.touches[0].clientY - touchStartRef.current.y;
+    const touch = e.touches[0];
+    if (!touch) return;
+
+    const deltaX = touch.clientX - touchStartRef.current.x;
+    const deltaY = touch.clientY - touchStartRef.current.y;
+    const dist = Math.hypot(deltaX, deltaY);
+
+    // If finger moves > 10px, the user is scrolling the message list: abort long press
+    if (dist > 10) {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    }
+
+    if (isLongPressTriggeredRef.current) return;
+
     if (Math.abs(deltaX) > Math.abs(deltaY) && deltaX < 0) {
       const clamped = Math.max(-60, deltaX);
       setSwipeOffset(clamped);
@@ -376,6 +433,19 @@ export function Transcript({
   }
 
   function handleTouchEnd(msg: ChatMessage) {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+
+    if (isLongPressTriggeredRef.current) {
+      isLongPressTriggeredRef.current = false;
+      setSwipingId(null);
+      setSwipeOffset(0);
+      touchStartRef.current = null;
+      return;
+    }
+
     if (swipeOffset <= -35 && onReply && !closed) {
       triggerHaptic("medium");
       onReply({
@@ -390,6 +460,11 @@ export function Transcript({
   }
 
   function handleTouchCancel() {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    isLongPressTriggeredRef.current = false;
     setSwipingId(null);
     setSwipeOffset(0);
     touchStartRef.current = null;
@@ -457,7 +532,7 @@ export function Transcript({
                 return (
                   <span
                     key={tag}
-                    className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-mono font-semibold bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 shadow-sm"
+                    className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-mono font-medium bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 shadow-sm"
                   >
                     #{cleanTag}
                   </span>
@@ -621,10 +696,15 @@ export function Transcript({
                 ) : (
                   <div className="relative inline-flex items-center max-w-[88%] sm:max-w-[76%] md:max-w-[68%] min-w-0">
                     <div
-                      onTouchStart={(e) => handleTouchStart(e, msg.id)}
+                      onTouchStart={(e) => handleTouchStart(e, msg)}
                       onTouchMove={(e) => handleTouchMove(e, msg.id)}
                       onTouchEnd={() => handleTouchEnd(msg)}
                       onTouchCancel={handleTouchCancel}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        triggerHaptic("medium");
+                        setActionMenuMsg(msg);
+                      }}
                       style={{
                         transform: currentOffset !== 0 ? `translateX(${currentOffset}px)` : undefined,
                         transition: isSwipingThis ? "none" : "transform 0.2s cubic-bezier(0.2, 0, 0, 1)",
@@ -814,6 +894,136 @@ export function Transcript({
 
         <div ref={endRef} id="transcript-end" />
       </div>
+
+      {actionMenuMsg && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Message actions"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150"
+          onClick={() => setActionMenuMsg(null)}
+        >
+          {/* Backdrop */}
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity" />
+
+          {/* Action Sheet Container */}
+          <div
+            className="relative w-full sm:max-w-xs bg-zinc-900/95 border-t sm:border border-white/10 rounded-t-3xl sm:rounded-2xl p-4 sm:p-3 shadow-2xl backdrop-blur-2xl flex flex-col gap-2 z-10 animate-in slide-in-from-bottom-6 sm:zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Grab handle for touch users */}
+            <div className="mx-auto w-10 h-1 rounded-full bg-zinc-700/60 sm:hidden -mt-1 mb-1" />
+
+            {/* Message preview snippet */}
+            <div className="px-2 py-1 text-xs text-zinc-400 font-sans border-b border-white/5 pb-2">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 font-semibold block mb-0.5">
+                {actionMenuMsg.mine ? "Your message" : actionMenuMsg.fromCallsign}
+              </span>
+              <span className="line-clamp-2 text-zinc-200 font-normal select-none break-words">
+                {actionMenuMsg.body}
+              </span>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col gap-1 pt-0.5">
+              {actionMenuMsg.mine && !closed && onEditMessage && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    const targetMsg = actionMenuMsg;
+                    setActionMenuMsg(null);
+                    handleStartEditing(targetMsg.id, targetMsg.body);
+                  }}
+                  className="w-full min-h-[44px] px-3.5 py-2.5 rounded-xl text-xs font-semibold text-zinc-100 hover:bg-white/10 active:bg-white/15 transition-all flex items-center gap-3 cursor-pointer touch-manipulation select-none active:scale-[0.98]"
+                >
+                  <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-cyan-500/10 text-cyan-400 shrink-0">
+                    <Pencil className="h-4 w-4" />
+                  </div>
+                  <div className="flex flex-col text-left">
+                    <span>Edit message</span>
+                    <span className="text-[10px] text-zinc-400 font-normal">Change text or correct typos</span>
+                  </div>
+                </button>
+              )}
+
+              {actionMenuMsg.mine && !closed && onDeleteMessage && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("medium");
+                    const targetId = actionMenuMsg.id;
+                    setActionMenuMsg(null);
+                    void onDeleteMessage(targetId);
+                  }}
+                  className="w-full min-h-[44px] px-3.5 py-2.5 rounded-xl text-xs font-semibold text-rose-400 hover:bg-rose-500/10 active:bg-rose-500/20 transition-all flex items-center gap-3 cursor-pointer touch-manipulation select-none active:scale-[0.98]"
+                >
+                  <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-rose-500/10 text-rose-400 shrink-0">
+                    <Trash2 className="h-4 w-4" />
+                  </div>
+                  <div className="flex flex-col text-left">
+                    <span>Delete message</span>
+                    <span className="text-[10px] text-rose-400/70 font-normal">Permanently remove for both users</span>
+                  </div>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={async () => {
+                  triggerHaptic("light");
+                  try {
+                    await navigator.clipboard.writeText(actionMenuMsg.body);
+                  } catch {}
+                  setActionMenuMsg(null);
+                }}
+                className="w-full min-h-[44px] px-3.5 py-2.5 rounded-xl text-xs font-semibold text-zinc-300 hover:bg-white/10 active:bg-white/15 transition-all flex items-center gap-3 cursor-pointer touch-manipulation select-none active:scale-[0.98]"
+              >
+                <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-zinc-800 text-zinc-300 shrink-0">
+                  <Copy className="h-4 w-4" />
+                </div>
+                <div className="flex flex-col text-left">
+                  <span>Copy text</span>
+                  <span className="text-[10px] text-zinc-500 font-normal">Copy message to clipboard</span>
+                </div>
+              </button>
+
+              {onReply && !closed && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("light");
+                    const target = actionMenuMsg;
+                    setActionMenuMsg(null);
+                    onReply({
+                      id: target.id,
+                      fromCallsign: target.fromCallsign,
+                      body: target.body,
+                    });
+                  }}
+                  className="w-full min-h-[44px] px-3.5 py-2.5 rounded-xl text-xs font-semibold text-zinc-300 hover:bg-white/10 active:bg-white/15 transition-all flex items-center gap-3 cursor-pointer touch-manipulation select-none active:scale-[0.98]"
+                >
+                  <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-zinc-800 text-zinc-300 shrink-0">
+                    <Reply className="h-4 w-4" />
+                  </div>
+                  <div className="flex flex-col text-left">
+                    <span>Reply to message</span>
+                    <span className="text-[10px] text-zinc-500 font-normal">Quote in your response</span>
+                  </div>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setActionMenuMsg(null)}
+                className="w-full min-h-[40px] mt-1 px-3 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-zinc-200 hover:bg-white/5 active:bg-white/10 transition-colors text-center cursor-pointer touch-manipulation"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -89,7 +89,7 @@ export function Searching({
           {isTimeout ? "No strangers online right now" : "Finding someone to chat with..."}
         </p>
 
-        <div className="animate-fade-up stagger-2 mt-2.5 inline-flex items-center gap-2 rounded-full bg-zinc-900/95 border border-white/15 px-3 py-1 text-xs font-mono text-zinc-200 shadow-inner">
+        <div className="animate-fade-up stagger-2 mt-2.5 inline-flex items-center gap-2 rounded-full bg-zinc-900/95 border border-white/15 px-3 py-1 text-xs font-mono text-zinc-200 shadow-inner tabular-nums">
           <span className={cn("h-1.5 w-1.5 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)]", isTimeout ? "opacity-60" : "animate-ping")} />
           <span>{isTimeout ? "02:00 • 2 min reached" : formatElapsed(waitMs)}</span>
         </div>
@@ -136,7 +136,7 @@ export function Searching({
               }}
               disabled={busy}
               aria-label="Keep Searching"
-              className="h-10 px-7 w-full sm:w-auto rounded-full font-semibold text-xs sm:text-sm bg-white text-zinc-950 hover:bg-zinc-200 shadow-[0_0_20px_rgba(255,255,255,0.2)] active:scale-[0.97] transition-all cursor-pointer flex items-center justify-center gap-2 touch-manipulation"
+              className="h-10 px-7 w-full sm:w-auto rounded-full font-semibold text-xs sm:text-sm bg-white text-zinc-950 hover:bg-zinc-200 shadow-[0_0_20px_rgba(255,255,255,0.2)] active:scale-[0.96] transition-all cursor-pointer flex items-center justify-center gap-2 touch-manipulation"
             >
               <RotateCcw className="h-3.5 w-3.5" />
               <span>Keep Searching (2 min)</span>
@@ -154,7 +154,7 @@ export function Searching({
                 }}
                 disabled={busy}
                 aria-label="Search All Strangers"
-                className="h-9 px-5 w-full sm:w-auto rounded-full text-xs border-white/15 bg-zinc-900/80 hover:bg-zinc-800 text-zinc-200 active:scale-[0.97] transition-all cursor-pointer flex items-center justify-center gap-2 touch-manipulation"
+                className="h-9 px-5 w-full sm:w-auto rounded-full text-xs border-white/15 bg-zinc-900/80 hover:bg-zinc-800 text-zinc-200 active:scale-[0.96] transition-all cursor-pointer flex items-center justify-center gap-2 touch-manipulation"
               >
                 <Compass className="h-3.5 w-3.5" />
                 <span>Search All Strangers (Broaden)</span>
@@ -170,7 +170,7 @@ export function Searching({
               }}
               disabled={busy}
               aria-label="Change topics and leave queue"
-              className="h-8 px-4 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/40 cursor-pointer"
+              className="h-8 px-4 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/40 cursor-pointer active:scale-[0.96]"
             >
               <span>Change Topics / Return</span>
             </Button>
@@ -186,7 +186,7 @@ export function Searching({
               }}
               disabled={busy}
               aria-label="Leave the queue"
-              className="h-10 px-6 w-full sm:w-auto rounded-full border-zinc-800 text-zinc-300 hover:text-white bg-zinc-950/80 backdrop-blur-sm text-xs sm:text-sm cursor-pointer touch-manipulation active:scale-[0.98]"
+              className="h-10 px-6 w-full sm:w-auto rounded-full border-white/10 text-zinc-300 hover:text-white bg-zinc-950/80 backdrop-blur-sm text-xs sm:text-sm cursor-pointer touch-manipulation active:scale-[0.96]"
             >
               Leave the queue
             </Button>

@@ -83,6 +83,23 @@ async function validateHostSecurity(hostname: string): Promise<boolean> {
   }
 }
 
+function extractClientIp(req: Request): string {
+  // Only trust edge proxy headers when supplied by a verified deployment proxy
+  if (process.env.VERCEL === "1") {
+    const realIp = req.headers.get("x-real-ip")?.trim();
+    if (realIp) return realIp;
+    const vercelForwarded = req.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim();
+    if (vercelForwarded) return vercelForwarded;
+  }
+  const forwarded = req.headers.get("x-forwarded-for");
+  return (
+    req.headers.get("x-real-ip")?.trim() ||
+    forwarded?.split(",")[0]?.trim() ||
+    req.headers.get("cf-connecting-ip")?.trim() ||
+    "127.0.0.1"
+  );
+}
+
 function cleanMeta(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const decoded = raw
@@ -97,7 +114,7 @@ function cleanMeta(raw: string | null | undefined): string | null {
 
 export async function GET(req: NextRequest) {
   try {
-    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1";
+    const ip = extractClientIp(req);
     const rateCheck = checkPreviewRateLimit(ip);
     if (!rateCheck.allowed) {
       return NextResponse.json(
@@ -244,9 +261,17 @@ export async function GET(req: NextRequest) {
       html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
 
     let rawImage = ogImageMatch ? ogImageMatch[1] : null;
-    if (rawImage && rawImage.startsWith("/")) {
+    if (rawImage) {
       try {
-        rawImage = new URL(rawImage, parsedUrl.origin).toString();
+        const resolvedUrl = rawImage.startsWith("/")
+          ? new URL(rawImage, parsedUrl.origin)
+          : new URL(rawImage);
+        if (resolvedUrl.protocol !== "http:" && resolvedUrl.protocol !== "https:") {
+          rawImage = null;
+        } else {
+          const isSafe = await validateHostSecurity(resolvedUrl.hostname);
+          rawImage = isSafe ? resolvedUrl.toString() : null;
+        }
       } catch {
         rawImage = null;
       }

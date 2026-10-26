@@ -17,14 +17,19 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  if (secretParam) {
-    const isAuthed = await verifyStationAuth(deviceId, secretParam);
-    if (!isAuthed) {
-      return new Response(JSON.stringify({ error: "Unauthorized device." }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+  if (!secretParam) {
+    return new Response(JSON.stringify({ error: "Missing stream credentials." }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const isAuthed = await verifyStationAuth(deviceId, secretParam);
+  if (!isAuthed) {
+    return new Response(JSON.stringify({ error: "Unauthorized device." }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   const queryLastId = searchParams.get("lastEventId");
@@ -163,7 +168,10 @@ export async function GET(req: NextRequest) {
       buffer.length = 0;
 
       // 4. Cross-instance realtime delivery via adaptive 800ms DB cursor poll
+      let isPolling = false;
       pollInterval = setInterval(async () => {
+        if (isPolling) return;
+        isPolling = true;
         try {
           const sql = await getSql();
           const rows = await sql<{ id: number; type: string; data: string }>`
@@ -186,11 +194,22 @@ export async function GET(req: NextRequest) {
               );
             }
           }
+
+          if (deliveredIds.size > 1500) {
+            const pruneFloor = lastEventId - 200;
+            for (const id of deliveredIds) {
+              if (id < pruneFloor) {
+                deliveredIds.delete(id);
+              }
+            }
+          }
         } catch (err) {
           console.error("[Luna Stream Cross-Instance Poll Error]", {
             deviceId,
             error: err instanceof Error ? err.message : String(err),
           });
+        } finally {
+          isPolling = false;
         }
       }, 800);
 

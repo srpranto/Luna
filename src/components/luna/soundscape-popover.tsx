@@ -142,13 +142,13 @@ export function SoundscapePopover({ soundFxEnabled, onToggleSoundFx }: Soundscap
                 type="button"
                 onClick={() => handleSelect("cosmic")}
                 className={cn(
-                  "flex items-center gap-2.5 rounded-lg border px-3 py-2 text-xs text-left transition-all cursor-pointer active:scale-[0.98] touch-manipulation",
+                  "flex items-center gap-2.5 rounded-xl border px-3 py-2 text-xs text-left transition-all cursor-pointer active:scale-[0.96] touch-manipulation",
                   soundscape === "cosmic"
                     ? "border-white/30 bg-zinc-850 text-white font-medium shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]"
                     : "border-white/10 bg-zinc-900/60 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-850",
                 )}
               >
-                <div className="flex h-7 w-7 items-center justify-center rounded-md bg-zinc-800 border border-white/10 shrink-0">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-800 border border-white/10 shrink-0">
                   <Sparkles className="h-3.5 w-3.5 text-zinc-100" />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -164,13 +164,13 @@ export function SoundscapePopover({ soundFxEnabled, onToggleSoundFx }: Soundscap
                 type="button"
                 onClick={() => handleSelect("lofi")}
                 className={cn(
-                  "flex items-center gap-2.5 rounded-lg border px-3 py-2 text-xs text-left transition-all cursor-pointer active:scale-[0.98] touch-manipulation",
+                  "flex items-center gap-2.5 rounded-xl border px-3 py-2 text-xs text-left transition-all cursor-pointer active:scale-[0.96] touch-manipulation",
                   soundscape === "lofi"
                     ? "border-white/30 bg-zinc-850 text-white font-medium shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]"
                     : "border-white/10 bg-zinc-900/60 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-850",
                 )}
               >
-                <div className="flex h-7 w-7 items-center justify-center rounded-md bg-zinc-800 border border-white/10 shrink-0">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-800 border border-white/10 shrink-0">
                   <Radio className="h-3.5 w-3.5 text-zinc-100" />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -186,13 +186,13 @@ export function SoundscapePopover({ soundFxEnabled, onToggleSoundFx }: Soundscap
                 type="button"
                 onClick={() => handleSelect("off")}
                 className={cn(
-                  "flex items-center gap-2.5 rounded-lg border px-3 py-2 text-xs text-left transition-all cursor-pointer active:scale-[0.98] touch-manipulation",
+                  "flex items-center gap-2.5 rounded-xl border px-3 py-2 text-xs text-left transition-all cursor-pointer active:scale-[0.96] touch-manipulation",
                   soundscape === "off"
                     ? "border-white/20 bg-zinc-800/80 text-zinc-200 font-medium"
                     : "border-white/10 bg-zinc-900/60 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-850",
                 )}
               >
-                <div className="flex h-7 w-7 items-center justify-center rounded-md bg-zinc-900 border border-white/10 shrink-0">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-900 border border-white/10 shrink-0">
                   <VolumeX className="h-3.5 w-3.5 text-zinc-400" />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -212,7 +212,7 @@ export function SoundscapePopover({ soundFxEnabled, onToggleSoundFx }: Soundscap
                     <Sliders className="h-3 w-3 text-zinc-300" />
                     <span>Atmosphere Volume</span>
                   </span>
-                  <span className="font-mono text-zinc-400 font-medium">
+                  <span className="font-mono text-zinc-400 font-medium tabular-nums">
                     {Math.round(volume * 100)}%
                   </span>
                 </div>

@@ -33,10 +33,15 @@ if (!globalThis.__lunaDeviceListeners) {
 }
 
 if (!globalThis.__lunaInstanceId) {
-  globalThis.__lunaInstanceId =
-    typeof crypto !== "undefined" && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `inst-${Math.random().toString(36).slice(2, 10)}`;
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    globalThis.__lunaInstanceId = crypto.randomUUID();
+  } else if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    const bytes = new Uint8Array(8);
+    crypto.getRandomValues(bytes);
+    globalThis.__lunaInstanceId = `inst-${Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")}`;
+  } else {
+    globalThis.__lunaInstanceId = `inst-${Date.now()}`;
+  }
 }
 
 export const SERVER_INSTANCE_ID = globalThis.__lunaInstanceId;

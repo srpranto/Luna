@@ -33,7 +33,7 @@ export function SessionElapsedBadge({
 
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-zinc-900/90 px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-[11px] text-zinc-300 font-mono shrink-0 shadow-sm"
+      className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-zinc-900/90 px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-[11px] text-zinc-300 font-mono shrink-0 shadow-sm tabular-nums"
       suppressHydrationWarning
     >
       <span>{formatElapsed(elapsed)}</span>
@@ -201,6 +201,21 @@ export function StatusHeader({
               <span className="text-[10px] font-mono text-emerald-400/90 shrink-0">(active)</span>
             )}
           </div>
+
+          {activeChat.interests && activeChat.interests.length > 0 && (
+            <Badge
+              variant="secondary"
+              className="hidden md:inline-flex items-center gap-1 py-0.5 px-2 text-[10px] font-mono bg-emerald-950/30 border border-emerald-500/25 text-emerald-300 shadow-sm"
+            >
+              <span>#{activeChat.interests[0].startsWith("#") ? activeChat.interests[0].slice(1) : activeChat.interests[0]}</span>
+              {activeChat.interests.length > 1 && (
+                <span className="text-zinc-500 text-[9px]">
+                  +{activeChat.interests.length - 1}
+                </span>
+              )}
+            </Badge>
+          )}
+
           <div className="flex items-center justify-center">
             <SessionElapsedBadge
               createdAt={activeChat.sessionCreatedAt}

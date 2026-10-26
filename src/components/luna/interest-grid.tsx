@@ -102,14 +102,14 @@ export function InterestGrid({ value, onChange, onSubmit, activeQueueTopics }: I
       <div className="flex items-center justify-between text-xs">
         <span className="font-semibold tracking-tight text-zinc-200">What do you like?</span>
         <div className="flex items-center gap-2 text-zinc-400">
-          <span className="text-[11px] font-mono">
+          <span className="text-[11px] font-mono tabular-nums">
             {value.length > 0 ? `${value.length}/10` : "optional"}
           </span>
           {value.length > 0 && (
             <button
               type="button"
               onClick={handleClear}
-              className="text-zinc-400 hover:text-zinc-200 underline underline-offset-2 transition-colors cursor-pointer text-[11px] p-1 -m-1"
+              className="text-zinc-400 hover:text-zinc-200 underline underline-offset-2 transition-colors cursor-pointer text-[11px] p-1 -m-1 active:scale-[0.96]"
             >
               Clear
             </button>
@@ -150,7 +150,7 @@ export function InterestGrid({ value, onChange, onSubmit, activeQueueTopics }: I
             <Badge
               key={item}
               variant="secondary"
-              className="gap-1.5 py-1 px-3 text-xs lowercase rounded-full bg-zinc-900 border border-white/15 text-zinc-200 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] hover:border-white/25 transition-all active:scale-95 touch-manipulation"
+              className="gap-1.5 py-1 px-3 text-xs lowercase rounded-full bg-zinc-900 border border-white/15 text-zinc-200 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] hover:border-white/25 transition-all active:scale-[0.96] touch-manipulation"
             >
               <span>#{item}</span>
               <button
@@ -184,9 +184,9 @@ export function InterestGrid({ value, onChange, onSubmit, activeQueueTopics }: I
                   type="button"
                   onClick={() => handleToggleTag(topic)}
                   className={cn(
-                    "rounded-full px-2.5 py-1 text-[11px] font-mono transition-all cursor-pointer active:scale-95 touch-manipulation border",
+                    "rounded-full px-2.5 py-1 text-[11px] font-mono transition-all cursor-pointer active:scale-[0.96] touch-manipulation border",
                     isSelected
-                      ? "bg-zinc-100 text-zinc-950 border-white shadow-sm"
+                      ? "bg-zinc-100 text-zinc-950 border-white shadow-sm font-semibold"
                       : "bg-zinc-900/80 text-emerald-300/90 border-emerald-500/20 hover:bg-emerald-950/30 hover:border-emerald-500/40",
                   )}
                 >
@@ -205,7 +205,7 @@ export function InterestGrid({ value, onChange, onSubmit, activeQueueTopics }: I
             triggerHaptic("selection");
             setShowSuggestions(!showSuggestions);
           }}
-          className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer min-h-[36px] py-1.5 touch-manipulation"
+          className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer min-h-[36px] py-1.5 touch-manipulation active:scale-[0.96]"
         >
           <Sparkles className="h-3 w-3 text-zinc-300" />
           <span>Browse popular topics</span>
@@ -228,7 +228,7 @@ export function InterestGrid({ value, onChange, onSubmit, activeQueueTopics }: I
                   style={{ animationDelay: `${idx * 20}ms` }}
                   onClick={() => handleToggleTag(tag)}
                   className={cn(
-                    "rounded-full px-2.5 py-1 text-xs font-medium transition-all cursor-pointer active:scale-95 touch-manipulation border",
+                    "rounded-full px-2.5 py-1 text-xs font-medium transition-all cursor-pointer active:scale-[0.96] touch-manipulation border",
                     isSelected
                       ? "bg-zinc-100 text-zinc-950 border-white shadow-sm font-semibold"
                       : "bg-zinc-900/90 text-zinc-300 border-white/10 hover:bg-zinc-800 hover:text-zinc-100 hover:border-white/20",

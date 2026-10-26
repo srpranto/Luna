@@ -99,7 +99,7 @@ export function ExitConfirmModal({
               triggerHaptic("tap");
               onCancel();
             }}
-            className="h-9 px-4 text-xs font-medium text-zinc-300 hover:text-zinc-100 hover:bg-zinc-900 rounded-xl cursor-pointer touch-manipulation"
+            className="h-9 px-4 text-xs font-medium text-zinc-300 hover:text-zinc-100 hover:bg-zinc-900 rounded-xl cursor-pointer touch-manipulation active:scale-[0.96] transition-all"
           >
             {isChat ? "Stay in Chat" : "Keep Searching"}
           </Button>

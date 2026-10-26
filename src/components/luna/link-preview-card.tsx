@@ -31,6 +31,10 @@ async function fetchLinkPreview(url: string): Promise<LinkPreviewData | null> {
       if (!res.ok) return null;
       const json = await res.json();
       if (json.ok && json.data) {
+        if (previewCache.size >= 100) {
+          const firstKey = previewCache.keys().next().value;
+          if (firstKey) previewCache.delete(firstKey);
+        }
         previewCache.set(url, json.data);
         return json.data as LinkPreviewData;
       }

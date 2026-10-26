@@ -51,6 +51,14 @@ create table if not exists sessions (
 create index if not exists sessions_open_a_idx on sessions (a_id) where closed_at is null;
 create index if not exists sessions_open_b_idx on sessions (b_id) where closed_at is null;
 
+create table if not exists active_session_participants (
+  device_id  text primary key references stations(device_id) on delete cascade,
+  session_id text not null references sessions(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists active_session_participants_session_idx on active_session_participants (session_id);
+
 create table if not exists messages (
   id         text primary key,
   session_id text not null references sessions(id) on delete cascade,
@@ -185,6 +193,43 @@ const MIGRATIONS: { name: string; sql: string }[] = [
       create index if not exists device_events_created_idx on device_events (created_at);
     `,
   },
+  {
+    name: "007_active_session_participants",
+    sql: `
+      create table if not exists active_session_participants (
+        device_id  text primary key references stations(device_id) on delete cascade,
+        session_id text not null references sessions(id) on delete cascade,
+        created_at timestamptz not null default now()
+      );
+      create index if not exists active_session_participants_session_idx on active_session_participants (session_id);
+
+      update sessions
+      set closed_at = coalesce(
+        (select max(m.created_at) from messages m where m.session_id = sessions.id),
+        sessions.created_at,
+        now()
+      )
+      where closed_at is null
+        and id in (
+          select s_old.id
+          from sessions s_old
+          join sessions s_new
+            on (s_old.a_id in (s_new.a_id, s_new.b_id) or s_old.b_id in (s_new.a_id, s_new.b_id))
+           and s_old.id <> s_new.id
+           and s_new.closed_at is null
+           and (s_old.created_at < s_new.created_at or (s_old.created_at = s_new.created_at and s_old.id < s_new.id))
+          where s_old.closed_at is null
+        );
+
+      insert into active_session_participants (device_id, session_id, created_at)
+      select a_id, id, created_at from sessions where closed_at is null
+      on conflict (device_id) do nothing;
+
+      insert into active_session_participants (device_id, session_id, created_at)
+      select b_id, id, created_at from sessions where closed_at is null
+      on conflict (device_id) do nothing;
+    `,
+  },
 ];
 
 type QueryRunner = <T>(text: string, params: unknown[]) => Promise<T[]>;
@@ -210,15 +255,30 @@ function createSqlInterface(run: QueryRunner): Sql {
 async function runMigrationsOnEngine(
   execMulti: (sql: string) => Promise<void>,
   query: QueryRunner,
+  isPostgres = false,
 ): Promise<void> {
-  await execMulti(`create table if not exists _migrations (name text primary key, applied_at timestamptz not null default now())`);
-  const appliedRows = await query<{ name: string }>(`select name from _migrations`, []);
-  const applied = new Set(appliedRows.map((r) => r.name));
+  const MIGRATION_LOCK_ID = 718291;
+  if (isPostgres) {
+    try {
+      await query(`select pg_advisory_lock($1)`, [MIGRATION_LOCK_ID]);
+    } catch {}
+  }
+  try {
+    await execMulti(`create table if not exists _migrations (name text primary key, applied_at timestamptz not null default now())`);
+    const appliedRows = await query<{ name: string }>(`select name from _migrations`, []);
+    const applied = new Set(appliedRows.map((r) => r.name));
 
-  for (const m of MIGRATIONS) {
-    if (!applied.has(m.name)) {
-      await execMulti(m.sql);
-      await query(`insert into _migrations (name) values ($1) on conflict do nothing`, [m.name]);
+    for (const m of MIGRATIONS) {
+      if (!applied.has(m.name)) {
+        await execMulti(m.sql);
+        await query(`insert into _migrations (name) values ($1) on conflict do nothing`, [m.name]);
+      }
+    }
+  } finally {
+    if (isPostgres) {
+      try {
+        await query(`select pg_advisory_unlock($1)`, [MIGRATION_LOCK_ID]);
+      } catch {}
     }
   }
 }
@@ -240,7 +300,7 @@ async function initNeon(databaseUrl: string): Promise<Sql> {
   if (!globalRef.__lunaMigrated__) {
     await runMigrationsOnEngine(async (s) => {
       await pool.query(s);
-    }, run);
+    }, run, true);
     globalRef.__lunaMigrated__ = true;
   }
 

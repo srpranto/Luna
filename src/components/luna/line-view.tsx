@@ -328,8 +328,13 @@ export function LineView({
         </div>
 
         {/* Center: Centered Elapsed Timer */}
-        <div className="flex items-center justify-center min-w-0 flex-1 px-1">
+        <div className="flex items-center justify-center min-w-0 flex-1 px-1 gap-1">
           <SessionElapsedBadge createdAt={createdAt} />
+          {interests && interests.length > 0 && (
+            <span className="hidden xs:inline-flex items-center rounded-full border border-emerald-500/20 bg-emerald-950/30 px-1.5 py-0.5 text-[9px] text-emerald-300 font-mono shrink-0 truncate max-w-[80px]">
+              #{interests[0].startsWith("#") ? interests[0].slice(1) : interests[0]}
+            </span>
+          )}
         </div>
 
         {/* Right: Next + Leave + 3 Dots (•••) */}
@@ -398,6 +403,18 @@ export function LineView({
           <span className="text-[11px] sm:text-xs text-zinc-500 font-mono">
             {sessionKind === "friend" ? "Direct Line" : "Open Orbit"}
           </span>
+
+          {interests && interests.length > 0 && (
+            <Badge
+              variant="secondary"
+              className="inline-flex items-center gap-1 text-[10px] text-emerald-300 bg-emerald-950/30 border-emerald-500/20 py-0.5 px-2 font-mono"
+            >
+              <span>#{interests[0].startsWith("#") ? interests[0].slice(1) : interests[0]}</span>
+              {interests.length > 1 && (
+                <span className="text-zinc-500 text-[9px]">+{interests.length - 1}</span>
+              )}
+            </Badge>
+          )}
 
           {resonance && (
             <Badge

@@ -78,7 +78,7 @@ export function WelcomeModal() {
             size="lg"
             onClick={handleProceed}
             aria-label="Proceed to Luna"
-            className="w-full h-11 text-sm font-semibold bg-zinc-100 text-zinc-950 hover:bg-zinc-200 shadow-md transition-all active:scale-[0.98] cursor-pointer touch-manipulation"
+            className="w-full h-11 text-sm font-semibold bg-zinc-100 text-zinc-950 hover:bg-zinc-200 shadow-md transition-all active:scale-[0.96] cursor-pointer touch-manipulation"
           >
             <span>Proceed to Luna</span>
             <ArrowRight className="h-4 w-4 ml-1.5" />

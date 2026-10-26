@@ -171,13 +171,13 @@ export function VoidLetters({ deviceId, onClose }: { deviceId: string; onClose: 
               className="w-full resize-none rounded-xl border border-white/10 bg-zinc-900/60 p-3 text-base sm:text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-white/30 focus:ring-1 focus:ring-white/20 focus:outline-none transition-colors"
             />
             <div className="mt-2 flex items-center justify-between">
-              <span className="text-[11px] font-mono text-zinc-500">{draft.length}/280</span>
+              <span className="text-[11px] font-mono text-zinc-500 tabular-nums">{draft.length}/280</span>
               <Button
                 type="button"
                 size="sm"
                 onClick={handleCast}
                 disabled={submitting || !draft.trim()}
-                className="h-8 px-3.5 text-xs bg-zinc-100 text-zinc-950 hover:bg-zinc-200 font-medium touch-manipulation cursor-pointer active:scale-95"
+                className="h-8 px-3.5 text-xs bg-zinc-100 text-zinc-950 hover:bg-zinc-200 font-medium touch-manipulation cursor-pointer active:scale-[0.96]"
               >
                 <Send className="h-3 w-3 mr-1" />
                 <span>Cast to Void</span>

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { getSql, type Sql } from "./db";
 import {
   ABANDON_AFTER_MINUTES,
@@ -98,27 +98,36 @@ export function hashDeviceSecret(secret: string): string {
   return createHash("sha256").update(secret).digest("hex");
 }
 
-export async function verifyStationAuth(deviceId: string, deviceSecret?: string): Promise<boolean> {
+export async function verifyStationAuth(
+  deviceId: string,
+  deviceSecret?: string,
+  action?: string,
+): Promise<boolean> {
   if (!isDeviceId(deviceId)) return false;
   const sql = await getSql();
   const rows = await sql<{ secret_hash: string | null }>`
     select secret_hash from stations where device_id = ${deviceId}
   `;
   if (rows.length === 0) {
-    return true;
+    return action === "registerStation";
   }
   const storedHash = rows[0]?.secret_hash;
   if (!storedHash) {
-    if (deviceSecret && typeof deviceSecret === "string" && deviceSecret.length >= 16) {
-      const hash = hashDeviceSecret(deviceSecret);
-      await sql`update stations set secret_hash = ${hash} where device_id = ${deviceId} and secret_hash is null`;
+    if (action === "registerStation") {
+      return true;
+    }
+    if (deviceSecret) {
+      return false;
     }
     return true;
   }
   if (!deviceSecret || typeof deviceSecret !== "string") {
     return false;
   }
-  return hashDeviceSecret(deviceSecret) === storedHash;
+  const computedBuf = Buffer.from(hashDeviceSecret(deviceSecret), "hex");
+  const storedBuf = Buffer.from(storedHash, "hex");
+  if (computedBuf.length !== storedBuf.length) return false;
+  return timingSafeEqual(computedBuf, storedBuf);
 }
 
 function requireText(value: unknown, max: number): string {
@@ -217,6 +226,24 @@ async function touchStation(
 
   if (existing[0]) {
     const row = existing[0];
+
+    // Verify existing public-key trust before allowing secret binding on legacy stations
+    if (!row.secret_hash && secretHash) {
+      if (row.public_key) {
+        if (!publicKey || publicKey !== row.public_key) {
+          throw new Error("Device ownership verification failed. Matching public key required.");
+        }
+      } else {
+        const pastActivity = await sql<{ n: number }>`
+          select count(*)::int as n from sessions
+          where a_id = ${deviceId} or b_id = ${deviceId}
+        `;
+        if (pastActivity[0]?.n && pastActivity[0].n > 0) {
+          throw new Error("Device ownership verification failed for active legacy station.");
+        }
+      }
+    }
+
     const keyToSave = publicKey ?? row.public_key ?? null;
     const hashToSave = row.secret_hash ?? secretHash;
     if (row.is_custom) {
@@ -303,6 +330,7 @@ async function endSessionOnce(sql: Sql, session: SessionRow): Promise<boolean> {
   if (closed.length === 0) {
     return false;
   }
+  await sql`delete from active_session_participants where session_id = ${session.id}`;
   const ttl = ttlInterval(session.kind);
   await sql`
     insert into messages (id, session_id, from_id, body, expires_at)
@@ -728,6 +756,10 @@ async function heartbeatQueueHandler(
           where ses.closed_at is null
             and (ses.a_id = q.device_id or ses.b_id = q.device_id)
         )
+        and not exists (
+          select 1 from active_session_participants asp
+          where asp.device_id = q.device_id
+        )
       order by q.entered_at asc
     `;
 
@@ -788,6 +820,10 @@ async function heartbeatQueueHandler(
       delete from queue
       where device_id = ${best.row.device_id}
         and exists (select 1 from queue where device_id = ${deviceId})
+        and not exists (
+          select 1 from active_session_participants
+          where device_id in (${deviceId}, ${best.row.device_id})
+        )
       returning device_id
     `;
     if (claimed.length === 0) {
@@ -807,6 +843,24 @@ async function heartbeatQueueHandler(
       insert into sessions (id, a_id, b_id, kind, interests)
       values (${sessionId}, ${deviceId}, ${best.row.device_id}, 'stranger', ${shared})
     `;
+
+    try {
+      await sql`
+        insert into active_session_participants (device_id, session_id)
+        values (${deviceId}, ${sessionId}), (${best.row.device_id}, ${sessionId})
+      `;
+    } catch {
+      // Concurrency race: participant enrolled simultaneously by another instance.
+      // Safely close orphaned session to preserve integrity.
+      await sql`update sessions set closed_at = now() where id = ${sessionId}`;
+      await sql`delete from active_session_participants where session_id = ${sessionId}`;
+      const openAfterCollision = await openSessionFor(deviceId);
+      if (openAfterCollision) {
+        await sql`delete from queue where device_id = ${deviceId}`;
+        return { status: "matched", desk: await loadDesk(deviceId, clientIp) };
+      }
+      return { status: "waiting", desk: await loadDesk(deviceId, clientIp) };
+    }
 
     const deskA = await loadDesk(deviceId, clientIp);
     const deskB = await loadDesk(best.row.device_id);
@@ -926,7 +980,9 @@ export async function joinQueue(input: {
     set interests = ${payload}, entered_at = now(), last_beat = now()
   `;
 
-  return heartbeatQueueHandler(deviceId, input.blockedIds ?? [], input.clientIp, input.recentPeerIds ?? []);
+  const safeBlockedIds = Array.isArray(input.blockedIds) ? input.blockedIds.slice(0, 100) : [];
+  const safeRecentPeerIds = Array.isArray(input.recentPeerIds) ? input.recentPeerIds.slice(0, 50) : [];
+  return heartbeatQueueHandler(deviceId, safeBlockedIds, input.clientIp, safeRecentPeerIds);
 }
 
 export async function leaveQueue(input: { deviceId: string }): Promise<DeskView> {
@@ -943,7 +999,9 @@ export async function heartbeatQueue(input: {
   recentPeerIds?: string[];
 }): Promise<QueueHeartbeatResult> {
   const deviceId = requireDeviceId(input.deviceId);
-  return heartbeatQueueHandler(deviceId, input.blockedIds ?? [], input.clientIp, input.recentPeerIds ?? []);
+  const safeBlockedIds = Array.isArray(input.blockedIds) ? input.blockedIds.slice(0, 100) : [];
+  const safeRecentPeerIds = Array.isArray(input.recentPeerIds) ? input.recentPeerIds.slice(0, 50) : [];
+  return heartbeatQueueHandler(deviceId, safeBlockedIds, input.clientIp, safeRecentPeerIds);
 }
 
 export async function reportTyping(input: {
@@ -996,9 +1054,19 @@ export async function openFriendLine(input: {
       insert into sessions (id, a_id, b_id, kind, interests)
       values (${sessionId}, ${a}, ${b}, 'friend', '[]')
     `;
+    await sql`
+      insert into active_session_participants (device_id, session_id)
+      values (${a}, ${sessionId}), (${b}, ${sessionId})
+      on conflict (device_id) do update set session_id = excluded.session_id
+    `;
   } else if (existing[0]?.closed_at) {
     await sql`
       update sessions set closed_at = null, created_at = now() where id = ${sessionId}
+    `;
+    await sql`
+      insert into active_session_participants (device_id, session_id)
+      values (${a}, ${sessionId}), (${b}, ${sessionId})
+      on conflict (device_id) do update set session_id = excluded.session_id
     `;
   }
 
@@ -1074,6 +1142,11 @@ export async function requestReconnect(input: {
       update sessions
       set closed_at = null, reconnect_a = false, reconnect_b = false
       where id = ${session.id}
+    `;
+    await sql`
+      insert into active_session_participants (device_id, session_id)
+      values (${session.a_id}, ${session.id}), (${session.b_id}, ${session.id})
+      on conflict (device_id) do update set session_id = excluded.session_id
     `;
     await sql`delete from queue where device_id in (${session.a_id}, ${session.b_id})`;
     const ttl = ttlInterval(session.kind);
@@ -1664,6 +1737,7 @@ export async function blockUser(input: {
 }): Promise<{ ok: boolean }> {
   const deviceId = requireDeviceId(input.deviceId);
   const targetId = requireDeviceId(input.targetId);
+  if (deviceId === targetId) return { ok: true };
   const sql = await getSql();
 
   await sql`
@@ -1682,6 +1756,7 @@ export async function reportUser(input: {
 }): Promise<{ ok: boolean }> {
   const deviceId = requireDeviceId(input.deviceId);
   const targetId = requireDeviceId(input.targetId);
+  if (deviceId === targetId) return { ok: true };
   const reason = typeof input.reason === "string" ? input.reason.slice(0, 500) : "Unspecified";
   const sql = await getSql();
 

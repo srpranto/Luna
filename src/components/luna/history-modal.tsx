@@ -121,7 +121,7 @@ export function HistoryModal({
               <h2 id="history-modal-title" className="text-sm sm:text-base font-semibold text-zinc-100 truncate">
                 {activeSession ? activeSession.peerCallsign : "24-Hour Chat History"}
               </h2>
-              <p className="text-[11px] text-zinc-500 font-mono">
+              <p className="text-[11px] text-zinc-500 font-mono tabular-nums">
                 {activeSession
                   ? `${activeSession.messageCount} messages • ${formatHoursRemaining(activeSession.savedAt)}`
                   : "Encrypted device history • Automatically deletes after 24h"}
@@ -231,7 +231,7 @@ export function HistoryModal({
                   <div className="mt-2 flex items-center gap-2 text-[10px] text-zinc-500 font-mono">
                     <span>{formatRelativeTime(item.savedAt)}</span>
                     <span>•</span>
-                    <span className="flex items-center gap-1 text-zinc-300">
+                    <span className="flex items-center gap-1 text-zinc-300 tabular-nums">
                       <Clock className="h-2.5 w-2.5" />
                       <span>{formatHoursRemaining(item.savedAt)}</span>
                     </span>

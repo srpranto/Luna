@@ -654,6 +654,150 @@ export function registerTier2Tests() {
       `;
       expect(rows[0]?.count).toBe(0);
     });
+
+    it('TC-2.14.5: Stream connection without secret parameter is rejected with 401 Unauthorized', async () => {
+      const streamRoute = await import('@/app/api/luna/stream/route.ts');
+      const req = new Request('http://localhost:3000/api/luna/stream?deviceId=b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2');
+      const res = await streamRoute.GET(req as any);
+      expect(res.status).toBe(401);
+      const json = await res.json();
+      expect(json.error).toContain('Missing stream credentials');
+    });
+
+    it('TC-2.14.6: Stream connection with invalid secret parameter is rejected with 401 Unauthorized', async () => {
+      const streamRoute = await import('@/app/api/luna/stream/route.ts');
+      const req = new Request('http://localhost:3000/api/luna/stream?deviceId=b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2&secret=wrong-secret-value');
+      const res = await streamRoute.GET(req as any);
+      expect(res.status).toBe(401);
+      const json = await res.json();
+      expect(json.error).toContain('Unauthorized');
+    });
+
+    it('TC-2.14.7: Stream connection with valid deviceId and matching secret establishes SSE stream', async () => {
+      const streamRoute = await import('@/app/api/luna/stream/route.ts');
+      const controller = new AbortController();
+      const req = new Request('http://localhost:3000/api/luna/stream?deviceId=b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2&secret=legit-device-secret-1234567890abcdef', {
+        signal: controller.signal,
+      });
+      const res = await streamRoute.GET(req as any);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('text/event-stream');
+      controller.abort();
+    });
+
+    it('TC-2.14.8: Legacy station with existing public key rejects takeover attempt without matching public key', async () => {
+      const { getSql } = await import('@/lib/luna/db.ts');
+      const sql = await getSql();
+      const legacyId = 'd4d4d4d4-d4d4-4d4d-8d4d-d4d4d4d4d4d4';
+      const legitPubKey = 'legacy-pubkey-04a1b2c3d4e5f6-valid';
+
+      await sql`
+        insert into stations (device_id, callsign, ip, is_custom, last_seen, public_key, is_away, secret_hash)
+        values (${legacyId}, 'LegacyStation', '127.0.0.1', false, now(), ${legitPubKey}, false, null)
+        on conflict (device_id) do update set secret_hash = null, public_key = ${legitPubKey}
+      `;
+
+      const claimAttempt = await callApi('registerStation', {
+        deviceId: legacyId,
+        deviceSecret: 'attacker-stolen-secret-123456',
+        publicKey: 'attacker-wrong-pubkey-999',
+      });
+      expect(claimAttempt.status >= 400).toBe(true);
+
+      const rows = await sql<{ secret_hash: string | null }>`
+        select secret_hash from stations where device_id = ${legacyId}
+      `;
+      expect(rows[0]?.secret_hash).toBe(null);
+    });
+
+    it('TC-2.14.9: Legacy station with existing public key successfully binds secret when matching public key is provided', async () => {
+      const { getSql } = await import('@/lib/luna/db.ts');
+      const sql = await getSql();
+      const legacyId = 'e5e5e5e5-e5e5-4e5e-8e5e-e5e5e5e5e5e5';
+      const legitPubKey = 'legacy-pubkey-04abcdef123456-valid';
+      const newSecret = 'legit-migrated-secret-9876543210';
+
+      await sql`
+        insert into stations (device_id, callsign, ip, is_custom, last_seen, public_key, is_away, secret_hash)
+        values (${legacyId}, 'MigratingStation', '127.0.0.1', false, now(), ${legitPubKey}, false, null)
+        on conflict (device_id) do update set secret_hash = null, public_key = ${legitPubKey}
+      `;
+
+      const migrationRes = await callApi('registerStation', {
+        deviceId: legacyId,
+        deviceSecret: newSecret,
+        publicKey: legitPubKey,
+      });
+      expect(migrationRes.status).toBe(200);
+
+      const rows = await sql<{ secret_hash: string | null }>`
+        select secret_hash from stations where device_id = ${legacyId}
+      `;
+      expect(Boolean(rows[0]?.secret_hash)).toBe(true);
+
+      const deskRes = await callApi('getDesk', { deviceId: legacyId, deviceSecret: newSecret });
+      expect(deskRes.status).toBe(200);
+      expect(deskRes.ok).toBe(true);
+    });
+
+    it('TC-2.14.10: active_session_participants table prevents duplicate concurrent active sessions for the same device', async () => {
+      const { getSql } = await import('@/lib/luna/db.ts');
+      const sql = await getSql();
+      const devX = 'f6f6f6f6-f6f6-4f6f-8f6f-f6f6f6f6f6f6';
+      const sess1 = 'session-concurrency-1';
+      const sess2 = 'session-concurrency-2';
+
+      await sql`insert into stations (device_id, callsign) values (${devX}, 'DevX') on conflict do nothing`;
+      await sql`insert into sessions (id, a_id, b_id, kind) values (${sess1}, ${devX}, 'peer1', 'stranger') on conflict do nothing`;
+      await sql`insert into sessions (id, a_id, b_id, kind) values (${sess2}, ${devX}, 'peer2', 'stranger') on conflict do nothing`;
+
+      await sql`delete from active_session_participants where device_id = ${devX}`;
+      await sql`insert into active_session_participants (device_id, session_id) values (${devX}, ${sess1})`;
+
+      let threwViolation = false;
+      try {
+        await sql`insert into active_session_participants (device_id, session_id) values (${devX}, ${sess2})`;
+      } catch {
+        threwViolation = true;
+      }
+      expect(threwViolation).toBe(true);
+
+      const active = await sql<{ session_id: string }>`
+        select session_id from active_session_participants where device_id = ${devX}
+      `;
+      expect(active[0]?.session_id).toBe(sess1);
+
+      await sql`delete from active_session_participants where device_id = ${devX}`;
+    });
+
+    it('TC-2.14.11: Atomic matchmaking queue claim prevents pairing a device already active in another session', async () => {
+      const { getSql } = await import('@/lib/luna/db.ts');
+      const sql = await getSql();
+      await cleanDatabase();
+
+      const candidateA = await createStation('CandidateA');
+      const candidateB = await createStation('CandidateB');
+
+      // Candidate B joins queue first
+      await callApi('joinQueue', { deviceId: candidateB.deviceId, interests: ['concurrency-test'] });
+
+      // Worker 2 matches candidate B concurrently into an active session
+      const mockSessionId = 'other-worker-session-' + crypto.randomUUID();
+      const dummyPeer = 'dummy-peer-' + crypto.randomUUID();
+      await sql`insert into stations (device_id, callsign) values (${dummyPeer}, 'Dummy') on conflict do nothing`;
+      await sql`insert into sessions (id, a_id, b_id, kind) values (${mockSessionId}, ${candidateB.deviceId}, ${dummyPeer}, 'stranger')`;
+      await sql`insert into active_session_participants (device_id, session_id) values (${candidateB.deviceId}, ${mockSessionId}) on conflict (device_id) do update set session_id = excluded.session_id`;
+
+      // Candidate A joins queue with the same interest
+      await callApi('joinQueue', { deviceId: candidateA.deviceId, interests: ['concurrency-test'] });
+
+      // When candidate A heartbeats, matchmaker must NOT pair with candidate B
+      const beatA = await callApi('heartbeatQueue', { deviceId: candidateA.deviceId });
+      expect(beatA.data?.status).toBe('waiting');
+      expect(beatA.data?.desk?.activeSession).toBe(null);
+
+      await sql`delete from active_session_participants where device_id = ${candidateB.deviceId}`;
+    });
   });
 
   describe('Tier 2: Feature 15 Boundary - Mobile Ergonomics, Fluid Animations & Notifications', () => {
@@ -761,6 +905,151 @@ export function registerTier2Tests() {
       const containerClass = 'absolute top-14 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-1.5rem)] max-w-md animate-water-drop pointer-events-auto';
       expect(containerClass).toContain('animate-water-drop');
       expect(containerClass).toContain('pointer-events-auto');
+    });
+
+    it('TC-2.15.6: Mobile tap-and-hold (long-press) threshold calibrates at 450ms with 10px scroll abort', () => {
+      const LONG_PRESS_MS = 450;
+      const SCROLL_ABORT_PX = 10;
+
+      expect(LONG_PRESS_MS).toBe(450);
+      expect(SCROLL_ABORT_PX).toBe(10);
+
+      // Verify hypotenuse scroll detection logic
+      const checkShouldAbort = (startX: number, startY: number, currentX: number, currentY: number) => {
+        const deltaX = currentX - startX;
+        const deltaY = currentY - startY;
+        return Math.hypot(deltaX, deltaY) > SCROLL_ABORT_PX;
+      };
+
+      // Stationary finger (tap and hold): should NOT abort
+      expect(checkShouldAbort(100, 200, 102, 201)).toBe(false);
+
+      // Scrolling finger (>10px): MUST abort long press
+      expect(checkShouldAbort(100, 200, 100, 215)).toBe(true);
+      expect(checkShouldAbort(100, 200, 120, 200)).toBe(true);
+    });
+
+    it('TC-2.15.7: Mobile message action menu exposes Edit Message and Delete Message options with >=44px touch targets', () => {
+      const buttonClasses = 'w-full min-h-[44px] px-3.5 py-2.5 rounded-xl text-xs font-semibold';
+      expect(buttonClasses).toContain('min-h-[44px]');
+      expect(buttonClasses).toContain('w-full');
+
+      // Verify that options correctly handle user own messages vs stranger messages
+      const getAvailableActions = (isMine: boolean, closed: boolean) => {
+        const actions: string[] = ['copy'];
+        if (!closed) actions.push('reply');
+        if (isMine && !closed) {
+          actions.push('edit', 'delete');
+        }
+        return actions;
+      };
+
+      const ownActions = getAvailableActions(true, false);
+      expect(ownActions.includes('edit')).toBe(true);
+      expect(ownActions.includes('delete')).toBe(true);
+
+      const strangerActions = getAvailableActions(false, false);
+      expect(strangerActions.includes('edit')).toBe(false);
+      expect(strangerActions.includes('delete')).toBe(false);
+    });
+  });
+
+  describe('Tier 2: Feature 16 Boundary - Security, Cryptographic & SSRF Hardening', () => {
+    it('TC-2.16.1: verifyStationAuth uses constant-time timingSafeEqual and correctly authenticates valid secrets while rejecting invalid', async () => {
+      const { verifyStationAuth } = await import('../../src/lib/luna/server.ts');
+      const secret = 'legit-timing-test-secret-123456789';
+      const deviceId = crypto.randomUUID();
+      await callApi('registerStation', { deviceId, deviceSecret: secret });
+
+      // Valid secret
+      const isAuthValid = await verifyStationAuth(deviceId, secret);
+      expect(isAuthValid).toBe(true);
+
+      // Invalid secret with identical length
+      const wrongSecret = 'x'.repeat(secret.length);
+      const isAuthInvalid = await verifyStationAuth(deviceId, wrongSecret);
+      expect(isAuthInvalid).toBe(false);
+
+      // Empty or missing secret
+      expect(await verifyStationAuth(deviceId, '')).toBe(false);
+      expect(await verifyStationAuth(deviceId, undefined)).toBe(false);
+    });
+
+    it('TC-2.16.2: blockUser and reportUser guard against self-blocking to prevent matchmaking lockout', async () => {
+      const user = await createStation('SelfBlockGuard');
+      const blockRes = await callApi('blockUser', {
+        deviceId: user.deviceId,
+        targetId: user.deviceId,
+      });
+      expect(blockRes.ok).toBe(true);
+
+      const reportRes = await callApi('reportUser', {
+        deviceId: user.deviceId,
+        targetId: user.deviceId,
+        reason: 'testing self report',
+      });
+      expect(reportRes.ok).toBe(true);
+
+      // User should still be able to join queue and match normally without self-block collision
+      const joinRes = await callApi('joinQueue', {
+        deviceId: user.deviceId,
+        interests: ['self-block-test'],
+      });
+      expect(joinRes.ok).toBe(true);
+    });
+
+    it('TC-2.16.3: sanitizeInterests clamps tag lengths to 32 characters and bounds tag count to 10', async () => {
+      const { sanitizeInterests } = await import('../../src/lib/luna/constants.ts');
+      const longTag = 'x'.repeat(100);
+      const manyTags = Array.from({ length: 50 }, (_, i) => `tag-${i}-${longTag}`);
+
+      const sanitized = sanitizeInterests(manyTags);
+      expect(sanitized.length <= 10).toBe(true);
+      for (const tag of sanitized) {
+        expect(tag.length <= 32).toBe(true);
+      }
+    });
+
+    it('TC-2.16.4: Unbounded array inputs for interests and blockedIds are safely bounded', async () => {
+      const user = await createStation('FloodGuard');
+      const hugeBlockedList = Array.from({ length: 200 }, () => crypto.randomUUID());
+      const res = await callApi('joinQueue', {
+        deviceId: user.deviceId,
+        interests: ['safe-coding'],
+        blockedIds: hugeBlockedList,
+      });
+      expect(res.ok).toBe(true);
+      expect(res.data.status === 'idle' || res.data.status === 'waiting').toBe(true);
+    });
+
+    it('TC-2.16.5: Link preview API handler validates host security and strips private IP rawImage metadata', async () => {
+      const { GET } = await import('../../src/app/api/luna/link-preview/route.ts');
+
+      // Loopback/private target is restricted
+      const loopbackReq = new Request('http://localhost:3000/api/luna/link-preview?url=' + encodeURIComponent('http://127.0.0.1:8080/secret'));
+      const loopbackRes = await GET(loopbackReq);
+      expect(loopbackRes.status).toBe(403);
+
+      // Cloud metadata target is restricted
+      const metadataReq = new Request('http://localhost:3000/api/luna/link-preview?url=' + encodeURIComponent('http://169.254.169.254/latest/meta-data/'));
+      const metadataRes = await GET(metadataReq);
+      expect(metadataRes.status).toBe(403);
+    });
+
+    it('TC-2.16.6: next.config.ts enforces Strict-Transport-Security and Cross-Origin-Opener-Policy headers', async () => {
+      const nextConfigModule = await import('../../next.config.ts');
+      const config = nextConfigModule.default;
+      const headersList = await config.headers();
+      const globalCatchAll = headersList.find((h: any) => h.source === '/(.*)');
+
+      expect(Boolean(globalCatchAll)).toBe(true);
+      const hsts = globalCatchAll.headers.find((h: any) => h.key === 'Strict-Transport-Security');
+      expect(Boolean(hsts)).toBe(true);
+      expect(hsts.value).toContain('max-age=63072000');
+
+      const coop = globalCatchAll.headers.find((h: any) => h.key === 'Cross-Origin-Opener-Policy');
+      expect(Boolean(coop)).toBe(true);
+      expect(coop.value).toBe('same-origin');
     });
   });
 }

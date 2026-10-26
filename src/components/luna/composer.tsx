@@ -366,7 +366,7 @@ export function Composer({
             {value.length > 0 && (
               <span
                 className={cn(
-                  "absolute right-3.5 bottom-2.5 text-[10px] font-mono pointer-events-none px-1 rounded transition-colors select-none",
+                  "absolute right-3.5 bottom-2.5 text-[10px] font-mono pointer-events-none px-1 rounded transition-colors select-none tabular-nums",
                   value.length >= MAX_LINE_CHARS
                     ? "bg-rose-950/80 text-rose-400 font-bold"
                     : value.length > 250
