@@ -16,6 +16,7 @@ import { ArrowRight, Pencil, Trash2, Reply, Lock, Check, Copy } from "lucide-rea
 import { Button } from "@/components/ui/button";
 import { triggerHaptic } from "@/lib/luna/sound";
 import { LinkPreviewCard } from "@/components/luna/link-preview-card";
+import { AnimatedCheckmark } from "@/components/luna/animated-checkmark";
 
 const URL_REGEX = /https?:\/\/[^\s<]+[^<.,:;"')\]\s]/i;
 
@@ -508,7 +509,7 @@ export function Transcript({
               key={msg.id}
               id={`msg-${msg.id}`}
               className={cn(
-                "flex flex-col group transition-opacity duration-150",
+                "flex flex-col group transition-opacity duration-150 contain-bubble",
                 isMine ? "items-end animate-bubble-mine" : "items-start animate-bubble-peer",
                 isConsecutive ? "mt-1" : "mt-3",
               )}
@@ -682,33 +683,11 @@ export function Transcript({
                           </span>
                         )}
                         {isMine && !isSystem && (
-                          <span
-                            className={cn(
-                              "inline-flex items-center text-[11px] font-bold tracking-tighter transition-colors ml-0.5",
-                              msg.status === "failed"
-                                ? "text-rose-500 font-bold"
-                                : msg.seenAt || msg.status === "seen"
-                                  ? "text-sky-400 drop-shadow-[0_0_6px_rgba(56,189,248,0.4)]"
-                                  : "text-zinc-400 font-normal",
-                            )}
-                            title={
-                              msg.status === "failed"
-                                ? "Failed to send"
-                                : msg.seenAt || msg.status === "seen"
-                                  ? `Seen ${msg.seenAt ? formatClock(new Date(msg.seenAt)) : ""}`
-                                  : msg.status === "delivered"
-                                    ? "Delivered"
-                                    : msg.status === "sending"
-                                      ? "Sending..."
-                                      : "Sent"
-                            }
-                          >
-                            {msg.status === "failed"
-                              ? "!"
-                              : msg.seenAt || msg.status === "seen"
-                                ? "✓✓"
-                                : "✓"}
-                          </span>
+                          <AnimatedCheckmark
+                            status={msg.status}
+                            seenAt={msg.seenAt}
+                            className="ml-0.5"
+                          />
                         )}
                       </div>
                     </div>

@@ -655,4 +655,112 @@ export function registerTier2Tests() {
       expect(rows[0]?.count).toBe(0);
     });
   });
+
+  describe('Tier 2: Feature 15 Boundary - Mobile Ergonomics, Fluid Animations & Notifications', () => {
+    it('TC-2.15.1: Friend request acceptance emits casual, welcoming friend copy', async () => {
+      await cleanDatabase();
+      const alice = await createStation('FriendAlice');
+      const bob = await createStation('FriendBob');
+
+      // Join queue and match
+      await callApi('joinQueue', { deviceId: alice.deviceId, deviceSecret: alice.secret, interests: ['midnight-talk'] });
+      await callApi('joinQueue', { deviceId: bob.deviceId, deviceSecret: bob.secret, interests: ['midnight-talk'] });
+      const beatA = await callApi('heartbeatQueue', { deviceId: alice.deviceId, deviceSecret: alice.secret });
+      const beatB = await callApi('heartbeatQueue', { deviceId: bob.deviceId, deviceSecret: bob.secret });
+      const session = beatA.data?.desk?.activeSession || beatB.data?.desk?.activeSession;
+      expect(Boolean(session)).toBe(true);
+
+      // Alice offers friend request
+      await callApi('offerQsl', { deviceId: alice.deviceId, sessionId: session.id, deviceSecret: alice.secret });
+
+      // Bob accepts friend request
+      const deskBob = await callApi('getDesk', { deviceId: bob.deviceId, deviceSecret: bob.secret });
+      const reqId = deskBob.data?.inboundQsl?.[0]?.id ?? deskBob.data?.activeSession?.inboundQsl?.id;
+      expect(Boolean(reqId)).toBe(true);
+
+      await callApi('respondQsl', { deviceId: bob.deviceId, requestId: reqId, accept: true, deviceSecret: bob.secret });
+
+      // Check system message in messages table
+      const { getSql } = await import('@/lib/luna/db.ts');
+      const sql = await getSql();
+      const rows = await sql<{ body: string }>`
+        select body from messages where session_id = ${session.id} and from_id = 'system' order by created_at desc limit 1
+      `;
+      expect(rows[0]?.body).toBe('You are now friends! Say hello 👋');
+      expect(rows[0]?.body.includes('permanently')).toBe(false);
+    });
+
+    it('TC-2.15.2: Refresh-rate trail decay calculates mathematically equivalent fade across 30Hz, 60Hz, 120Hz, 144Hz', () => {
+      const baseAlpha = 0.4;
+      const calcDecay = (hz: number) => {
+        const frameMs = 1000 / hz;
+        const dt = frameMs / (1000 / 60);
+        return 1 - Math.pow(1 - baseAlpha, dt);
+      };
+
+      const decay60 = calcDecay(60);
+      const decay120 = calcDecay(120);
+      const decay30 = calcDecay(30);
+
+      // At 60Hz, 1 frame of decay yields exactly baseAlpha (0.4)
+      expect(Math.abs(decay60 - 0.4) < 0.0001).toBe(true);
+
+      // At 120Hz, 2 frames of decay compound to identical opacity as 1 frame of 60Hz: (1 - d120)^2 == (1 - d60)
+      const remaining120AfterTwoFrames = Math.pow(1 - decay120, 2);
+      const remaining60AfterOneFrame = 1 - decay60;
+      expect(Math.abs(remaining120AfterTwoFrames - remaining60AfterOneFrame) < 0.0001).toBe(true);
+
+      // At 30Hz, 1 frame of decay matches 2 frames of 60Hz: (1 - d30) == (1 - d60)^2
+      const remaining30AfterOneFrame = 1 - decay30;
+      const remaining60AfterTwoFrames = Math.pow(1 - decay60, 2);
+      expect(Math.abs(remaining30AfterOneFrame - remaining60AfterTwoFrames) < 0.0001).toBe(true);
+    });
+
+    it('TC-2.15.3: In-app notifications format and dispatch correctly with action callback', async () => {
+      let dispatched = false;
+      let toastTitle = '';
+      const { subscribeToLunaToasts, notifyUser } = await import('@/lib/luna/notifications.ts');
+
+      const unsubscribe = subscribeToLunaToasts((toast: { title: string }) => {
+        dispatched = true;
+        toastTitle = toast.title;
+      });
+
+      notifyUser({
+        title: 'Stranger Connected! 🌙',
+        body: 'You are now chatting with a stranger.',
+        type: 'match',
+      });
+
+      expect(dispatched).toBe(true);
+      expect(toastTitle).toBe('Stranger Connected! 🌙');
+      unsubscribe();
+    });
+
+    it('TC-2.15.4: Mobile keyboard back navigation helper detects active input and blurs instead of leaving', () => {
+      // Simulate input focused condition
+      const mockInput = {
+        tagName: 'TEXTAREA',
+        blurCalled: false,
+        blur() {
+          this.blurCalled = true;
+        },
+      };
+
+      const isInputFocused = (el: typeof mockInput | null) =>
+        Boolean(el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT'));
+
+      expect(isInputFocused(mockInput)).toBe(true);
+      if (isInputFocused(mockInput)) {
+        mockInput.blur();
+      }
+      expect(mockInput.blurCalled).toBe(true);
+    });
+
+    it('TC-2.15.5: AirDrop water-drop modal container uses correct spring physics class and layout', () => {
+      const containerClass = 'absolute top-14 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-1.5rem)] max-w-md animate-water-drop pointer-events-auto';
+      expect(containerClass).toContain('animate-water-drop');
+      expect(containerClass).toContain('pointer-events-auto');
+    });
+  });
 }

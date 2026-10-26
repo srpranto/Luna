@@ -19,7 +19,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PrivacyShield } from "@/components/luna/privacy-shield";
-import { FloatingReactionsOverlay, type FloatingItem } from "@/components/luna/floating-reactions";
 import { Transcript } from "@/components/luna/transcript";
 import { ScrollBottomPill } from "@/components/luna/scroll-bottom-pill";
 import { Composer } from "@/components/luna/composer";
@@ -52,9 +51,9 @@ export function LineView({
   onReport,
   onRetryMessage,
   busy,
-  onReaction,
-  floatingReactions,
-  onReactionFinished,
+  onReaction: _onReaction,
+  floatingReactions: _floatingReactions,
+  onReactionFinished: _onReactionFinished,
   onEditMessage,
   onDeleteMessage,
   onActivity,
@@ -95,9 +94,9 @@ export function LineView({
   onReport?: (reason: string) => void;
   onRetryMessage?: (messageId: string) => void;
   busy: boolean;
-  onReaction: (emoji: string) => void;
-  floatingReactions: FloatingItem[];
-  onReactionFinished: (id: string) => void;
+  onReaction?: (emoji: string) => void;
+  floatingReactions?: any[];
+  onReactionFinished?: (id: string) => void;
   onEditMessage: (messageId: string, newBody: string) => Promise<void>;
   onDeleteMessage: (messageId: string) => Promise<void>;
   onActivity?: () => void;
@@ -531,39 +530,54 @@ export function LineView({
       </div>
 
       {inbound?.status === "pending" && (
-        <div className="sticky top-0 z-20 backdrop-blur-md bg-zinc-950/95 border-b border-white/10 px-3 py-1.5 sm:px-6 sm:py-2 flex items-center justify-between gap-2 sm:gap-3 shadow-md">
-          <div className="flex items-center gap-2 min-w-0">
-            <HeartHandshake className="h-4 w-4 text-zinc-300 shrink-0" />
-            <p className="text-xs text-zinc-200 truncate">
-              <span className="font-semibold text-zinc-100">{peerCallsign}</span> wants to connect.
-            </p>
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => {
-                triggerHaptic("medium");
-                onAcceptInbound();
-              }}
-              disabled={busy}
-              className="h-6.5 sm:h-7 px-2.5 sm:px-3 text-[11px] sm:text-xs bg-zinc-100 text-zinc-950 hover:bg-zinc-200 font-medium touch-manipulation cursor-pointer active:scale-95"
-            >
-              Accept
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                triggerHaptic("light");
-                onDeclineInbound();
-              }}
-              disabled={busy}
-              className="h-6.5 sm:h-7 px-2.5 sm:px-3 text-[11px] sm:text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/80 touch-manipulation cursor-pointer active:scale-95"
-            >
-              Decline
-            </Button>
+        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-1.5rem)] max-w-md animate-water-drop pointer-events-auto">
+          <div className="rounded-3xl border border-white/20 bg-zinc-950/95 p-3 sm:p-4 backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.85),inset_0_1px_0_0_rgba(255,255,255,0.15)] flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500/20 to-sky-600/20 border border-cyan-400/30 text-cyan-300 shadow-[0_0_16px_rgba(34,211,238,0.25)]">
+                <HeartHandshake className="h-5 w-5" />
+                <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-500" />
+                </span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] uppercase font-mono font-semibold tracking-wider text-cyan-400">Friend Request</span>
+                  <span className="text-zinc-600">•</span>
+                  <span className="text-[10px] text-zinc-400 font-mono">AirDrop</span>
+                </div>
+                <p className="text-xs sm:text-sm font-semibold text-zinc-100 truncate mt-0.5">
+                  {peerCallsign} wants to be friends
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  triggerHaptic("medium");
+                  onAcceptInbound();
+                }}
+                disabled={busy}
+                className="h-8 px-3.5 text-xs bg-white text-zinc-950 hover:bg-zinc-200 font-semibold rounded-full shadow-[0_0_15px_rgba(255,255,255,0.25)] touch-manipulation cursor-pointer active:scale-95 transition-transform"
+              >
+                Accept
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  triggerHaptic("light");
+                  onDeclineInbound();
+                }}
+                disabled={busy}
+                className="h-8 px-3 text-xs text-zinc-400 hover:text-zinc-100 hover:bg-zinc-850 rounded-full touch-manipulation cursor-pointer active:scale-95 transition-transform"
+              >
+                Decline
+              </Button>
+            </div>
           </div>
         </div>
       )}
@@ -571,10 +585,9 @@ export function LineView({
       <div
         ref={transcriptScrollRef}
         onScroll={handleTranscriptScroll}
-        className="relative min-h-0 flex-1 overflow-y-auto overscroll-y-contain"
+        className="relative min-h-0 flex-1 overflow-y-auto overscroll-y-contain [transform:translateZ(0)] [will-change:scroll-position]"
       >
         <PrivacyShield />
-        <FloatingReactionsOverlay items={floatingReactions} onFinished={onReactionFinished} />
         <Transcript
           messages={messages}
           peerCallsign={peerCallsign}
@@ -883,7 +896,7 @@ export function LineView({
         onChange={onDraft}
         onSend={onSend}
         onTyping={onTyping}
-        onReaction={onReaction}
+        onReaction={_onReaction}
         onActivity={onActivity}
         disabled={closed}
         placeholder={

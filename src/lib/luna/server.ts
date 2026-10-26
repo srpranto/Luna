@@ -1484,7 +1484,7 @@ export async function respondQsl(input: {
       const ttl = ttlInterval("stranger");
       await sql`
         insert into messages (id, session_id, from_id, body, expires_at)
-        values (${newId()}, ${req.session_id}, 'system', 'Friend request accepted! You are now connected permanently.', now() + ${ttl}::interval)
+        values (${newId()}, ${req.session_id}, 'system', 'You are now friends! Say hello 👋', now() + ${ttl}::interval)
       `;
     }
   } else {

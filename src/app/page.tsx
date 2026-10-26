@@ -9,6 +9,8 @@ import { HistoryModal } from "@/components/luna/history-modal";
 import { VoidLetters } from "@/components/luna/void-letters";
 import { WelcomeModal } from "@/components/luna/welcome-modal";
 import { ExitConfirmModal } from "@/components/luna/exit-confirm-modal";
+import { InAppNotificationHost } from "@/components/luna/in-app-notification";
+import { notifyUser, requestNotificationPermission } from "@/lib/luna/notifications";
 import { Start } from "@/components/luna/start";
 import { Searching } from "@/components/luna/searching";
 import { LineView as Chat } from "@/components/luna/line-view";
@@ -150,6 +152,7 @@ export default function Home() {
   const activeSessionRef = useRef<SessionView | null>(null);
   const leftSessionIdsRef = useRef<Set<string>>(new Set());
   const lastMatchChimeRef = useRef<string | null>(null);
+  const lastFriendRequestIdRef = useRef<string | null>(null);
   const peerTypingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const busyRef = useRef(busy);
   const isQueueingRef = useRef(false);
@@ -227,6 +230,16 @@ export default function Home() {
     listeningRef.current = listening;
     activeSessionRef.current = currentSession;
   }, [busy, interests, settingsOpen, logOpen, historyOpen, voidOpen, exitConfirm, listening, currentSession]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
+      const handleFirstInteraction = () => {
+        void requestNotificationPermission();
+      };
+      window.addEventListener("pointerdown", handleFirstInteraction, { once: true });
+      return () => window.removeEventListener("pointerdown", handleFirstInteraction);
+    }
+  }, []);
 
   const markSessionClosed = useCallback((sessionId: string | undefined) => {
     if (!sessionId) return;
@@ -486,6 +499,12 @@ export default function Home() {
           lastMatchChimeRef.current = info.sessionId;
           playMatchChime();
           triggerHaptic("match");
+          notifyUser({
+            title: "Stranger Connected! 🌙",
+            body: "You've been paired with a new stranger. Say hello!",
+            type: "match",
+            tag: "luna-match",
+          });
         }
       } else if (eventType === "session_ended") {
         const info = data as { sessionId: string; desk?: DeskView };
@@ -568,12 +587,42 @@ export default function Home() {
         lastMatchChimeRef.current = currentSession.id;
         playMatchChime();
         triggerHaptic("match");
+        notifyUser({
+          title: "Stranger Connected! 🌙",
+          body: `You are chatting with ${currentSession.peerCallsign ?? "a stranger"}. Say hello!`,
+          type: "match",
+          tag: "luna-match",
+        });
       }
       if (currentSession.peerPublicKey && deviceId) {
         void establishSharedKey(deviceId, currentSession.id, currentSession.peerPublicKey);
       }
+      if (typeof window !== "undefined") {
+        const curState = window.history.state;
+        if (!curState || curState.view !== "chat" || curState.sessionId !== currentSession.id) {
+          window.history.pushState(
+            { luna: true, view: "chat", sessionId: currentSession.id },
+            "",
+          );
+        }
+      }
     }
-  }, [currentSession?.id, currentSession?.peerPublicKey, deviceId, hydrateCachedMessages]);
+  }, [currentSession?.id, currentSession?.peerPublicKey, currentSession?.peerCallsign, deviceId, hydrateCachedMessages]);
+
+  useEffect(() => {
+    const inboundId = currentSession?.inboundQsl?.id;
+    if (inboundId && currentSession?.inboundQsl?.status === "pending") {
+      if (lastFriendRequestIdRef.current !== inboundId) {
+        lastFriendRequestIdRef.current = inboundId;
+        notifyUser({
+          title: "Friend Request 🤍",
+          body: `${currentSession.peerCallsign ?? "Stranger"} wants to be friends.`,
+          type: "friend",
+          tag: "luna-friend-request",
+        });
+      }
+    }
+  }, [currentSession?.inboundQsl?.id, currentSession?.inboundQsl?.status, currentSession?.peerCallsign]);
 
   useEffect(() => {
     if (!deviceId || !listening) return;
@@ -1037,9 +1086,26 @@ export default function Home() {
       }
 
       if (activeSessionRef.current && !activeSessionRef.current.closed) {
-        if (state?.view === "chat" && state?.sessionId === activeSessionRef.current.id) {
+        const activeEl = document.activeElement;
+        const isInputFocused =
+          activeEl instanceof HTMLElement &&
+          (activeEl.tagName === "TEXTAREA" ||
+            activeEl.tagName === "INPUT" ||
+            activeEl.getAttribute("contenteditable") === "true");
+
+        if (isInputFocused) {
+          activeEl.blur();
+          window.history.pushState(
+            {
+              luna: true,
+              view: "chat",
+              sessionId: activeSessionRef.current.id,
+            },
+            "",
+          );
           return;
         }
+
         setExitConfirm({ type: "chat" });
         exitConfirmRef.current = { type: "chat" };
         window.history.pushState(
@@ -1405,6 +1471,7 @@ export default function Home() {
         />
       )}
 
+      <InAppNotificationHost />
       <WelcomeModal />
 
       <ExitConfirmModal

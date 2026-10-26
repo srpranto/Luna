@@ -2,7 +2,11 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import type { ChatMessage, HistorySession, MessagesPack, SessionView } from "@/lib/luna/types";
-import type { FloatingItem } from "@/components/luna/floating-reactions";
+export interface FloatingItem {
+  id: string;
+  emoji: string;
+  leftPercent: number;
+}
 import {
   decryptText,
   encryptText,
@@ -21,6 +25,7 @@ import {
   deleteMessage as apiDeleteMessage,
 } from "@/lib/luna/client";
 import { playMessagePop, playMessageReceived, triggerHaptic } from "@/lib/luna/sound";
+import { notifyUser, clearNotificationBadge } from "@/lib/luna/notifications";
 
 const REACTION_REGEX = /^\[reaction:(.+?)\]$/u;
 
@@ -83,18 +88,19 @@ export function useLunaMessages({
   }, []);
 
   const notifyUnread = useCallback((fromCallsign: string, text: string) => {
-    if (typeof document !== "undefined" && document.hidden) {
-      unreadRef.current += 1;
-      const clean = text.replace(/[\r\n]+/g, " ").trim().slice(0, 32);
-      document.title = `(${unreadRef.current}) Luna — ${fromCallsign}: ${clean}`;
-    }
+    unreadRef.current += 1;
+    const clean = text.replace(/[\r\n]+/g, " ").trim().slice(0, 48);
+    notifyUser({
+      title: `Message from ${fromCallsign}`,
+      body: clean || "Encrypted message received",
+      type: "message",
+      tag: "luna-message",
+    });
   }, []);
 
   const clearUnread = useCallback(() => {
     unreadRef.current = 0;
-    if (typeof document !== "undefined") {
-      document.title = "Luna — Late-Night Anonymous Chat";
-    }
+    clearNotificationBadge();
   }, []);
 
   const decryptPack = useCallback(async (pack: MessagesPack, targetDeviceId: string) => {

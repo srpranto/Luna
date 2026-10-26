@@ -1,7 +1,7 @@
 "use client";
 
 import { MAX_LINE_CHARS } from "@/lib/luna/constants";
-import { ArrowRight, ArrowUp, Reply, Sparkles, X } from "lucide-react";
+import { ArrowRight, ArrowUp, Reply, Smile, X } from "lucide-react";
 import {
   useState,
   useRef,
@@ -14,8 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { triggerHaptic } from "@/lib/luna/sound";
 import { cn } from "@/lib/utils";
-
-const CELESTIAL_REACTIONS = ["✨", "🌙", "💫", "🤍", "🔥", "🫂"];
+import { EmojiPicker } from "@/components/luna/emoji-picker";
 
 const useIsomorphicLayoutEffect =
   typeof window !== "undefined" ? useLayoutEffect : useEffect;
@@ -25,7 +24,7 @@ export function Composer({
   onChange,
   onSend,
   onTyping,
-  onReaction,
+  onReaction: _onReaction,
   disabled,
   placeholder,
   autoFocus,
@@ -55,7 +54,7 @@ export function Composer({
   outboundReconnect?: boolean;
   inboundReconnect?: boolean;
 }) {
-  const [showReactions, setShowReactions] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -75,6 +74,10 @@ export function Composer({
   const resizeTextarea = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
+    if (!el.value) {
+      el.style.height = "40px";
+      return;
+    }
     el.style.height = "auto";
     const newHeight = Math.min(200, Math.max(40, el.scrollHeight));
     el.style.height = `${newHeight}px`;
@@ -92,7 +95,6 @@ export function Composer({
 
   useEffect(() => {
     if (autoFocus && !disabled && textareaRef.current) {
-      // Defer focus slightly to ensure layout / animation mounting has completed
       const timer = window.setTimeout(() => {
         textareaRef.current?.focus();
       }, 50);
@@ -126,6 +128,8 @@ export function Composer({
       onSend();
       if (textareaRef.current) {
         textareaRef.current.style.height = "40px";
+        // Mobile keyboard preservation: keep focus active so the soft keyboard does not drop!
+        textareaRef.current.focus({ preventScroll: true });
       }
     }
   }
@@ -137,10 +141,10 @@ export function Composer({
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Escape") {
-      if (showReactions) {
+      if (showEmojiPicker) {
         event.preventDefault();
         event.stopPropagation();
-        setShowReactions(false);
+        setShowEmojiPicker(false);
         return;
       }
       if (replyingTo) {
@@ -174,51 +178,38 @@ export function Composer({
     }
   }
 
+  function handleSelectEmoji(emoji: string) {
+    onActivity?.();
+    const el = textareaRef.current;
+    if (!el) {
+      const next = (value + emoji).slice(0, MAX_LINE_CHARS);
+      onChange(next);
+      return;
+    }
+    const start = el.selectionStart ?? value.length;
+    const end = el.selectionEnd ?? value.length;
+    const next = (value.slice(0, start) + emoji + value.slice(end)).slice(0, MAX_LINE_CHARS);
+    onChange(next);
+    const newPos = Math.min(start + emoji.length, next.length);
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus({ preventScroll: true });
+        textareaRef.current.setSelectionRange(newPos, newPos);
+        resizeTextarea();
+      }
+    }, 0);
+  }
+
   return (
     <form
       onSubmit={submit}
       className="relative border-t border-white/10 bg-zinc-950/70 py-2.5 sm:py-3 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] sm:px-6 backdrop-blur-md pb-[max(0.625rem,env(safe-area-inset-bottom))]"
     >
-      {showReactions && (
-        <>
-          <div
-            className="fixed inset-0 z-30 bg-transparent"
-            onClick={() => setShowReactions(false)}
-            aria-hidden="true"
-          />
-          <div className="absolute bottom-full right-14 sm:right-24 mb-2.5 flex items-center gap-1 p-1.5 rounded-full border border-white/15 bg-zinc-950/95 backdrop-blur-2xl shadow-[0_12px_36px_rgba(0,0,0,0.85),inset_0_1px_0_0_rgba(255,255,255,0.12)] z-40 animate-in fade-in slide-in-from-bottom-2 zoom-in-95 duration-150">
-          <div className="flex items-center gap-1 px-1">
-            {CELESTIAL_REACTIONS.map((emoji) => (
-              <button
-                key={emoji}
-                type="button"
-                disabled={disabled}
-                onClick={() => {
-                  triggerHaptic("light");
-                  onReaction?.(emoji);
-                  setShowReactions(false);
-                }}
-                className="flex h-8 w-8 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 items-center justify-center rounded-full text-base hover:bg-zinc-800/90 active:scale-90 transition-all cursor-pointer hover:scale-110 touch-manipulation"
-                title={`Send ${emoji} reaction`}
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
-          <div className="h-4 w-px bg-white/15" />
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic("light");
-              setShowReactions(false);
-            }}
-            className="h-6 w-6 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 rounded-full flex items-center justify-center text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors cursor-pointer mr-0.5 touch-manipulation"
-            title="Close reactions"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-        </>
+      {showEmojiPicker && (
+        <EmojiPicker
+          onSelectEmoji={handleSelectEmoji}
+          onClose={() => setShowEmojiPicker(false)}
+        />
       )}
 
       {replyingTo && (
@@ -312,6 +303,34 @@ export function Composer({
         </div>
       ) : (
         <div className="flex items-end gap-2">
+          {/* Google Keyboard (Gboard) Emojis Button */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onPointerDown={(e) => {
+              // Crucial for mobile keyboard: prevent default on pointerdown to keep textarea focused!
+              e.preventDefault();
+            }}
+            onTouchStart={(e) => {
+              e.preventDefault();
+            }}
+            onClick={() => {
+              triggerHaptic("light");
+              setShowEmojiPicker((prev) => !prev);
+            }}
+            disabled={disabled}
+            aria-label="Google Keyboard emojis"
+            title="Google Keyboard emojis"
+            className={cn(
+              "h-10 w-10 min-h-[40px] min-w-[40px] p-0 rounded-full border border-white/10 bg-zinc-900/60 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 hover:border-white/20 shrink-0 cursor-pointer transition-all duration-150 ease-coloros active:scale-95 touch-manipulation flex items-center justify-center shadow-sm",
+              showEmojiPicker && "text-zinc-100 bg-zinc-800 border-white/30 ring-1 ring-white/20",
+            )}
+          >
+            <Smile className="h-4 w-4" />
+          </Button>
+
+          {/* Textarea container with mathematical 40px subpixel base height */}
           <div className="relative flex-1 min-w-0">
             <textarea
               ref={textareaRef}
@@ -342,7 +361,7 @@ export function Composer({
                 clearTypingTimer();
                 onTyping?.(false);
               }}
-              className="min-h-[40px] max-h-[200px] h-10 w-full resize-none rounded-full border border-white/10 bg-zinc-900/70 pl-4 pr-12 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] transition-all focus:border-white/25 focus:ring-1 focus:ring-white/20 focus:outline-none disabled:opacity-40 leading-6 overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+              className="min-h-[40px] max-h-[200px] h-10 w-full resize-none rounded-full border border-white/10 bg-zinc-900/70 pl-4 pr-12 py-[9px] text-sm text-zinc-100 placeholder:text-zinc-500 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] transition-all focus:border-white/25 focus:ring-1 focus:ring-white/20 focus:outline-none disabled:opacity-40 leading-5 overflow-y-auto box-border [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             />
             {value.length > 0 && (
               <span
@@ -360,26 +379,16 @@ export function Composer({
             )}
           </div>
 
-          {onReaction && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowReactions((prev) => !prev)}
-              disabled={disabled}
-              aria-label="Celestial reactions"
-              title="Celestial reactions"
-              className={cn(
-                "h-10 w-10 min-h-[40px] min-w-[40px] p-0 rounded-full border border-white/10 bg-zinc-900/60 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 hover:border-white/20 shrink-0 cursor-pointer transition-all duration-150 ease-coloros active:scale-95 touch-manipulation flex items-center justify-center shadow-sm",
-                showReactions && "text-zinc-100 bg-zinc-800 border-white/30 ring-1 ring-white/20",
-              )}
-            >
-              <Sparkles className="h-4 w-4" />
-            </Button>
-          )}
-
+          {/* Send Button: perfect 40x40 circle on mobile, pill on desktop, with touch prevention */}
           <Button
             type="submit"
+            onPointerDown={(e) => {
+              // Crucial: prevent touch/pointer event from stealing focus and closing the mobile virtual keyboard!
+              e.preventDefault();
+            }}
+            onTouchStart={(e) => {
+              e.preventDefault();
+            }}
             disabled={disabled || !value.trim()}
             size="sm"
             aria-label="Send message"

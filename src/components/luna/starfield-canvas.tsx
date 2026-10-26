@@ -72,12 +72,16 @@ export function StarfieldCanvas({
     const render = (time: number) => {
       const delta = time - lastTime;
       lastTime = time;
-      const dt = Math.min(Math.max(delta / (1000 / 60), 0.1), 3);
+      // Frame-rate independent delta time (normalized to 60fps baseline)
+      const dt = Math.min(Math.max(delta / (1000 / 60), 0.05), 2.5);
 
       const targetSpeed = hyperspace ? 24 : speed;
       currentSpeed += (targetSpeed - currentSpeed) * Math.min(0.05 * dt, 1);
 
-      ctx.fillStyle = hyperspace ? "rgba(9, 9, 11, 0.25)" : "rgba(9, 9, 11, 0.4)";
+      // Refresh-rate normalized trail decay: identical fade per millisecond across 30Hz/60Hz/90Hz/120Hz/144Hz
+      const baseAlpha = hyperspace ? 0.25 : 0.4;
+      const decayAlpha = Math.min(0.95, Math.max(0.05, 1 - Math.pow(1 - baseAlpha, dt)));
+      ctx.fillStyle = `rgba(9, 9, 11, ${decayAlpha.toFixed(4)})`;
       ctx.fillRect(0, 0, cssWidth, cssHeight);
 
       const cx = cssWidth / 2;
