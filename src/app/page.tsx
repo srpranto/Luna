@@ -814,6 +814,26 @@ export default function Home() {
     }
   }, [deviceId, busy, currentSession, setIsAway, setReplyingTo, setMessages, handleDeskUpdate]);
 
+  const handleRequestLeaveSession = useCallback(() => {
+    if (activeSessionRef.current && !activeSessionRef.current.closed) {
+      setExitConfirm({ type: "chat" });
+      exitConfirmRef.current = { type: "chat" };
+      if (typeof window !== "undefined") {
+        window.history.pushState(
+          {
+            luna: true,
+            view: "chat",
+            sessionId: activeSessionRef.current.id,
+            modal: "exit_confirm",
+          },
+          "",
+        );
+      }
+    } else {
+      void handleLeaveSession();
+    }
+  }, [handleLeaveSession]);
+
   const handleNextStranger = useCallback(async () => {
     if (!deviceId || busyRef.current) return;
     const targetSessionId = currentSession?.id;
@@ -1088,6 +1108,10 @@ export default function Home() {
       }
 
       if (activeSessionRef.current && !activeSessionRef.current.closed) {
+        if (state?.view === "chat" && state?.sessionId === activeSessionRef.current.id && !state?.modal) {
+          return;
+        }
+
         const activeEl = document.activeElement;
         const isInputFocused =
           activeEl instanceof HTMLElement &&
@@ -1358,7 +1382,7 @@ export default function Home() {
             onDeclineInbound={() => {
               if (currentSession.inboundQsl?.id) void handleRespondQsl(currentSession.inboundQsl.id, false);
             }}
-            onLeave={handleLeaveSession}
+            onLeave={handleRequestLeaveSession}
             onNext={handleNextStranger}
             onBlock={handleSeverAndBlock}
             onReport={handleReportAndBlock}

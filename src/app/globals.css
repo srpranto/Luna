@@ -192,18 +192,18 @@
 @keyframes water-drop-down {
   0% {
     opacity: 0;
-    transform: translate3d(-50%, -120%, 0) scale(0.7);
+    transform: translate3d(0, -120%, 0) scale(0.7);
   }
   60% {
     opacity: 1;
-    transform: translate3d(-50%, 8px, 0) scale(1.03);
+    transform: translate3d(0, 8px, 0) scale(1.03);
   }
   85% {
-    transform: translate3d(-50%, -3px, 0) scale(0.99);
+    transform: translate3d(0, -3px, 0) scale(0.99);
   }
   100% {
     opacity: 1;
-    transform: translate3d(-50%, 0, 0) scale(1);
+    transform: translate3d(0, 0, 0) scale(1);
   }
 }
 

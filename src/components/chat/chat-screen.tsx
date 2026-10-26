@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   Ban,
@@ -121,53 +121,24 @@ export function ChatScreen({
 
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
 
+  const closeActionSheet = useCallback((_popHistory?: boolean | unknown) => {
+    setActionSheetOpen(false);
+  }, []);
+
   useEffect(() => {
     if (!actionSheetOpen) return;
-    if (typeof window !== "undefined") {
-      window.history.pushState({ luna: true, view: "chat", sheet: "actions" }, "");
-    }
-    const handlePopState = () => {
-      setActionSheetOpen(false);
-    };
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
         e.stopImmediatePropagation();
         setActionSheetOpen(false);
-        if (typeof window !== "undefined" && window.history.state?.sheet === "actions") {
-          window.history.back();
-        }
       }
     };
-    window.addEventListener("popstate", handlePopState);
     window.addEventListener("keydown", handleKeyDown);
     return () => {
-      window.removeEventListener("popstate", handlePopState);
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [actionSheetOpen]);
-
-  const closeActionSheet = (popHistory: boolean | unknown = true) => {
-    setActionSheetOpen(false);
-    const shouldPop = typeof popHistory === "boolean" ? popHistory : true;
-    if (shouldPop && typeof window !== "undefined" && window.history.state?.sheet === "actions") {
-      window.history.back();
-    }
-  };
-
-  useEffect(() => {
-    if (closed && typeof window !== "undefined" && window.history.state?.sheet === "actions") {
-      window.history.back();
-    }
-  }, [closed]);
-
-  useEffect(() => {
-    return () => {
-      if (typeof window !== "undefined" && window.history.state?.sheet === "actions") {
-        window.history.back();
-      }
-    };
-  }, []);
 
   useEffect(() => {
     if (closed || !createdAt || !locked) return;
@@ -222,38 +193,24 @@ export function ChatScreen({
     }
   }
 
+  const closeReportModal = useCallback(() => {
+    setShowReportModal(false);
+  }, []);
+
   useEffect(() => {
     if (!showReportModal) return;
-    if (typeof window !== "undefined") {
-      window.history.pushState({ luna: true, view: "chat", modal: "report" }, "");
-    }
-    const handlePopState = () => {
-      setShowReportModal(false);
-    };
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
         e.stopImmediatePropagation();
         setShowReportModal(false);
-        if (typeof window !== "undefined" && window.history.state?.modal === "report") {
-          window.history.back();
-        }
       }
     };
-    window.addEventListener("popstate", handlePopState);
     window.addEventListener("keydown", handleKeyDown);
     return () => {
-      window.removeEventListener("popstate", handlePopState);
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [showReportModal]);
-
-  const closeReportModal = () => {
-    setShowReportModal(false);
-    if (typeof window !== "undefined" && window.history.state?.modal === "report") {
-      window.history.back();
-    }
-  };
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.visualViewport) return;
@@ -290,7 +247,7 @@ export function ChatScreen({
   }
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col">
+    <section className="relative flex min-h-0 flex-1 flex-col">
       {/* 1. Mobile Phone Unified Dynamic Island Capsule Header */}
       <div className="sm:hidden flex items-center justify-between gap-1.5 mx-2 mt-2 px-3 py-2 rounded-2xl border border-white/[0.12] bg-zinc-900/60 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.12)] shrink-0 z-30">
         {/* Left: Full Callsign + Active/Away Status in Stranger's Location */}
@@ -547,7 +504,7 @@ export function ChatScreen({
       </div>
 
       {inbound?.status === "pending" && (
-        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-1.5rem)] max-w-md animate-water-drop pointer-events-auto">
+        <div className="absolute top-16 sm:top-14 inset-x-0 mx-auto z-40 w-[calc(100%-1.5rem)] max-w-md animate-water-drop pointer-events-auto">
           <div className="rounded-3xl border border-white/20 bg-zinc-950/95 p-3 sm:p-4 backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.85),inset_0_1px_0_0_rgba(255,255,255,0.15)] flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500/20 to-sky-600/20 border border-cyan-400/30 text-cyan-300 shadow-[0_0_16px_rgba(34,211,238,0.25)]">

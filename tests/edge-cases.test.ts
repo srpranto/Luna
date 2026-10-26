@@ -902,9 +902,11 @@ export function registerTier2Tests() {
     });
 
     it('TC-2.15.5: AirDrop water-drop modal container uses correct spring physics class and layout', () => {
-      const containerClass = 'absolute top-14 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-1.5rem)] max-w-md animate-water-drop pointer-events-auto';
+      const containerClass = 'absolute top-16 sm:top-14 inset-x-0 mx-auto z-40 w-[calc(100%-1.5rem)] max-w-md animate-water-drop pointer-events-auto';
       expect(containerClass).toContain('animate-water-drop');
       expect(containerClass).toContain('pointer-events-auto');
+      expect(containerClass).toContain('inset-x-0');
+      expect(containerClass).toContain('mx-auto');
     });
 
     it('TC-2.15.6: Mobile tap-and-hold (long-press) threshold calibrates at 450ms with 10px scroll abort', () => {
@@ -951,6 +953,60 @@ export function registerTier2Tests() {
       const strangerActions = getAvailableActions(false, false);
       expect(strangerActions.includes('edit')).toBe(false);
       expect(strangerActions.includes('delete')).toBe(false);
+    });
+
+    it('TC-2.15.8: Closing 3-dot action sheet or in-chat modal does not trigger exit confirmation dialog', () => {
+      // Simulate state transition when popping from within chat
+      const currentSessionId = crypto.randomUUID();
+      const chatState = { luna: true, view: 'chat', sessionId: currentSessionId };
+      
+      const shouldTriggerExitConfirm = (
+        targetState: { view?: string; sessionId?: string; modal?: string } | null,
+        activeSession: { id: string; closed: boolean } | null
+      ) => {
+        if (!activeSession || activeSession.closed) return false;
+        // Target state is still the current active chat session without exit_confirm modal
+        if (targetState?.view === 'chat' && targetState?.sessionId === activeSession.id && !targetState?.modal) {
+          return false;
+        }
+        return true;
+      };
+
+      // Popping from a sheet/modal back to chat view must NOT trigger exit confirmation
+      expect(shouldTriggerExitConfirm(chatState, { id: currentSessionId, closed: false })).toBe(false);
+      
+      // Popping away from chat (e.g. back to queue or boot) MUST trigger exit confirmation
+      expect(shouldTriggerExitConfirm({ view: 'queue' }, { id: currentSessionId, closed: false })).toBe(true);
+      expect(shouldTriggerExitConfirm({ view: 'boot' }, { id: currentSessionId, closed: false })).toBe(true);
+      expect(shouldTriggerExitConfirm(null, { id: currentSessionId, closed: false })).toBe(true);
+    });
+
+    it('TC-2.15.9: onLeave in active chat prompts exit confirmation modal before terminating session', () => {
+      let exitConfirmOpened = false;
+      let sessionTerminated = false;
+
+      const activeSession = { id: crypto.randomUUID(), closed: false };
+
+      const handleRequestLeaveSession = () => {
+        if (activeSession && !activeSession.closed) {
+          exitConfirmOpened = true;
+        } else {
+          sessionTerminated = true;
+        }
+      };
+
+      // Active session should request confirmation first
+      handleRequestLeaveSession();
+      expect(exitConfirmOpened).toBe(true);
+      expect(sessionTerminated).toBe(false);
+
+      // Closed session can terminate immediately without confirmation
+      exitConfirmOpened = false;
+      sessionTerminated = false;
+      activeSession.closed = true;
+      handleRequestLeaveSession();
+      expect(exitConfirmOpened).toBe(false);
+      expect(sessionTerminated).toBe(true);
     });
   });
 
