@@ -1,25 +1,26 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback, useSyncExternalStore } from "react";
-import { LogPanel } from "@/components/luna/log-panel";
-import { SettingsPanel } from "@/components/luna/settings-panel";
-import { PaperShell } from "@/components/luna/paper-shell";
-import { StatusHeader } from "@/components/luna/status-header";
-import { HistoryModal } from "@/components/luna/history-modal";
-import { VoidLetters } from "@/components/luna/void-letters";
-import { WelcomeModal } from "@/components/luna/welcome-modal";
-import { ExitConfirmModal } from "@/components/luna/exit-confirm-modal";
-import { InAppNotificationHost } from "@/components/luna/in-app-notification";
-import { notifyUser, requestNotificationPermission } from "@/lib/luna/notifications";
-import { Start } from "@/components/luna/start";
-import { Searching } from "@/components/luna/searching";
-import { LineView as Chat } from "@/components/luna/line-view";
-import { NetworkBanner } from "@/components/luna/network-banner";
-import { useLunaPresence } from "@/hooks/luna/use-luna-presence";
-import { useLunaMessages } from "@/hooks/luna/use-luna-messages";
-import { useLunaStream } from "@/hooks/luna/use-luna-stream";
-import { sanitizeInterests } from "@/lib/luna/constants";
-import { deskName, getCachedCustomName, getOrCreateDeviceId, getOrCreateDeviceSecret } from "@/lib/luna/identity";
+import { DebugLogPanel } from "@/components/chat/debug-log-panel";
+import { SettingsDialog } from "@/components/chat/settings-dialog";
+import { ChatContainer } from "@/components/chat/chat-container";
+import { ChatHeader } from "@/components/chat/chat-header";
+import { ChatHistoryDialog } from "@/components/chat/chat-history-dialog";
+import { AnonymousNotesDialog } from "@/components/chat/anonymous-notes-dialog";
+import { WelcomeDialog } from "@/components/chat/welcome-dialog";
+import { LeaveChatDialog } from "@/components/chat/leave-chat-dialog";
+import { NotificationToastHost } from "@/components/chat/notification-toast";
+import { notifyUser, requestNotificationPermission } from "@/lib/notifications";
+import { StartScreen } from "@/components/chat/start-screen";
+import { SearchingScreen } from "@/components/chat/searching-screen";
+import { ChatScreen } from "@/components/chat/chat-screen";
+import { OfflineBanner } from "@/components/chat/offline-banner";
+import { usePresence } from "@/hooks/use-presence";
+import { useMessages } from "@/hooks/use-messages";
+import { useChatStream } from "@/hooks/use-chat-stream";
+import { useVisualViewport } from "@/hooks/use-visual-viewport";
+import { sanitizeInterests } from "@/lib/constants";
+import { deskName, getCachedCustomName, getOrCreateDeviceId, getOrCreateDeviceSecret } from "@/lib/identity";
 import {
   sweepExpiredCaches,
   exportDevicePublicKeyHex,
@@ -31,7 +32,7 @@ import {
   decryptText,
   saveCachedMessages,
   loadCachedMessages,
-} from "@/lib/luna/crypto";
+} from "@/lib/encryption";
 import {
   getDesk,
   heartbeatQueue,
@@ -49,15 +50,15 @@ import {
   reportUser,
   requestReconnect,
   markSeen,
-} from "@/lib/luna/client";
+} from "@/lib/api-client";
 import {
   isSoundEnabled,
   playMatchChime,
   playLeaveTone,
   setSoundEnabled,
   triggerHaptic,
-} from "@/lib/luna/sound";
-import type { DeskView, MessagesPack, SessionView, HistorySession } from "@/lib/luna/types";
+} from "@/lib/sound-effects";
+import type { DeskView, MessagesPack, SessionView, HistorySession } from "@/lib/types";
 
 const INTEREST_KEY = "luna.interests";
 const BLOCKED_KEY = "luna.blocked";
@@ -129,6 +130,7 @@ const isWindowFocused = () =>
 let lastTypingReport = 0;
 
 export default function Home() {
+  useVisualViewport();
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [interests, setInterests] = useState<string[]>([]);
   const [logOpen, setLogOpen] = useState(false);
@@ -265,7 +267,7 @@ export default function Home() {
     mergeAndStoreMessages,
     clearUnread,
     hydrateCachedMessages,
-  } = useLunaMessages({
+  } = useMessages({
     deviceId,
     sessionId: currentSession?.id,
     onActivity: () => {},
@@ -295,7 +297,7 @@ export default function Home() {
     }
   }, [deviceId, handleDeskUpdate, decryptPack, mergeAndStoreMessages]);
 
-  const { setIsAway, resetIdle } = useLunaPresence({
+  const { setIsAway, resetIdle } = usePresence({
     deviceId,
     currentSession,
     onResync: triggerResync,
@@ -522,7 +524,7 @@ export default function Home() {
     [deviceId, decryptPack, mergeAndStoreMessages, setMessages, markSessionClosed, setIsAway, handleDeskUpdate],
   );
 
-  useLunaStream({
+  useChatStream({
     deviceId,
     onEvent: handleStreamEvent,
     onDeskUpdate: handleDeskUpdate,
@@ -1231,14 +1233,14 @@ export default function Home() {
           deviceSecret: secret,
           sessionId: sId,
         });
-        navigator.sendBeacon("/api/luna", new Blob([payload], { type: "application/json" }));
+        navigator.sendBeacon("/api/chat", new Blob([payload], { type: "application/json" }));
       } else if (listeningRef.current) {
         const payload = JSON.stringify({
           action: "leaveQueue",
           deviceId: dId,
           deviceSecret: secret,
         });
-        navigator.sendBeacon("/api/luna", new Blob([payload], { type: "application/json" }));
+        navigator.sendBeacon("/api/chat", new Blob([payload], { type: "application/json" }));
       }
     };
     window.addEventListener("pagehide", handlePageHide);
@@ -1256,9 +1258,9 @@ export default function Home() {
   };
 
   return (
-    <div className="flex h-dvh w-full flex-col bg-zinc-950 text-zinc-100 antialiased selection:bg-white/20 select-none overflow-hidden overscroll-none">
-      <PaperShell>
-        <StatusHeader
+    <div className="flex h-[var(--visual-viewport-height,100dvh)] max-h-[var(--visual-viewport-height,100dvh)] w-full flex-col bg-zinc-950 text-zinc-100 antialiased selection:bg-white/20 select-none overflow-hidden overscroll-none">
+      <ChatContainer>
+        <ChatHeader
           callsign={desk?.station.callsign}
           meta={
             currentSession
@@ -1296,7 +1298,7 @@ export default function Home() {
           }
         />
 
-        <NetworkBanner isOnline={isOnline} />
+        <OfflineBanner isOnline={isOnline} />
 
         {note && (
           <div
@@ -1316,7 +1318,7 @@ export default function Home() {
         )}
 
         {logOpen && !currentSession ? (
-          <LogPanel
+          <DebugLogPanel
             desk={fallbackDesk}
             onOpenFriend={handleOpenFriendLine}
             onRespond={handleRespondQsl}
@@ -1324,7 +1326,7 @@ export default function Home() {
             busy={busy}
           />
         ) : currentSession ? (
-          <Chat
+          <ChatScreen
             key={`chat-${currentSession.id}`}
             sessionKind={currentSession.kind}
             peerCallsign={currentSession.peerCallsign}
@@ -1379,7 +1381,7 @@ export default function Home() {
             onToggleLog={() => openOverlayModal("log")}
           />
         ) : listening ? (
-          <Searching
+          <SearchingScreen
             key="listening-view"
             enteredAt={desk?.enteredAt ?? null}
             interests={desk?.queuedInterests ?? interests}
@@ -1399,7 +1401,7 @@ export default function Home() {
             busy={busy}
           />
         ) : (
-          <Start
+          <StartScreen
             interests={interests}
             onInterests={setInterests}
             onCall={() => void handleJoinQueue()}
@@ -1408,9 +1410,9 @@ export default function Home() {
             activeQueueTopics={desk?.activeQueueTopics}
           />
         )}
-      </PaperShell>
+      </ChatContainer>
 
-      <HistoryModal
+      <ChatHistoryDialog
         isOpen={historyOpen}
         onClose={() => closeOverlayModal("history")}
         sessions={historySessions}
@@ -1425,7 +1427,7 @@ export default function Home() {
       />
 
       {settingsOpen && (
-        <SettingsPanel
+        <SettingsDialog
           isOpen={settingsOpen}
           desk={fallbackDesk}
           onClose={() => closeOverlayModal("settings")}
@@ -1450,7 +1452,7 @@ export default function Home() {
           className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
         >
           <div className="relative flex flex-col w-full max-w-lg max-h-[90vh] sm:max-h-[85vh] rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 bg-zinc-950/95 shadow-2xl overflow-hidden animate-sheet-up sm:animate-none">
-            <LogPanel
+            <DebugLogPanel
               desk={fallbackDesk}
               onOpenFriend={(fid) => {
                 closeOverlayModal("log");
@@ -1465,16 +1467,16 @@ export default function Home() {
       )}
 
       {voidOpen && (
-        <VoidLetters
+        <AnonymousNotesDialog
           deviceId={deviceId ?? ""}
           onClose={() => closeOverlayModal("void")}
         />
       )}
 
-      <InAppNotificationHost />
-      <WelcomeModal />
+      <NotificationToastHost />
+      <WelcomeDialog />
 
-      <ExitConfirmModal
+      <LeaveChatDialog
         isOpen={Boolean(exitConfirm)}
         type={exitConfirm?.type ?? "chat"}
         onCancel={() => {

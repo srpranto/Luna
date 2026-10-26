@@ -1,0 +1,327 @@
+"use client";
+
+import { HeartHandshake, Settings, X, History } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { AmbientSoundMenu } from "@/components/chat/ambient-sound-menu";
+import { BlackHoleIcon } from "@/components/chat/black-hole-icon";
+import { MoonLogo } from "@/components/chat/moon-logo";
+import { formatElapsed } from "@/lib/identity";
+import { triggerHaptic } from "@/lib/sound-effects";
+import { cn } from "@/lib/utils";
+import { useEffect, useState } from "react";
+
+export function SessionElapsedBadge({
+  createdAt,
+  fallbackAgeMs = 0,
+}: {
+  createdAt?: string;
+  fallbackAgeMs?: number;
+}) {
+  const [elapsed, setElapsed] = useState(() => {
+    if (!createdAt) return fallbackAgeMs;
+    return Math.max(0, Date.now() - new Date(createdAt).getTime());
+  });
+
+  useEffect(() => {
+    if (!createdAt) return;
+    const interval = window.setInterval(() => {
+      setElapsed(Math.max(0, Date.now() - new Date(createdAt).getTime()));
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [createdAt]);
+
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-zinc-900/90 px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-[11px] text-zinc-300 font-mono shrink-0 shadow-sm tabular-nums"
+      suppressHydrationWarning
+    >
+      <span>{formatElapsed(elapsed)}</span>
+    </span>
+  );
+}
+
+const STELLAR_STARS = [
+  { top: "22%", left: "3%", size: 1, duration: "3.8s", delay: "0.2s" },
+  { top: "68%", left: "7%", size: 1.5, duration: "4.5s", delay: "1.2s", glow: true },
+  { top: "35%", left: "12%", size: 1, duration: "3.2s", delay: "2.4s" },
+  { top: "18%", left: "19%", size: 2, duration: "4.8s", delay: "0.7s", glow: true },
+  { top: "72%", left: "26%", size: 1, duration: "3.6s", delay: "1.9s" },
+  { top: "42%", left: "33%", size: 1.5, duration: "5.1s", delay: "0.4s" },
+  { top: "25%", left: "41%", size: 1, duration: "4.1s", delay: "2.8s" },
+  { top: "65%", left: "48%", size: 2, duration: "3.9s", delay: "1.1s", glow: true },
+  { top: "20%", left: "54%", size: 1, duration: "4.7s", delay: "0.5s" },
+  { top: "78%", left: "62%", size: 1.5, duration: "3.4s", delay: "2.1s" },
+  { top: "30%", left: "69%", size: 1, duration: "5.4s", delay: "1.6s" },
+  { top: "60%", left: "77%", size: 2, duration: "4.3s", delay: "0.3s", glow: true },
+  { top: "16%", left: "83%", size: 1, duration: "3.7s", delay: "2.5s" },
+  { top: "75%", left: "89%", size: 1.5, duration: "4.9s", delay: "1.4s" },
+  { top: "38%", left: "94%", size: 1, duration: "3.3s", delay: "0.8s" },
+  { top: "52%", left: "98%", size: 1, duration: "4.6s", delay: "2.0s" },
+  { top: "82%", left: "15%", size: 1, duration: "4.2s", delay: "3.0s" },
+  { top: "14%", left: "37%", size: 1.5, duration: "3.5s", delay: "1.7s" },
+  { top: "84%", left: "58%", size: 1, duration: "5.2s", delay: "2.2s" },
+  { top: "26%", left: "72%", size: 1, duration: "4.0s", delay: "0.9s" },
+];
+
+export interface ActiveChatProps {
+  peerCallsign: string;
+  sessionAgeMs?: number;
+  sessionCreatedAt?: string;
+  sessionKind?: "stranger" | "friend";
+  peerPresence?: "active" | "away" | "disconnected";
+  peerTyping?: boolean;
+  matchedTopic?: string;
+  interests?: string[];
+}
+
+export interface ChatHeaderProps {
+  callsign?: string;
+  meta?: string;
+  onToggleLog: () => void;
+  logOpen: boolean;
+  soundEnabled?: boolean;
+  onToggleSound?: () => void;
+  settingsOpen?: boolean;
+  onToggleSettings?: () => void;
+  voidOpen?: boolean;
+  onToggleVoid?: () => void;
+  hasHistory?: boolean;
+  historyOpen?: boolean;
+  onToggleHistory?: () => void;
+  activeChat?: ActiveChatProps;
+}
+
+export function ChatHeader({
+  callsign,
+  meta,
+  onToggleLog,
+  logOpen,
+  soundEnabled = true,
+  onToggleSound,
+  settingsOpen = false,
+  onToggleSettings,
+  voidOpen = false,
+  onToggleVoid,
+  hasHistory = false,
+  historyOpen = false,
+  onToggleHistory,
+  activeChat,
+}: ChatHeaderProps) {
+  return (
+    <header
+      className={cn(
+        "relative z-40 items-center justify-between border-b border-white/[0.08] bg-zinc-950/70 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:px-6 backdrop-blur-2xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]",
+        activeChat ? "hidden sm:flex" : "flex",
+      )}
+    >
+      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+        <div className="absolute inset-0 bg-radial-[ellipse_80%_60%_at_50%_40%] from-white/[0.03] via-transparent to-transparent opacity-60" />
+        <div className="hidden sm:block">
+          {STELLAR_STARS.map((star, idx) => (
+            <span
+              key={idx}
+              className="stellar-star"
+              style={{
+                top: star.top,
+                left: star.left,
+                width: `${star.size}px`,
+                height: `${star.size}px`,
+                animationDuration: star.duration,
+                animationDelay: star.delay,
+                boxShadow: star.glow ? "0 0 3px 1px rgba(255, 255, 255, 0.7)" : undefined,
+              }}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="relative z-10 flex items-center gap-2 sm:gap-3 min-w-0 shrink-0">
+        {!activeChat && (
+          <div className="flex h-7.5 w-7.5 sm:h-8 sm:w-8 items-center justify-center rounded-xl border border-white/10 bg-zinc-900/90 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_2px_8px_rgba(0,0,0,0.4)] backdrop-blur-md">
+            <MoonLogo className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-zinc-100" glow />
+          </div>
+        )}
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold tracking-tight text-zinc-100">Luna</span>
+            {!activeChat && (
+              <>
+                <span className="text-xs text-zinc-600 hidden sm:inline">•</span>
+                <div className="hidden sm:flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(5,223,114,0.7)]" />
+                  <span className="text-xs font-mono text-zinc-300 font-medium">
+                    {callsign ?? "connecting..."}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+          {!activeChat && (
+            <div className="flex items-center gap-1.5 sm:hidden">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(5,223,114,0.6)]" />
+              <span className="text-[11px] font-mono text-zinc-300 truncate max-w-[110px]">
+                {callsign ?? "connecting..."}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {activeChat ? (
+        <div className="relative z-10 flex-1 min-w-0 flex items-center justify-center gap-2 sm:gap-3 px-2 overflow-hidden">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span
+              className={cn(
+                "h-2 w-2 rounded-full shrink-0",
+                activeChat.peerPresence === "away"
+                  ? "bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.6)]"
+                  : activeChat.peerPresence === "disconnected"
+                    ? "bg-zinc-600"
+                    : "bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(5,223,114,0.8)]",
+              )}
+              title={
+                activeChat.peerPresence === "away"
+                  ? "Stranger is away"
+                  : activeChat.peerPresence === "disconnected"
+                    ? "Disconnected"
+                    : "Active"
+              }
+            />
+            <span className="text-xs sm:text-sm font-semibold font-mono text-zinc-100">
+              {activeChat.peerCallsign}
+            </span>
+            {activeChat.peerTyping ? (
+              <span className="text-[10px] font-mono text-emerald-400/90 animate-pulse shrink-0">
+                (typing...)
+              </span>
+            ) : activeChat.peerPresence === "away" ? (
+              <span className="text-[10px] font-mono text-amber-400/90 shrink-0">(away)</span>
+            ) : (
+              <span className="text-[10px] font-mono text-emerald-400/90 shrink-0">(active)</span>
+            )}
+          </div>
+
+          {activeChat.interests && activeChat.interests.length > 0 && (
+            <Badge
+              variant="secondary"
+              className="hidden md:inline-flex items-center gap-1 py-0.5 px-2 text-[10px] font-mono bg-emerald-950/30 border border-emerald-500/25 text-emerald-300 shadow-sm"
+            >
+              <span>#{activeChat.interests[0].startsWith("#") ? activeChat.interests[0].slice(1) : activeChat.interests[0]}</span>
+              {activeChat.interests.length > 1 && (
+                <span className="text-zinc-500 text-[9px]">
+                  +{activeChat.interests.length - 1}
+                </span>
+              )}
+            </Badge>
+          )}
+
+          <div className="flex items-center justify-center">
+            <SessionElapsedBadge
+              createdAt={activeChat.sessionCreatedAt}
+              fallbackAgeMs={activeChat.sessionAgeMs}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1" />
+      )}
+
+      <div className="relative z-20 flex items-center gap-1 sm:gap-2 shrink-0">
+        <div className="h-4 w-px bg-white/10 hidden sm:block" />
+
+        {meta && (
+          <Badge
+            variant="outline"
+            className={cn(
+              "hidden md:inline-flex text-[11px] font-mono capitalize items-center gap-1.5",
+              meta === "offline" && "border-rose-500/40 text-rose-300 bg-rose-950/30",
+            )}
+          >
+            {meta === "offline" && (
+              <span className="h-1.5 w-1.5 rounded-full bg-rose-400 animate-pulse" />
+            )}
+            <span>{meta}</span>
+          </Badge>
+        )}
+
+        <div className="flex items-center gap-0.5 sm:gap-1">
+          {onToggleSound && (
+            <AmbientSoundMenu soundFxEnabled={soundEnabled} onToggleSoundFx={onToggleSound} />
+          )}
+
+          <Button
+            type="button"
+            variant={logOpen ? "secondary" : "ghost"}
+            size="icon"
+            onClick={() => {
+              triggerHaptic("light");
+              onToggleLog();
+            }}
+            aria-label="Connections"
+            title="Connections"
+            className="h-8.5 w-8.5 sm:h-8 sm:w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 touch-manipulation"
+          >
+            {logOpen ? <X className="h-4 w-4" /> : <HeartHandshake className="h-4 w-4" />}
+          </Button>
+
+          {hasHistory && onToggleHistory && (
+            <Button
+              type="button"
+              variant={historyOpen ? "secondary" : "ghost"}
+              size="icon"
+              onClick={() => {
+                triggerHaptic("light");
+                onToggleHistory();
+              }}
+              aria-label="24h Chat History"
+              title="24h Chat History"
+              className="h-8.5 w-8.5 sm:h-8 sm:w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 cursor-pointer touch-manipulation"
+            >
+              {historyOpen ? <X className="h-4 w-4" /> : <History className="h-4 w-4" />}
+            </Button>
+          )}
+
+          {!activeChat && onToggleVoid && (
+            <Button
+              type="button"
+              variant={voidOpen ? "secondary" : "ghost"}
+              size="icon"
+              onClick={() => {
+                triggerHaptic("light");
+                onToggleVoid();
+              }}
+              aria-label={voidOpen ? "Close The Void" : "The Void (24h Orbit Letters)"}
+              title={voidOpen ? "Close The Void" : "The Void (24h Orbit Letters)"}
+              className={cn(
+                "h-8.5 w-8.5 sm:h-8 sm:w-8 touch-manipulation cursor-pointer",
+                voidOpen
+                  ? "text-zinc-100 bg-zinc-800"
+                  : "text-zinc-300 hover:text-white hover:bg-zinc-800/80",
+              )}
+            >
+              {voidOpen ? <X className="h-4 w-4" /> : <BlackHoleIcon className="h-4 w-4" />}
+            </Button>
+          )}
+
+          {onToggleSettings && (
+            <Button
+              type="button"
+              variant={settingsOpen ? "secondary" : "ghost"}
+              size="icon"
+              onClick={() => {
+                triggerHaptic("light");
+                onToggleSettings();
+              }}
+              aria-label="Settings"
+              title="Settings"
+              className="h-8.5 w-8.5 sm:h-8 sm:w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 cursor-pointer touch-manipulation"
+            >
+              {settingsOpen ? <X className="h-4 w-4" /> : <Settings className="h-4 w-4" />}
+            </Button>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+}

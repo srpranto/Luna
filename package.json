@@ -8,8 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node tests/e2e/runner.ts",
-    "test:all": "node tests/e2e/runner.ts",
+    "test": "node tests/run-tests.ts",
+    "test:all": "node tests/run-tests.ts",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {

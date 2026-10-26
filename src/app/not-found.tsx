@@ -1,15 +1,15 @@
 import Link from "next/link";
-import { PaperShell } from "@/components/luna/paper-shell";
+import { ChatContainer } from "@/components/chat/chat-container";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
-import { LunaMoon } from "@/components/luna/luna-moon";
+import { MoonLogo } from "@/components/chat/moon-logo";
 
 export default function NotFound() {
   return (
-    <PaperShell>
+    <ChatContainer>
       <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
         <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-zinc-900 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] mb-4">
-          <LunaMoon className="h-6 w-6 text-zinc-300" />
+          <MoonLogo className="h-6 w-6 text-zinc-300" />
         </div>
         <h1 className="text-5xl sm:text-6xl font-mono font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-b from-white to-zinc-500">
           404
@@ -25,6 +25,6 @@ export default function NotFound() {
           </Button>
         </Link>
       </div>
-    </PaperShell>
+    </ChatContainer>
   );
 }

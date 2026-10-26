@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Google_Sans } from "next/font/google";
-import { PwaProvider } from "@/components/luna/pwa-provider";
+import { ServiceWorkerProvider } from "@/components/chat/service-worker-provider";
 import "./globals.css";
 
 const googleSans = Google_Sans({
@@ -79,7 +79,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         className="antialiased min-h-dvh bg-[#09090b] text-[#fafafa] font-sans selection:bg-white/20 selection:text-white"
         suppressHydrationWarning
       >
-        <PwaProvider>{children}</PwaProvider>
+        <ServiceWorkerProvider>{children}</ServiceWorkerProvider>
       </body>
     </html>
   );

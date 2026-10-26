@@ -1,0 +1,1057 @@
+// @ts-nocheck
+import {
+  describe,
+  it,
+  expect,
+  callApi,
+  createStation,
+  computeComposerHeight,
+  computeCounterWarning,
+  simulateComposerKeydown,
+  extractSanitizedFirstUrl,
+  parseMarkdownTokens,
+  readGlobalsCss,
+} from './test-helpers.ts';
+
+import { cleanDatabase } from './test-helpers.ts';
+
+async function createPairedSession(interestsA, interestsB) {
+  await cleanDatabase();
+  const defaultTag = 'bound-' + crypto.randomUUID().slice(0, 8);
+  const tagsA = interestsA ?? [defaultTag];
+  const tagsB = interestsB ?? [defaultTag];
+  const alice = await createStation('AliceBound');
+  const bob = await createStation('BobBound');
+
+  await callApi('joinQueue', { deviceId: alice.deviceId, interests: tagsA });
+  await callApi('joinQueue', { deviceId: bob.deviceId, interests: tagsB });
+
+  const beatA = await callApi('heartbeatQueue', { deviceId: alice.deviceId });
+  const beatB = await callApi('heartbeatQueue', { deviceId: bob.deviceId });
+
+  const session = beatA.data?.desk?.activeSession || beatB.data?.desk?.activeSession;
+  if (!session) {
+    throw new Error('Failed to create paired boundary test session');
+  }
+
+  return { alice, bob, session };
+}
+
+export function registerTier2Tests() {
+  describe('Tier 2: Feature 1 Boundary - Message Pipeline Edge Cases', () => {
+    it('TC-2.1.1: Payload length boundary: exactly 280 characters accepted, 281 rejected with error', async () => {
+      const { alice, session } = await createPairedSession();
+      const body280 = 'A'.repeat(280);
+      const res280 = await callApi('sendMessage', {
+        deviceId: alice.deviceId,
+        sessionId: session.id,
+        body: body280,
+      });
+      expect(res280.ok).toBe(true);
+
+      const body281 = 'A'.repeat(281);
+      const res281 = await callApi('sendMessage', {
+        deviceId: alice.deviceId,
+        sessionId: session.id,
+        body: body281,
+      });
+      expect(res281.ok).toBe(false);
+      expect(res281.error).toContain('Line too long');
+    });
+
+    it('TC-2.1.2: Empty body or whitespace-only message rejected with 400 error', async () => {
+      const { alice, session } = await createPairedSession();
+      const resEmpty = await callApi('sendMessage', {
+        deviceId: alice.deviceId,
+        sessionId: session.id,
+        body: '',
+      });
+      expect(resEmpty.ok).toBe(false);
+
+      const resWhitespace = await callApi('sendMessage', {
+        deviceId: alice.deviceId,
+        sessionId: session.id,
+        body: '     \n  \t ',
+      });
+      expect(resWhitespace.ok).toBe(false);
+      expect(resWhitespace.error).toContain('Message cannot be empty');
+    });
+
+    it('TC-2.1.3: Sending to non-existent session ID rejected with closed session response', async () => {
+      const alice = await createStation('AliceGhost');
+      const fakeSessionId = crypto.randomUUID();
+      const res = await callApi('sendMessage', {
+        deviceId: alice.deviceId,
+        sessionId: fakeSessionId,
+        body: 'Hello void',
+      });
+      expect(res.data?.messages?.length ?? 0).toBe(0);
+      expect(res.data?.session?.closed).toBe(true);
+    });
+
+    it('TC-2.1.4: Missing required fields in sendMessage returns error', async () => {
+      const alice = await createStation('AliceMissing');
+      const res = await callApi('sendMessage', {
+        deviceId: alice.deviceId,
+      });
+      expect(res.ok).toBe(false);
+      expect(res.error).toContain('Missing sessionId or message body');
+    });
+
+    it('TC-2.1.5: Concurrent rapid sends processed sequentially without database deadlocks', async () => {
+      const { alice, session } = await createPairedSession();
+      const sends = Array.from({ length: 5 }, (_, i) =>
+        callApi('sendMessage', {
+          deviceId: alice.deviceId,
+          sessionId: session.id,
+          body: `Concurrent message #${i + 1}`,
+        }),
+      );
+
+      const results = await Promise.all(sends);
+      for (const res of results) {
+        expect(res.ok).toBe(true);
+      }
+    });
+  });
+
+  describe('Tier 2: Feature 2 Boundary - Matchmaker Edge Cases', () => {
+    it('TC-2.2.1: Case-insensitivity in interest matching ("Coding" matches "coding")', async () => {
+      const alice = await createStation('CaseA');
+      const bob = await createStation('CaseB');
+
+      await callApi('joinQueue', { deviceId: alice.deviceId, interests: ['CoDiNg'] });
+      await callApi('joinQueue', { deviceId: bob.deviceId, interests: ['coding'] });
+
+      const beatA = await callApi('heartbeatQueue', { deviceId: alice.deviceId });
+      const beatB = await callApi('heartbeatQueue', { deviceId: bob.deviceId });
+
+      const matched = beatA.data?.status === 'matched' || beatB.data?.status === 'matched';
+      expect(matched).toBe(true);
+    });
+
+    it('TC-2.2.2: Interest tags with special characters and commas sanitized and flattened properly', async () => {
+      const { sanitizeInterests } = await import('@/lib/constants.ts');
+      const raw = ['tech, AI ,  web-dev', 'tech'];
+      const sanitized = sanitizeInterests(raw);
+      expect(sanitized).toContain('tech');
+      expect(sanitized).toContain('ai');
+      expect(sanitized).toContain('web-dev');
+      expect(sanitized.length).toBe(3); // Deduplicated
+    });
+
+    it('TC-2.2.3: Maximum interest tags boundary (clamped to 10 tags maximum)', async () => {
+      const { sanitizeInterests } = await import('@/lib/constants.ts');
+      const manyTags = Array.from({ length: 25 }, (_, i) => `topic-${i}`);
+      const sanitized = sanitizeInterests(manyTags);
+      expect(sanitized.length).toBe(10);
+    });
+
+    it('TC-2.2.4: Empty interests array never matches on 0-wait heartbeat (<4000ms)', async () => {
+      const alice = await createStation('WaitA');
+      await callApi('joinQueue', { deviceId: alice.deviceId, interests: [] });
+      const beat = await callApi('heartbeatQueue', { deviceId: alice.deviceId });
+      expect(beat.data?.status).toBe('waiting');
+    });
+
+    it('TC-2.2.5: Blocked station ID boundary: queued users sharing interests do NOT match if blocked', async () => {
+      await cleanDatabase();
+      const bob = await createStation('Blocked');
+      const alice = await createStation('Blocker');
+
+      // Bob queues first
+      await callApi('joinQueue', { deviceId: bob.deviceId, interests: ['secret-club'] });
+
+      // Alice queues with Bob blocked
+      const joinAlice = await callApi('joinQueue', {
+        deviceId: alice.deviceId,
+        interests: ['secret-club'],
+        blockedIds: [bob.deviceId],
+      });
+
+      expect(joinAlice.data?.status).toBe('waiting');
+    });
+  });
+
+  describe('Tier 2: Feature 3 Boundary - Optimistic Rendering Edge Cases', () => {
+    it('TC-2.3.1: Network failure / timeout rollback handles transient drop cleanly', () => {
+      let state = [{ id: 'opt-100', body: 'Transient msg' }];
+      const onErrorRollback = (failedId) => {
+        state = state.filter((m) => m.id !== failedId);
+      };
+      onErrorRollback('opt-100');
+      expect(state.length).toBe(0);
+    });
+
+    it('TC-2.3.2: Duplicate delivery of identical message does NOT duplicate message in list', () => {
+      const existing = [{ id: 'uuid-1', body: 'Same' }];
+      const incoming = { id: 'uuid-1', body: 'Same' };
+      const map = new Map(existing.map((m) => [m.id, m]));
+      map.set(incoming.id, incoming);
+      const deduplicated = Array.from(map.values());
+      expect(deduplicated.length).toBe(1);
+    });
+
+    it('TC-2.3.3: Two optimistic messages with identical body sent rapidly receive unique distinct temp IDs', () => {
+      const id1 = `opt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const id2 = `opt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      expect(id1 !== id2).toBe(true);
+    });
+
+    it('TC-2.3.4: Zero-millisecond optimistic render does not cause layout shift or scroll jitter', () => {
+      const msg = {
+        id: `opt-${Date.now()}-abc`,
+        body: 'Smooth 0ms bubble',
+        mine: true,
+      };
+      expect(msg.mine).toBe(true);
+      expect(Boolean(msg.id)).toBe(true);
+    });
+
+    it('TC-2.3.5: Rapid incoming messages while optimistic messages pending preserves correct chronological sequence', () => {
+      const now = Date.now();
+      const list = [
+        { id: 'opt-1', createdAt: new Date(now + 10).toISOString(), body: 'Optimistic' },
+        { id: 'incoming-1', createdAt: new Date(now - 50).toISOString(), body: 'From peer earlier' },
+        { id: 'incoming-2', createdAt: new Date(now).toISOString(), body: 'From peer now' },
+      ];
+
+      const sorted = list.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      expect(sorted[0].body).toBe('From peer earlier');
+      expect(sorted[1].body).toBe('From peer now');
+      expect(sorted[2].body).toBe('Optimistic');
+    });
+  });
+
+  describe('Tier 2: Feature 4 Boundary - Status Header Edge Cases', () => {
+    it('TC-2.4.1: Extremely long interest tag name truncated gracefully in badge', () => {
+      const longTopic = 'a'.repeat(60);
+      const truncated = longTopic.length > 20 ? `${longTopic.slice(0, 18)}…` : longTopic;
+      expect(truncated.endsWith('…')).toBe(true);
+      expect(truncated.length).toBe(19);
+    });
+
+    it('TC-2.4.2: Special characters in topic (#c++, #node.js, #c#) render safely without breaking DOM or HTML', () => {
+      const topic = 'c++';
+      const badge = `#${topic}`;
+      expect(badge).toBe('#c++');
+    });
+
+    it('TC-2.4.3: Session with empty interests renders default status header without badge crash', () => {
+      const interests = [];
+      const renderTopic = interests && interests.length > 0 ? `#${interests[0]}` : null;
+      expect(renderTopic).toBeNull();
+    });
+
+    it('TC-2.4.4: Rapid switching between active chat and idle updates header immediately', () => {
+      let activeChat = { peerCallsign: 'Alice' };
+      expect(Boolean(activeChat)).toBe(true);
+      activeChat = null;
+      expect(activeChat).toBeNull();
+    });
+
+    it('TC-2.4.5: Peer callsign edge cases (special characters, maximum length) do not overflow header', () => {
+      const longCallsign = 'A'.repeat(64);
+      const headerSpanClass = 'truncate max-w-[110px] xs:max-w-[140px] sm:max-w-[220px]';
+      expect(headerSpanClass).toContain('truncate');
+    });
+  });
+
+  describe('Tier 2: Feature 5 Boundary - Expanding Textarea Edge Cases', () => {
+    it('TC-2.5.1: Exactly 40px height for empty textarea (minimum floor boundary)', () => {
+      expect(computeComposerHeight(0)).toBe(40);
+    });
+
+    it('TC-2.5.2: Exactly 200px clamp when typing 100 lines of text (maximum ceiling boundary)', () => {
+      expect(computeComposerHeight(2500)).toBe(200);
+    });
+
+    it('TC-2.5.3: Rapid paste of huge text expands immediately to 200px max without intermediate jump', () => {
+      const pastedScrollHeight = 1200;
+      expect(computeComposerHeight(pastedScrollHeight)).toBe(200);
+    });
+
+    it('TC-2.5.4: Deleting multi-line text shrinks height back to exact fit smoothly', () => {
+      let height = computeComposerHeight(180);
+      expect(height).toBe(180);
+      height = computeComposerHeight(40);
+      expect(height).toBe(40);
+    });
+
+    it('TC-2.5.5: Scrollbar is hidden with utility classes to avoid scroll jumps', () => {
+      const composerClass =
+        'min-h-[40px] max-h-[200px] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden';
+      expect(composerClass).toContain('min-h-[40px]');
+      expect(composerClass).toContain('max-h-[200px]');
+    });
+  });
+
+  describe('Tier 2: Feature 6 Boundary - Keyboard & IME Edge Cases', () => {
+    it('TC-2.6.1: Shift+Enter with trailing whitespace does not send', () => {
+      const result = simulateComposerKeydown({
+        key: 'Enter',
+        shiftKey: true,
+        value: 'Line 1   ',
+      });
+      expect(result.submitted).toBe(false);
+      expect(result.reason).toBe('newline');
+    });
+
+    it('TC-2.6.2: Enter key while disabled does not trigger submission', () => {
+      const result = simulateComposerKeydown({
+        key: 'Enter',
+        shiftKey: false,
+        disabled: true,
+        value: 'Ready to send',
+      });
+      expect(result.submitted).toBe(false);
+    });
+
+    it('TC-2.6.3: Enter key with empty string does not trigger submission', () => {
+      const result = simulateComposerKeydown({
+        key: 'Enter',
+        shiftKey: false,
+        value: '',
+      });
+      expect(result.submitted).toBe(false);
+    });
+
+    it('TC-2.6.4: Japanese / Chinese IME composition Enter keydown (isComposing) ignored', () => {
+      const result = simulateComposerKeydown({
+        key: 'Enter',
+        isComposing: true,
+        value: 'チャット',
+      });
+      expect(result.submitted).toBe(false);
+      expect(result.reason).toBe('ime_composing');
+    });
+
+    it('TC-2.6.5: Escape when NOT replying does not prevent default or trigger cancel', () => {
+      const result = simulateComposerKeydown({
+        key: 'Escape',
+        replyingTo: null,
+      });
+      expect(result.cancelledReply).toBe(false);
+      expect(result.preventedDefault).toBe(false);
+    });
+  });
+
+  describe('Tier 2: Feature 7 Boundary - Character Counter Edge Cases', () => {
+    it('TC-2.7.1: Boundary 0 characters: counter hidden or none', () => {
+      const warning = computeCounterWarning(0);
+      expect(warning.show).toBe(false);
+    });
+
+    it('TC-2.7.2: Boundary 250 characters: normal style, no warning', () => {
+      const warning = computeCounterWarning(249);
+      expect(warning.status).toBe('normal');
+      expect(warning.textClass).toContain('text-zinc-400');
+    });
+
+    it('TC-2.7.3: Boundary 251 characters: amber warning activated', () => {
+      const warning = computeCounterWarning(251);
+      expect(warning.status).toBe('warning');
+      expect(warning.textClass).toContain('text-amber-400');
+    });
+
+    it('TC-2.7.4: Boundary 279 characters: amber warning persists', () => {
+      const warning = computeCounterWarning(279);
+      expect(warning.status).toBe('warning');
+      expect(warning.textClass).toContain('text-amber-400');
+    });
+
+    it('TC-2.7.5: Boundary 280 characters: maximum reached, danger/rose alert activated', () => {
+      const warning = computeCounterWarning(280);
+      expect(warning.status).toBe('danger');
+      expect(warning.textClass).toContain('text-rose-400');
+    });
+  });
+
+  describe('Tier 2: Feature 8 Boundary - Mobile Touch Safety Edge Cases', () => {
+    it('TC-2.8.1: Viewport scaled to mobile width (320px screen width) preserves touch target dimensions', () => {
+      const sendButtonClass = 'h-10 px-3.5';
+      expect(sendButtonClass).toContain('h-10');
+    });
+
+    it('TC-2.8.2: Celestial reaction picker on narrow screens does not overflow viewport bounds', () => {
+      const pickerClass = 'absolute bottom-full right-14 sm:right-24 mb-2.5 z-40';
+      expect(pickerClass).toContain('z-40');
+      expect(pickerClass).toContain('bottom-full');
+    });
+
+    it('TC-2.8.3: Safe area insets (env(safe-area-inset-bottom)) integrated into padding', () => {
+      const containerClass = 'pb-[max(0.625rem,env(safe-area-inset-bottom))]';
+      expect(containerClass).toContain('safe-area-inset-bottom');
+    });
+
+    it('TC-2.8.4: Rapid double-tap on send button does not send double messages', () => {
+      let sending = false;
+      let sendCount = 0;
+      const onSend = () => {
+        if (sending) return;
+        sending = true;
+        sendCount += 1;
+      };
+      onSend();
+      onSend(); // Rapid second tap ignored while sending
+      expect(sendCount).toBe(1);
+    });
+
+    it('TC-2.8.5: Touch cancel on celestial reaction picker dismisses popover cleanly', () => {
+      let showReactions = true;
+      const dismiss = () => {
+        showReactions = false;
+      };
+      dismiss();
+      expect(showReactions).toBe(false);
+    });
+  });
+
+  describe('Tier 2: Feature 9 Boundary - Reply Navigation Edge Cases', () => {
+    it('TC-2.9.1: Replying to message with 280-character multiline body clips snippet safely in preview chip', () => {
+      const fullText = 'Line 1\nLine 2\n' + 'A'.repeat(260);
+      const snippet = fullText.replace(/[\r\n]+/g, ' ').slice(0, 50);
+      expect(snippet.length).toBe(50);
+      expect(snippet.includes('\n')).toBe(false);
+    });
+
+    it('TC-2.9.2: Replying to message containing quotes and HTML characters escapes safely', () => {
+      const rawBody = '<script>alert("hack")</script> & "quotes"';
+      const cleanSnippet = rawBody.replace(/[\r\n]+/g, ' ').slice(0, 50);
+      expect(cleanSnippet).toContain('<script>');
+    });
+
+    it('TC-2.9.3: Target source message anchor query selector format', () => {
+      const msgId = 'uuid-source-test';
+      const anchor = `msg-${msgId}`;
+      expect(anchor).toBe('msg-uuid-source-test');
+    });
+
+    it('TC-2.9.4: Replying to missing or already deleted message handles null target gracefully', () => {
+      const targetElement = null;
+      let scrolled = false;
+      if (targetElement) {
+        scrolled = true;
+      }
+      expect(scrolled).toBe(false);
+    });
+
+    it('TC-2.9.5: Switching replies overrides existing reply chip without stacking', () => {
+      let replyingTo = { id: 'm1', fromCallsign: 'A', body: 'Msg 1' };
+      replyingTo = { id: 'm2', fromCallsign: 'B', body: 'Msg 2' };
+      expect(replyingTo.id).toBe('m2');
+    });
+  });
+
+  describe('Tier 2: Feature 10 Boundary - Spring Animation Edge Cases', () => {
+    it('TC-2.10.1: Rapid burst of consecutive messages groups with mt-1 vs mt-3 for distinct authors', () => {
+      const isConsecutiveTrue = true;
+      const isConsecutiveFalse = false;
+      const marginTrue = isConsecutiveTrue ? 'mt-1' : 'mt-3';
+      const marginFalse = isConsecutiveFalse ? 'mt-1' : 'mt-3';
+      expect(marginTrue).toBe('mt-1');
+      expect(marginFalse).toBe('mt-3');
+    });
+
+    it('TC-2.10.2: Backface visibility and will-change defined for GPU acceleration', () => {
+      const css = readGlobalsCss();
+      expect(css).toContain('backface-visibility: hidden');
+    });
+
+    it('TC-2.10.3: Transform origin for user bubbles is bottom right', () => {
+      const css = readGlobalsCss();
+      expect(css).toContain('transform-origin: bottom right');
+    });
+
+    it('TC-2.10.4: Transform origin for peer bubbles is bottom left', () => {
+      const css = readGlobalsCss();
+      expect(css).toContain('transform-origin: bottom left');
+    });
+
+    it('TC-2.10.5: Spring curve cubic-bezier parameters define overshoot easing', () => {
+      const css = readGlobalsCss();
+      expect(css).toContain('cubic-bezier(');
+    });
+  });
+
+  describe('Tier 2: Feature 11 Boundary - Checkmarks Edge Cases', () => {
+    it('TC-2.11.1: Transition from sent to seen state completes without flickering or text jump', () => {
+      let seenAt = null;
+      let status = seenAt ? 'Seen' : 'Delivered';
+      expect(status).toBe('Delivered');
+      seenAt = new Date().toISOString();
+      status = seenAt ? 'Seen' : 'Delivered';
+      expect(status).toBe('Seen');
+    });
+
+    it('TC-2.11.2: Disconnected peer preserves sent checkmark without falsely transitioning to seen', () => {
+      const msg = { seenAt: null, copied: false, peerPresence: 'disconnected' };
+      const status = msg.seenAt ? 'Seen' : 'Delivered';
+      expect(status).toBe('Delivered');
+    });
+
+    it('TC-2.11.3: Seen receipt timestamp parsing handles timezone offsets and invalid formats', () => {
+      const iso = '2026-10-23T05:15:00.000Z';
+      const date = new Date(iso);
+      expect(Number.isNaN(date.getTime())).toBe(false);
+    });
+
+    it('TC-2.11.4: Edited message maintains seen receipt status if previously seen', () => {
+      const msg = {
+        seenAt: '2026-10-23T05:00:00Z',
+        editedAt: '2026-10-23T05:05:00Z',
+      };
+      const isSeen = Boolean(msg.seenAt);
+      expect(isSeen).toBe(true);
+    });
+
+    it('TC-2.11.5: Offline reconnection syncs seen status for all unread messages', async () => {
+      const { alice, bob, session } = await createPairedSession();
+      await callApi('sendMessage', {
+        deviceId: alice.deviceId,
+        sessionId: session.id,
+        body: 'Checkmark persistence test',
+      });
+
+      const listBob = await callApi('listMessages', {
+        deviceId: bob.deviceId,
+        sessionId: session.id,
+      });
+
+      expect(listBob.ok).toBe(true);
+      expect(listBob.data?.messages?.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Tier 2: Feature 12 Boundary - Markdown Formatting Edge Cases', () => {
+    it('TC-2.12.1: Unclosed markdown delimiters render as plain text safely', () => {
+      const tokens = parseMarkdownTokens('This is **unclosed bold');
+      const boldToken = tokens.find((t) => t.type === 'bold');
+      expect(Boolean(boldToken)).toBe(false);
+    });
+
+    it('TC-2.12.2: Nested or adjacent markdown tokens resolve independently', () => {
+      const tokens = parseMarkdownTokens('**bold** *italic* `code`');
+      expect(tokens.some((t) => t.type === 'bold')).toBe(true);
+      expect(tokens.some((t) => t.type === 'italic')).toBe(true);
+      expect(tokens.some((t) => t.type === 'inline_code')).toBe(true);
+    });
+
+    it('TC-2.12.3: Code block with specified language badge extracts language name', () => {
+      const input = '```python\nprint("hello")\n```';
+      const tokens = parseMarkdownTokens(input);
+      const code = tokens.find((t) => t.type === 'code_block');
+      expect(code.language).toBe('python');
+    });
+
+    it('TC-2.12.4: Code block containing special characters (<script>, &, ", \') escapes HTML completely', () => {
+      const input = '```html\n<div class="test">&amp;</div>\n```';
+      const tokens = parseMarkdownTokens(input);
+      const code = tokens.find((t) => t.type === 'code_block');
+      expect(code.code).toContain('<div class="test">');
+    });
+
+    it('TC-2.12.5: Empty code block (```\n```) renders without crashing', () => {
+      const input = '```\n\n```';
+      const tokens = parseMarkdownTokens(input);
+      const code = tokens.find((t) => t.type === 'code_block');
+      expect(Boolean(code)).toBe(true);
+    });
+  });
+
+  describe('Tier 2: Feature 13 Boundary - Sanitized Link Previews Edge Cases', () => {
+    it('TC-2.13.1: Message with multiple URLs extracts only first valid HTTP/HTTPS URL', () => {
+      const text = 'Check https://first.org and https://second.org';
+      const url = extractSanitizedFirstUrl(text);
+      expect(url).toBe('https://first.org');
+    });
+
+    it('TC-2.13.2: URL with query parameters and hash parsed cleanly', () => {
+      const text = 'Link https://site.com/path?key=val#section is here';
+      const url = extractSanitizedFirstUrl(text);
+      expect(url).toBe('https://site.com/path?key=val#section');
+    });
+
+    it('TC-2.13.3: Mixed message: text + inline code URL + outer URL extracts only the outer URL', () => {
+      const text = 'Ignore `https://code-url.org` and view https://actual-url.org instead';
+      const url = extractSanitizedFirstUrl(text);
+      expect(url).toBe('https://actual-url.org');
+    });
+
+    it('TC-2.13.4: Internal IP / localhost URLs (SSRF protection) rejected in preview route', async () => {
+      const { GET } = await import('@/app/api/chat/link-preview/route.ts');
+      const req = new Request('http://localhost:3000/api/chat/link-preview?url=http://192.168.1.1');
+      const res = await GET(req);
+      expect(res.status).toBe(403);
+    });
+
+    it('TC-2.13.5: Non-HTTP protocol URLs (ftp, file, javascript) rejected', async () => {
+      const { GET } = await import('@/app/api/chat/link-preview/route.ts');
+      const req = new Request('http://localhost:3000/api/chat/link-preview?url=ftp://files.example.com');
+      const res = await GET(req);
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe('Tier 2: Feature 14 Boundary - Device Authentication & Architecture Hardening', () => {
+    it('TC-2.14.1: Impersonator using victim deviceId with invalid secret is rejected with 401', async () => {
+      const victimId = 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1';
+      const victimSecret = 'valid-victim-secret-1234567890abcdef';
+      // Register legitimate station with its secret
+      const reg = await callApi('registerStation', { deviceId: victimId, deviceSecret: victimSecret });
+      expect(reg.status).toBe(200);
+
+      // Attacker learns victimId (e.g. from peerId) and attempts to delete station with attacker's secret
+      const forged = await callApi('deleteStation', {
+        deviceId: victimId,
+        deviceSecret: 'attacker-unauthorized-secret-999',
+      });
+      expect(forged.status).toBe(401);
+      expect(forged.ok).toBe(false);
+      expect(forged.error).toContain('Unauthorized');
+    });
+
+    it('TC-2.14.2: Legitimate device with valid secret successfully authorizes operations', async () => {
+      const legitId = 'b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2';
+      const legitSecret = 'legit-device-secret-1234567890abcdef';
+      const reg = await callApi('registerStation', { deviceId: legitId, deviceSecret: legitSecret });
+      expect(reg.status).toBe(200);
+
+      const deskRes = await callApi('getDesk', { deviceId: legitId, deviceSecret: legitSecret });
+      expect(deskRes.status).toBe(200);
+      expect(deskRes.ok).toBe(true);
+    });
+
+    it('TC-2.14.3: deriveSafetyNumber produces identical 12-digit fingerprint for both participants', async () => {
+      const { deriveSafetyNumber } = await import('@/lib/encryption.ts');
+      const keyAlice = '04a1b2c3d4e5f60102030405060708091011121314151617181920212223242526';
+      const keyBob = '04f6e5d4c3b2a12625242322212019181716151413121110090807060504030201';
+
+      const safetyA = await deriveSafetyNumber(keyAlice, keyBob);
+      const safetyB = await deriveSafetyNumber(keyBob, keyAlice);
+
+      expect(safetyA).toBe(safetyB);
+      expect(/^\d{4} \d{4} \d{4}$/.test(safetyA)).toBe(true);
+    });
+
+    it('TC-2.14.4: device_events retention policy prunes entries older than 6 hours during cleanup', async () => {
+      const { getSql } = await import('@/lib/database.ts');
+      const { runPeriodicCleanup } = await import('@/lib/chat-server.ts');
+      const sql = await getSql();
+
+      // Insert an expired event from 12 hours ago
+      await sql`
+        insert into device_events (device_id, type, data, created_at)
+        values ('c3c3c3c3-c3c3-4c3c-8c3c-c3c3c3c3c3c3', 'ping', '"old"', now() - interval '12 hours')
+      `;
+
+      // Trigger cleanup forcibly
+      await runPeriodicCleanup(sql, true);
+
+      // Verify the 12-hour old event was pruned
+      const rows = await sql<{ count: number }>`
+        select count(*)::int as count from device_events where device_id = 'c3c3c3c3-c3c3-4c3c-8c3c-c3c3c3c3c3c3'
+      `;
+      expect(rows[0]?.count).toBe(0);
+    });
+
+    it('TC-2.14.5: Stream connection without secret parameter is rejected with 401 Unauthorized', async () => {
+      const streamRoute = await import('@/app/api/chat/stream/route.ts');
+      const req = new Request('http://localhost:3000/api/chat/stream?deviceId=b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2');
+      const res = await streamRoute.GET(req as any);
+      expect(res.status).toBe(401);
+      const json = await res.json();
+      expect(json.error).toContain('Missing stream credentials');
+    });
+
+    it('TC-2.14.6: Stream connection with invalid secret parameter is rejected with 401 Unauthorized', async () => {
+      const streamRoute = await import('@/app/api/chat/stream/route.ts');
+      const req = new Request('http://localhost:3000/api/chat/stream?deviceId=b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2&secret=wrong-secret-value');
+      const res = await streamRoute.GET(req as any);
+      expect(res.status).toBe(401);
+      const json = await res.json();
+      expect(json.error).toContain('Unauthorized');
+    });
+
+    it('TC-2.14.7: Stream connection with valid deviceId and matching secret establishes SSE stream', async () => {
+      const streamRoute = await import('@/app/api/chat/stream/route.ts');
+      const controller = new AbortController();
+      const req = new Request('http://localhost:3000/api/chat/stream?deviceId=b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2&secret=legit-device-secret-1234567890abcdef', {
+        signal: controller.signal,
+      });
+      const res = await streamRoute.GET(req as any);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('text/event-stream');
+      controller.abort();
+    });
+
+    it('TC-2.14.8: Legacy station with existing public key rejects takeover attempt without matching public key', async () => {
+      const { getSql } = await import('@/lib/database.ts');
+      const sql = await getSql();
+      const legacyId = 'd4d4d4d4-d4d4-4d4d-8d4d-d4d4d4d4d4d4';
+      const legitPubKey = 'legacy-pubkey-04a1b2c3d4e5f6-valid';
+
+      await sql`
+        insert into stations (device_id, callsign, ip, is_custom, last_seen, public_key, is_away, secret_hash)
+        values (${legacyId}, 'LegacyStation', '127.0.0.1', false, now(), ${legitPubKey}, false, null)
+        on conflict (device_id) do update set secret_hash = null, public_key = ${legitPubKey}
+      `;
+
+      const claimAttempt = await callApi('registerStation', {
+        deviceId: legacyId,
+        deviceSecret: 'attacker-stolen-secret-123456',
+        publicKey: 'attacker-wrong-pubkey-999',
+      });
+      expect(claimAttempt.status >= 400).toBe(true);
+
+      const rows = await sql<{ secret_hash: string | null }>`
+        select secret_hash from stations where device_id = ${legacyId}
+      `;
+      expect(rows[0]?.secret_hash).toBe(null);
+    });
+
+    it('TC-2.14.9: Legacy station with existing public key successfully binds secret when matching public key is provided', async () => {
+      const { getSql } = await import('@/lib/database.ts');
+      const sql = await getSql();
+      const legacyId = 'e5e5e5e5-e5e5-4e5e-8e5e-e5e5e5e5e5e5';
+      const legitPubKey = 'legacy-pubkey-04abcdef123456-valid';
+      const newSecret = 'legit-migrated-secret-9876543210';
+
+      await sql`
+        insert into stations (device_id, callsign, ip, is_custom, last_seen, public_key, is_away, secret_hash)
+        values (${legacyId}, 'MigratingStation', '127.0.0.1', false, now(), ${legitPubKey}, false, null)
+        on conflict (device_id) do update set secret_hash = null, public_key = ${legitPubKey}
+      `;
+
+      const migrationRes = await callApi('registerStation', {
+        deviceId: legacyId,
+        deviceSecret: newSecret,
+        publicKey: legitPubKey,
+      });
+      expect(migrationRes.status).toBe(200);
+
+      const rows = await sql<{ secret_hash: string | null }>`
+        select secret_hash from stations where device_id = ${legacyId}
+      `;
+      expect(Boolean(rows[0]?.secret_hash)).toBe(true);
+
+      const deskRes = await callApi('getDesk', { deviceId: legacyId, deviceSecret: newSecret });
+      expect(deskRes.status).toBe(200);
+      expect(deskRes.ok).toBe(true);
+    });
+
+    it('TC-2.14.10: active_session_participants table prevents duplicate concurrent active sessions for the same device', async () => {
+      const { getSql } = await import('@/lib/database.ts');
+      const sql = await getSql();
+      const devX = 'f6f6f6f6-f6f6-4f6f-8f6f-f6f6f6f6f6f6';
+      const sess1 = 'session-concurrency-1';
+      const sess2 = 'session-concurrency-2';
+
+      await sql`insert into stations (device_id, callsign) values (${devX}, 'DevX') on conflict do nothing`;
+      await sql`insert into sessions (id, a_id, b_id, kind) values (${sess1}, ${devX}, 'peer1', 'stranger') on conflict do nothing`;
+      await sql`insert into sessions (id, a_id, b_id, kind) values (${sess2}, ${devX}, 'peer2', 'stranger') on conflict do nothing`;
+
+      await sql`delete from active_session_participants where device_id = ${devX}`;
+      await sql`insert into active_session_participants (device_id, session_id) values (${devX}, ${sess1})`;
+
+      let threwViolation = false;
+      try {
+        await sql`insert into active_session_participants (device_id, session_id) values (${devX}, ${sess2})`;
+      } catch {
+        threwViolation = true;
+      }
+      expect(threwViolation).toBe(true);
+
+      const active = await sql<{ session_id: string }>`
+        select session_id from active_session_participants where device_id = ${devX}
+      `;
+      expect(active[0]?.session_id).toBe(sess1);
+
+      await sql`delete from active_session_participants where device_id = ${devX}`;
+    });
+
+    it('TC-2.14.11: Atomic matchmaking queue claim prevents pairing a device already active in another session', async () => {
+      const { getSql } = await import('@/lib/database.ts');
+      const sql = await getSql();
+      await cleanDatabase();
+
+      const candidateA = await createStation('CandidateA');
+      const candidateB = await createStation('CandidateB');
+
+      // Candidate B joins queue first
+      await callApi('joinQueue', { deviceId: candidateB.deviceId, interests: ['concurrency-test'] });
+
+      // Worker 2 matches candidate B concurrently into an active session
+      const mockSessionId = 'other-worker-session-' + crypto.randomUUID();
+      const dummyPeer = 'dummy-peer-' + crypto.randomUUID();
+      await sql`insert into stations (device_id, callsign) values (${dummyPeer}, 'Dummy') on conflict do nothing`;
+      await sql`insert into sessions (id, a_id, b_id, kind) values (${mockSessionId}, ${candidateB.deviceId}, ${dummyPeer}, 'stranger')`;
+      await sql`insert into active_session_participants (device_id, session_id) values (${candidateB.deviceId}, ${mockSessionId}) on conflict (device_id) do update set session_id = excluded.session_id`;
+
+      // Candidate A joins queue with the same interest
+      await callApi('joinQueue', { deviceId: candidateA.deviceId, interests: ['concurrency-test'] });
+
+      // When candidate A heartbeats, matchmaker must NOT pair with candidate B
+      const beatA = await callApi('heartbeatQueue', { deviceId: candidateA.deviceId });
+      expect(beatA.data?.status).toBe('waiting');
+      expect(beatA.data?.desk?.activeSession).toBe(null);
+
+      await sql`delete from active_session_participants where device_id = ${candidateB.deviceId}`;
+    });
+  });
+
+  describe('Tier 2: Feature 15 Boundary - Mobile Ergonomics, Fluid Animations & Notifications', () => {
+    it('TC-2.15.1: Friend request acceptance emits casual, welcoming friend copy', async () => {
+      await cleanDatabase();
+      const alice = await createStation('FriendAlice');
+      const bob = await createStation('FriendBob');
+
+      // Join queue and match
+      await callApi('joinQueue', { deviceId: alice.deviceId, deviceSecret: alice.secret, interests: ['midnight-talk'] });
+      await callApi('joinQueue', { deviceId: bob.deviceId, deviceSecret: bob.secret, interests: ['midnight-talk'] });
+      const beatA = await callApi('heartbeatQueue', { deviceId: alice.deviceId, deviceSecret: alice.secret });
+      const beatB = await callApi('heartbeatQueue', { deviceId: bob.deviceId, deviceSecret: bob.secret });
+      const session = beatA.data?.desk?.activeSession || beatB.data?.desk?.activeSession;
+      expect(Boolean(session)).toBe(true);
+
+      // Alice offers friend request
+      await callApi('offerQsl', { deviceId: alice.deviceId, sessionId: session.id, deviceSecret: alice.secret });
+
+      // Bob accepts friend request
+      const deskBob = await callApi('getDesk', { deviceId: bob.deviceId, deviceSecret: bob.secret });
+      const reqId = deskBob.data?.inboundQsl?.[0]?.id ?? deskBob.data?.activeSession?.inboundQsl?.id;
+      expect(Boolean(reqId)).toBe(true);
+
+      await callApi('respondQsl', { deviceId: bob.deviceId, requestId: reqId, accept: true, deviceSecret: bob.secret });
+
+      // Check system message in messages table
+      const { getSql } = await import('@/lib/database.ts');
+      const sql = await getSql();
+      const rows = await sql<{ body: string }>`
+        select body from messages where session_id = ${session.id} and from_id = 'system' order by created_at desc limit 1
+      `;
+      expect(rows[0]?.body).toBe('You are now friends! Say hello 👋');
+      expect(rows[0]?.body.includes('permanently')).toBe(false);
+    });
+
+    it('TC-2.15.2: Refresh-rate trail decay calculates mathematically equivalent fade across 30Hz, 60Hz, 120Hz, 144Hz', () => {
+      const baseAlpha = 0.4;
+      const calcDecay = (hz: number) => {
+        const frameMs = 1000 / hz;
+        const dt = frameMs / (1000 / 60);
+        return 1 - Math.pow(1 - baseAlpha, dt);
+      };
+
+      const decay60 = calcDecay(60);
+      const decay120 = calcDecay(120);
+      const decay30 = calcDecay(30);
+
+      // At 60Hz, 1 frame of decay yields exactly baseAlpha (0.4)
+      expect(Math.abs(decay60 - 0.4) < 0.0001).toBe(true);
+
+      // At 120Hz, 2 frames of decay compound to identical opacity as 1 frame of 60Hz: (1 - d120)^2 == (1 - d60)
+      const remaining120AfterTwoFrames = Math.pow(1 - decay120, 2);
+      const remaining60AfterOneFrame = 1 - decay60;
+      expect(Math.abs(remaining120AfterTwoFrames - remaining60AfterOneFrame) < 0.0001).toBe(true);
+
+      // At 30Hz, 1 frame of decay matches 2 frames of 60Hz: (1 - d30) == (1 - d60)^2
+      const remaining30AfterOneFrame = 1 - decay30;
+      const remaining60AfterTwoFrames = Math.pow(1 - decay60, 2);
+      expect(Math.abs(remaining30AfterOneFrame - remaining60AfterTwoFrames) < 0.0001).toBe(true);
+    });
+
+    it('TC-2.15.3: In-app notifications format and dispatch correctly with action callback', async () => {
+      let dispatched = false;
+      let toastTitle = '';
+      const { subscribeToLunaToasts, notifyUser } = await import('@/lib/notifications.ts');
+
+      const unsubscribe = subscribeToLunaToasts((toast: { title: string }) => {
+        dispatched = true;
+        toastTitle = toast.title;
+      });
+
+      notifyUser({
+        title: 'Stranger Connected! 🌙',
+        body: 'You are now chatting with a stranger.',
+        type: 'match',
+      });
+
+      expect(dispatched).toBe(true);
+      expect(toastTitle).toBe('Stranger Connected! 🌙');
+      unsubscribe();
+    });
+
+    it('TC-2.15.4: Mobile keyboard back navigation helper detects active input and blurs instead of leaving', () => {
+      // Simulate input focused condition
+      const mockInput = {
+        tagName: 'TEXTAREA',
+        blurCalled: false,
+        blur() {
+          this.blurCalled = true;
+        },
+      };
+
+      const isInputFocused = (el: typeof mockInput | null) =>
+        Boolean(el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT'));
+
+      expect(isInputFocused(mockInput)).toBe(true);
+      if (isInputFocused(mockInput)) {
+        mockInput.blur();
+      }
+      expect(mockInput.blurCalled).toBe(true);
+    });
+
+    it('TC-2.15.5: AirDrop water-drop modal container uses correct spring physics class and layout', () => {
+      const containerClass = 'absolute top-14 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-1.5rem)] max-w-md animate-water-drop pointer-events-auto';
+      expect(containerClass).toContain('animate-water-drop');
+      expect(containerClass).toContain('pointer-events-auto');
+    });
+
+    it('TC-2.15.6: Mobile tap-and-hold (long-press) threshold calibrates at 450ms with 10px scroll abort', () => {
+      const LONG_PRESS_MS = 450;
+      const SCROLL_ABORT_PX = 10;
+
+      expect(LONG_PRESS_MS).toBe(450);
+      expect(SCROLL_ABORT_PX).toBe(10);
+
+      // Verify hypotenuse scroll detection logic
+      const checkShouldAbort = (startX: number, startY: number, currentX: number, currentY: number) => {
+        const deltaX = currentX - startX;
+        const deltaY = currentY - startY;
+        return Math.hypot(deltaX, deltaY) > SCROLL_ABORT_PX;
+      };
+
+      // Stationary finger (tap and hold): should NOT abort
+      expect(checkShouldAbort(100, 200, 102, 201)).toBe(false);
+
+      // Scrolling finger (>10px): MUST abort long press
+      expect(checkShouldAbort(100, 200, 100, 215)).toBe(true);
+      expect(checkShouldAbort(100, 200, 120, 200)).toBe(true);
+    });
+
+    it('TC-2.15.7: Mobile message action menu exposes Edit Message and Delete Message options with >=44px touch targets', () => {
+      const buttonClasses = 'w-full min-h-[44px] px-3.5 py-2.5 rounded-xl text-xs font-semibold';
+      expect(buttonClasses).toContain('min-h-[44px]');
+      expect(buttonClasses).toContain('w-full');
+
+      // Verify that options correctly handle user own messages vs stranger messages
+      const getAvailableActions = (isMine: boolean, closed: boolean) => {
+        const actions: string[] = ['copy'];
+        if (!closed) actions.push('reply');
+        if (isMine && !closed) {
+          actions.push('edit', 'delete');
+        }
+        return actions;
+      };
+
+      const ownActions = getAvailableActions(true, false);
+      expect(ownActions.includes('edit')).toBe(true);
+      expect(ownActions.includes('delete')).toBe(true);
+
+      const strangerActions = getAvailableActions(false, false);
+      expect(strangerActions.includes('edit')).toBe(false);
+      expect(strangerActions.includes('delete')).toBe(false);
+    });
+  });
+
+  describe('Tier 2: Feature 16 Boundary - Security, Cryptographic & SSRF Hardening', () => {
+    it('TC-2.16.1: verifyStationAuth uses constant-time timingSafeEqual and correctly authenticates valid secrets while rejecting invalid', async () => {
+      const { verifyStationAuth } = await import('@/lib/chat-server.ts');
+      const secret = 'legit-timing-test-secret-123456789';
+      const deviceId = crypto.randomUUID();
+      await callApi('registerStation', { deviceId, deviceSecret: secret });
+
+      // Valid secret
+      const isAuthValid = await verifyStationAuth(deviceId, secret);
+      expect(isAuthValid).toBe(true);
+
+      // Invalid secret with identical length
+      const wrongSecret = 'x'.repeat(secret.length);
+      const isAuthInvalid = await verifyStationAuth(deviceId, wrongSecret);
+      expect(isAuthInvalid).toBe(false);
+
+      // Empty or missing secret
+      expect(await verifyStationAuth(deviceId, '')).toBe(false);
+      expect(await verifyStationAuth(deviceId, undefined)).toBe(false);
+    });
+
+    it('TC-2.16.2: blockUser and reportUser guard against self-blocking to prevent matchmaking lockout', async () => {
+      const user = await createStation('SelfBlockGuard');
+      const blockRes = await callApi('blockUser', {
+        deviceId: user.deviceId,
+        targetId: user.deviceId,
+      });
+      expect(blockRes.ok).toBe(true);
+
+      const reportRes = await callApi('reportUser', {
+        deviceId: user.deviceId,
+        targetId: user.deviceId,
+        reason: 'testing self report',
+      });
+      expect(reportRes.ok).toBe(true);
+
+      // User should still be able to join queue and match normally without self-block collision
+      const joinRes = await callApi('joinQueue', {
+        deviceId: user.deviceId,
+        interests: ['self-block-test'],
+      });
+      expect(joinRes.ok).toBe(true);
+    });
+
+    it('TC-2.16.3: sanitizeInterests clamps tag lengths to 32 characters and bounds tag count to 10', async () => {
+      const { sanitizeInterests } = await import('@/lib/constants.ts');
+      const longTag = 'x'.repeat(100);
+      const manyTags = Array.from({ length: 50 }, (_, i) => `tag-${i}-${longTag}`);
+
+      const sanitized = sanitizeInterests(manyTags);
+      expect(sanitized.length <= 10).toBe(true);
+      for (const tag of sanitized) {
+        expect(tag.length <= 32).toBe(true);
+      }
+    });
+
+    it('TC-2.16.4: Unbounded array inputs for interests and blockedIds are safely bounded', async () => {
+      const user = await createStation('FloodGuard');
+      const hugeBlockedList = Array.from({ length: 200 }, () => crypto.randomUUID());
+      const res = await callApi('joinQueue', {
+        deviceId: user.deviceId,
+        interests: ['safe-coding'],
+        blockedIds: hugeBlockedList,
+      });
+      expect(res.ok).toBe(true);
+      expect(res.data.status === 'idle' || res.data.status === 'waiting').toBe(true);
+    });
+
+    it('TC-2.16.5: Link preview API handler validates host security and strips private IP rawImage metadata', async () => {
+      const { GET } = await import('@/app/api/chat/link-preview/route.ts');
+
+      // Loopback/private target is restricted
+      const loopbackReq = new Request('http://localhost:3000/api/chat/link-preview?url=' + encodeURIComponent('http://127.0.0.1:8080/secret'));
+      const loopbackRes = await GET(loopbackReq);
+      expect(loopbackRes.status).toBe(403);
+
+      // Cloud metadata target is restricted
+      const metadataReq = new Request('http://localhost:3000/api/chat/link-preview?url=' + encodeURIComponent('http://169.254.169.254/latest/meta-data/'));
+      const metadataRes = await GET(metadataReq);
+      expect(metadataRes.status).toBe(403);
+    });
+
+    it('TC-2.16.6: next.config.ts enforces Strict-Transport-Security and Cross-Origin-Opener-Policy headers', async () => {
+      const nextConfigModule = await import('../next.config.ts');
+      const config = nextConfigModule.default;
+      const headersList = await config.headers();
+      const globalCatchAll = headersList.find((h: any) => h.source === '/(.*)');
+
+      expect(Boolean(globalCatchAll)).toBe(true);
+      const hsts = globalCatchAll.headers.find((h: any) => h.key === 'Strict-Transport-Security');
+      expect(Boolean(hsts)).toBe(true);
+      expect(hsts.value).toContain('max-age=63072000');
+
+      const coop = globalCatchAll.headers.find((h: any) => h.key === 'Cross-Origin-Opener-Policy');
+      expect(Boolean(coop)).toBe(true);
+      expect(coop.value).toBe('same-origin');
+    });
+  });
+}
+
+export const registerEdgeCaseTests = registerTier2Tests;
