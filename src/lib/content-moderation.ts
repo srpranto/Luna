@@ -8,10 +8,12 @@ export interface SafetyResult {
 
 const SEVERE_PATTERNS = [
   /\bincest\b/i,
-  /\bstep-?(sister|brother|mom|mother|dad|father|daughter|son)\b/i,
-  /\b(mother|mom|sister|daughter|dad|father|brother|son)\s*(and|with)?\s*(sex|fucks?|fucking|suck|dick|pussy|tits|horny|naked)\b/i,
-  /\b(pedophil|paedophil|underage|cp|child\s*porn|csam|grooming|non-?consensual|rape|raping)\b/i,
-  /\b(preteen|lolita|shota)\b/i,
+  /\bstep-?(?:sister|brother|mom|mother|dad|father|daughter|son)\b.{0,30}\b(?:sex|fucks?|fucking|suck|dick|pussy|tits|horny|naked|porn|nsfw|nude|assault|strip|cam|rape)\b/i,
+  /\b(?:sex|fucks?|fucking|suck|dick|pussy|tits|horny|naked|porn|nsfw|nude|assault|strip|cam|rape)\b.{0,30}\bstep-?(?:sister|brother|mom|mother|dad|father|daughter|son)\b/i,
+  /\b(?:mother|mom|sister|daughter|dad|father|brother|son)\b.{0,30}\b(?:sex|fucks?|fucking|suck|dick|pussy|tits|horny|naked|porn|nsfw|nude|assault|strip|cam|rape)\b/i,
+  /\b(?:sex|fucks?|fucking|suck|dick|pussy|tits|horny|naked|porn|nsfw|nude|assault|strip|cam|rape)\b.{0,30}\b(?:mother|mom|sister|daughter|dad|father|brother|son)\b/i,
+  /\b(?:pedophil|paedophil|under-?age|child[\s\-_]*porn(?:ograph\w*)?|csam|grooming|non-?consensual|rape|raping)\b/i,
+  /\b(?:preteen|lolita|shota)\b/i,
 ];
 
 const SEXUAL_PATTERNS = [
@@ -36,8 +38,9 @@ const M_SPAM_PATTERNS = [
   /^[\s\W]*m[\s\W]+or[\s\W]+f[\s\W\?]*$/i,
 ];
 
-function normalizeText(text: string): string {
+export function normalizeText(text: string): string {
   return text
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF\u00AD]/g, "")
     .toLowerCase()
     .replace(/[@]/g, "a")
     .replace(/[$]/g, "s")

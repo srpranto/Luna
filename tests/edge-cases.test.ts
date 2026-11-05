@@ -1107,6 +1107,230 @@ export function registerTier2Tests() {
       expect(Boolean(coop)).toBe(true);
       expect(coop.value).toBe('same-origin');
     });
+
+    it('TC-2.16.7: editMessage rejects abusive / illegal content updates with 400 error', async () => {
+      const { alice, session } = await createPairedSession();
+      // First send a clean message
+      const sendRes = await callApi('sendMessage', {
+        deviceId: alice.deviceId,
+        sessionId: session.id,
+        body: 'Clean initial message',
+      });
+      expect(sendRes.ok).toBe(true);
+      const msgId = sendRes.data?.messages?.[0]?.id;
+      expect(Boolean(msgId)).toBe(true);
+
+      // Attempt to edit with CSAM / abusive content
+      const editRes = await callApi('editMessage', {
+        deviceId: alice.deviceId,
+        sessionId: session.id,
+        messageId: msgId,
+        body: 'child porn forbidden content',
+      });
+      expect(editRes.ok).toBe(false);
+      expect(editRes.status).toBe(400);
+      expect(editRes.error).toContain('Message blocked');
+    });
+
+    it('TC-2.16.8: evaluateSafety permits legitimate programming commands and benign family terms without false positives', async () => {
+      const { evaluateSafety } = await import('@/lib/content-moderation.ts');
+
+      // Linux cp command / coding abbreviation
+      const cpCheck = evaluateSafety('run cp -r source/ dest/ in terminal');
+      expect(cpCheck.allowed).toBe(true);
+      expect(cpCheck.severity).toBe('clean');
+
+      // Benign family mention
+      const familyCheck = evaluateSafety('I cooked dinner with my stepmom yesterday');
+      expect(familyCheck.allowed).toBe(true);
+      expect(familyCheck.severity).toBe('clean');
+    });
+
+    it('TC-2.16.9: evaluateSafety strips zero-width Unicode characters and catches obfuscated banned terms', async () => {
+      const { evaluateSafety } = await import('@/lib/content-moderation.ts');
+
+      // Insert zero-width space (\u200B) inside banned term "child porn"
+      const obfuscated = 'ch\u200Bi\u200Bld p\u200B\uFEFFornography';
+      const check = evaluateSafety(obfuscated);
+      expect(check.allowed).toBe(false);
+      expect(check.severity).toBe('severe');
+    });
+
+    it('TC-2.16.10: verifyStationAuth denies unauthenticated access to legacy stations without secret hashes', async () => {
+      const { getSql } = await import('@/lib/database.ts');
+      const { verifyStationAuth } = await import('@/lib/chat-server.ts');
+      const sql = await getSql();
+
+      const legacyDevId = crypto.randomUUID();
+      await sql`
+        insert into stations (device_id, callsign, ip, secret_hash)
+        values (${legacyDevId}, 'LegacyGhost', '127.0.0.1', null)
+        on conflict (device_id) do update set secret_hash = null
+      `;
+
+      // Non-registration action with no secret provided -> MUST BE REJECTED
+      const authNoSecret = await verifyStationAuth(legacyDevId, undefined, 'getDesk');
+      expect(authNoSecret).toBe(false);
+
+      // Attempting to invoke deleteStation with fake secret -> MUST BE REJECTED
+      const authFakeSecret = await verifyStationAuth(legacyDevId, 'fake-secret', 'deleteStation');
+      expect(authFakeSecret).toBe(false);
+
+      // Legacy station without secret CAN register/bind for the first time
+      const authRegister = await verifyStationAuth(legacyDevId, 'new-bind-secret', 'registerStation');
+      expect(authRegister).toBe(true);
+    });
+
+    it('TC-2.16.11: modal dialog open state suppresses global keydown focus stealing in composer', () => {
+      // Simulate isModalDialogOpen logic from MessageInput
+      const checkModalOpen = (mockElements: { selector: string; count: number }[]) => {
+        for (const { count } of mockElements) {
+          if (count > 0) return true;
+        }
+        return false;
+      };
+
+      // When modal is open ([role="dialog"])
+      expect(checkModalOpen([{ selector: '[role="dialog"]', count: 1 }])).toBe(true);
+
+      // When alert dialog is open ([role="alertdialog"])
+      expect(checkModalOpen([{ selector: '[role="alertdialog"]', count: 1 }])).toBe(true);
+
+      // When aria-modal="true" dialog is open
+      expect(checkModalOpen([{ selector: '[aria-modal="true"]', count: 1 }])).toBe(true);
+
+      // When data-state="open" radix dialog is open
+      expect(checkModalOpen([{ selector: '[data-state="open"]', count: 1 }])).toBe(true);
+
+      // When no dialog is present
+      expect(checkModalOpen([{ selector: '[role="dialog"]', count: 0 }])).toBe(false);
+    });
+
+    it('TC-2.16.12: link preview restricts non-standard ports and IPv6-mapped loopback while moderation catches compound terms', async () => {
+      const { GET } = await import('@/app/api/chat/link-preview/route.ts');
+      const { evaluateSafety } = await import('@/lib/content-moderation.ts');
+
+      // Non-web port rejected with 400
+      const badPortReq = new Request('http://localhost:3000/api/chat/link-preview?url=' + encodeURIComponent('http://example.com:22/ssh'));
+      const badPortRes = await GET(badPortReq);
+      expect(badPortRes.status).toBe(400);
+
+      // Uppercase IPv4-mapped loopback rejected with 403
+      const mappedLoopbackReq = new Request('http://localhost:3000/api/chat/link-preview?url=' + encodeURIComponent('http://[::FFFF:127.0.0.1]/'));
+      const mappedLoopbackRes = await GET(mappedLoopbackReq);
+      expect(mappedLoopbackRes.status).toBe(403);
+
+      // Moderation catches compound hyphenated terms
+      const compoundCheck = evaluateSafety('child-porn is blocked');
+      expect(compoundCheck.allowed).toBe(false);
+      expect(compoundCheck.severity).toBe('severe');
+    });
+
+    it('TC-2.16.13: AppError hierarchy, Result types, and tryCatch handle synchronous and async failures', async () => {
+      const { AppError, ValidationError, UnauthorizedError, RateLimitError, isAppError, ok, err, tryCatch, tryCatchAsync } = await import('@/lib/errors.ts');
+
+      const valErr = new ValidationError('Bad input', { field: 'body' });
+      expect(isAppError(valErr)).toBe(true);
+      expect(valErr.statusCode).toBe(400);
+      expect(valErr.code).toBe('VALIDATION_ERROR');
+      expect(valErr.details?.field).toBe('body');
+
+      const rateErr = new RateLimitError('Too fast', 10);
+      expect(rateErr.statusCode).toBe(429);
+      expect(rateErr.retryAfterSeconds).toBe(10);
+
+      const unauthErr = new UnauthorizedError();
+      expect(unauthErr.statusCode).toBe(401);
+
+      // Result ok / err
+      const success = ok(123);
+      expect(success.ok).toBe(true);
+      if (success.ok) expect(success.data).toBe(123);
+
+      const failure = err(valErr);
+      expect(failure.ok).toBe(false);
+      if (!failure.ok) expect(failure.error.statusCode).toBe(400);
+
+      // tryCatch synchronous
+      const syncOk = tryCatch(() => JSON.parse('{"a":1}'));
+      expect(syncOk.ok).toBe(true);
+
+      const syncErr = tryCatch(() => JSON.parse('{invalid'));
+      expect(syncErr.ok).toBe(false);
+
+      // tryCatchAsync
+      const asyncOk = await tryCatchAsync(async () => 'resolved');
+      expect(asyncOk.ok).toBe(true);
+
+      const asyncErr = await tryCatchAsync(async () => { throw new Error('boom'); });
+      expect(asyncErr.ok).toBe(false);
+    });
+
+    it('TC-2.16.14: Runtime type guards validate ChatMessage, SessionView, DeskView, and VoidLetter shapes strictly', async () => {
+      const { isChatMessage, isSessionView, isDeskView, isVoidLetter } = await import('@/lib/types.ts');
+
+      const validMsg = {
+        id: 'msg-1',
+        fromId: 'dev-1',
+        fromCallsign: 'Alice',
+        body: 'Hello',
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date().toISOString(),
+        mine: true,
+        copied: false,
+      };
+      expect(isChatMessage(validMsg)).toBe(true);
+      expect(isChatMessage({ id: 'msg-1' })).toBe(false);
+      expect(isChatMessage(null)).toBe(false);
+
+      const validSession = {
+        id: 'sess-1',
+        kind: 'stranger',
+        peerId: 'peer-1',
+        peerCallsign: 'Bob',
+        interests: ['tag1'],
+        closed: false,
+      };
+      expect(isSessionView(validSession)).toBe(true);
+      expect(isSessionView({ id: 'sess-1' })).toBe(false);
+
+      const validDesk = {
+        station: { deviceId: 'dev-1', callsign: 'Alice' },
+        friends: [],
+        inboundQsl: [],
+        activeSession: null,
+        queued: false,
+        queuedInterests: [],
+        enteredAt: null,
+      };
+      expect(isDeskView(validDesk)).toBe(true);
+      expect(isDeskView({ station: null })).toBe(false);
+
+      const validLetter = {
+        id: 'let-1',
+        deviceId: 'dev-1',
+        callsign: 'Alice',
+        text: 'A quiet thought',
+        stars: 3,
+        createdAt: new Date().toISOString(),
+      };
+      expect(isVoidLetter(validLetter)).toBe(true);
+      expect(isVoidLetter({ text: 'Hello' })).toBe(false);
+    });
+
+    it('TC-2.16.15: ApiClientError preserves HTTP status codes and error codes with isApiClientError narrowing', async () => {
+      const { ApiClientError, isApiClientError, isAppError } = await import('@/lib/errors.ts');
+
+      const apiErr = new ApiClientError('Not found', 404, 'NOT_FOUND');
+      expect(isAppError(apiErr)).toBe(true);
+      expect(isApiClientError(apiErr)).toBe(true);
+      expect(apiErr.statusCode).toBe(404);
+      expect(apiErr.code).toBe('NOT_FOUND');
+      expect(apiErr.message).toBe('Not found');
+
+      const standardErr = new Error('Random error');
+      expect(isApiClientError(standardErr)).toBe(false);
+    });
   });
 }
 

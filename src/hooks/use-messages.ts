@@ -26,6 +26,7 @@ import {
 } from "@/lib/api-client";
 import { playMessagePop, playMessageReceived, triggerHaptic } from "@/lib/sound-effects";
 import { notifyUser, clearNotificationBadge } from "@/lib/notifications";
+import { evaluateSafety } from "@/lib/content-moderation";
 
 const REACTION_REGEX = /^\[reaction:(.+?)\]$/u;
 
@@ -35,6 +36,70 @@ interface UseMessagesOptions {
   onActivity?: () => void;
   onHistoryUpdated?: (sessions: HistorySession[]) => void;
   onSessionEndedNotice?: () => void;
+  notifyError?: (err: unknown) => void;
+}
+
+function computeMergedMessages(
+  prev: ChatMessage[],
+  incoming: ChatMessage[],
+  deviceId?: string | null,
+): ChatMessage[] {
+  const incomingById = new Map<string, ChatMessage>();
+  const incomingByClientMsgId = new Map<string, ChatMessage>();
+  for (const m of incoming) {
+    incomingById.set(m.id, m);
+    if (m.clientMsgId) {
+      incomingByClientMsgId.set(m.clientMsgId, m);
+    }
+  }
+
+  const matchedOptIds = new Set<string>();
+  const optToConfirmed = new Map<string, ChatMessage>();
+
+  for (const inc of incoming) {
+    const isMine = inc.mine || (deviceId && inc.fromId === deviceId);
+    if (isMine) {
+      const matchingOpt = prev.find(
+        (p) =>
+          (p.clientMsgId && p.clientMsgId === inc.clientMsgId) ||
+          p.id === inc.clientMsgId ||
+          p.id === inc.id ||
+          (p.id.startsWith("opt-") && p.mine && p.body === inc.body && !matchedOptIds.has(p.id)),
+      );
+      if (matchingOpt) {
+        matchedOptIds.add(matchingOpt.id);
+        optToConfirmed.set(matchingOpt.id, inc);
+      }
+    }
+  }
+
+  const resultMap = new Map<string, ChatMessage>();
+
+  for (const m of prev) {
+    if (matchedOptIds.has(m.id)) {
+      const confirmed = optToConfirmed.get(m.id);
+      if (confirmed) {
+        resultMap.set(confirmed.id, confirmed);
+      }
+    } else if (incomingById.has(m.id)) {
+      resultMap.set(m.id, incomingById.get(m.id)!);
+    } else if (m.clientMsgId && incomingByClientMsgId.has(m.clientMsgId)) {
+      const confirmed = incomingByClientMsgId.get(m.clientMsgId)!;
+      resultMap.set(confirmed.id, confirmed);
+    } else {
+      resultMap.set(m.id, m);
+    }
+  }
+
+  for (const inc of incoming) {
+    if (!resultMap.has(inc.id)) {
+      resultMap.set(inc.id, inc);
+    }
+  }
+
+  return Array.from(resultMap.values()).sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+  );
 }
 
 export function useMessages({
@@ -43,14 +108,24 @@ export function useMessages({
   onActivity,
   onHistoryUpdated,
   onSessionEndedNotice,
+  notifyError,
 }: UseMessagesOptions) {
-  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+  const [messages, setRawMessages] = useState<ChatMessage[]>(() => {
     if (sessionId) {
       return loadCachedMessages(sessionId);
     }
     return [];
   });
   const messagesRef = useRef(messages);
+
+  const setMessages = useCallback((updater: React.SetStateAction<ChatMessage[]>) => {
+    setRawMessages((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      messagesRef.current = next;
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
@@ -60,7 +135,8 @@ export function useMessages({
   const hydrateCached = useCallback((sid: string) => {
     const cached = loadCachedMessages(sid);
     if (cached.length > 0) {
-      setMessages(cached);
+      messagesRef.current = cached;
+      setRawMessages(cached);
     }
     return cached;
   }, []);
@@ -134,67 +210,13 @@ export function useMessages({
 
   const mergeAndStoreMessages = useCallback(
     (sessionId: string, session: SessionView, incoming: ChatMessage[], isSoundNotification = false) => {
-      setMessages((prev) => {
-        const incomingById = new Map<string, ChatMessage>();
-        const incomingByClientMsgId = new Map<string, ChatMessage>();
-        for (const m of incoming) {
-          incomingById.set(m.id, m);
-          if (m.clientMsgId) {
-            incomingByClientMsgId.set(m.clientMsgId, m);
-          }
-        }
+      const merged = computeMergedMessages(messagesRef.current, incoming, deviceId);
+      messagesRef.current = merged;
+      setRawMessages(merged);
 
-        const matchedOptIds = new Set<string>();
-        const optToConfirmed = new Map<string, ChatMessage>();
-
-        for (const inc of incoming) {
-          const isMine = inc.mine || (deviceId && inc.fromId === deviceId);
-          if (isMine) {
-            const matchingOpt = prev.find(
-              (p) =>
-                (p.clientMsgId && p.clientMsgId === inc.clientMsgId) ||
-                p.id === inc.clientMsgId ||
-                p.id === inc.id ||
-                (p.id.startsWith("opt-") && p.mine && p.body === inc.body && !matchedOptIds.has(p.id)),
-            );
-            if (matchingOpt) {
-              matchedOptIds.add(matchingOpt.id);
-              optToConfirmed.set(matchingOpt.id, inc);
-            }
-          }
-        }
-
-        const resultMap = new Map<string, ChatMessage>();
-
-        for (const m of prev) {
-          if (matchedOptIds.has(m.id)) {
-            const confirmed = optToConfirmed.get(m.id);
-            if (confirmed) {
-              resultMap.set(confirmed.id, confirmed);
-            }
-          } else if (incomingById.has(m.id)) {
-            resultMap.set(m.id, incomingById.get(m.id)!);
-          } else if (m.clientMsgId && incomingByClientMsgId.has(m.clientMsgId)) {
-            const confirmed = incomingByClientMsgId.get(m.clientMsgId)!;
-            resultMap.set(confirmed.id, confirmed);
-          } else {
-            resultMap.set(m.id, m);
-          }
-        }
-
-        for (const inc of incoming) {
-          if (!resultMap.has(inc.id)) {
-            resultMap.set(inc.id, inc);
-          }
-        }
-
-        const merged = Array.from(resultMap.values()).sort(
-          (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-        );
-
+      if (merged.length > 0) {
         saveCachedMessages(sessionId, merged);
-
-        if (merged.length > 0 && session) {
+        if (session) {
           const lastMsg = merged[merged.length - 1];
           saveHistorySession({
             sessionId,
@@ -208,9 +230,7 @@ export function useMessages({
           });
           queueMicrotask(() => onHistoryUpdated?.(loadChatHistory()));
         }
-
-        return merged;
-      });
+      }
 
       if (isSoundNotification && incoming.length > 0) {
         const lastMsg = incoming[incoming.length - 1];
@@ -236,6 +256,12 @@ export function useMessages({
         const quoteSnippet = replyingTo.body.replace(/[\r\n]+/g, " ").slice(0, 100);
         textToSend = `> ${replyingTo.fromCallsign}: ${quoteSnippet}\n${rawText}`;
         setReplyingTo(null);
+      }
+
+      const safety = evaluateSafety(rawText);
+      if (!safety.allowed) {
+        notifyError?.(`Message blocked: ${safety.reason}`);
+        return;
       }
 
       const currentMsgs = messagesRef.current;
@@ -300,12 +326,12 @@ export function useMessages({
           }
         });
     },
-    [deviceId, replyingTo, onActivity, decryptPack, mergeAndStoreMessages, onSessionEndedNotice],
+    [deviceId, replyingTo, onActivity, decryptPack, mergeAndStoreMessages, onSessionEndedNotice, notifyError, setMessages],
   );
 
   const handleRetryMessage = useCallback(
     async (messageId: string, currentSession: SessionView) => {
-      const target = messages.find((m) => m.id === messageId || m.clientMsgId === messageId);
+      const target = messagesRef.current.find((m) => m.id === messageId || m.clientMsgId === messageId);
       if (!target || !deviceId || !currentSession.id || currentSession.closed) return;
 
       const clientMsgId = target.clientMsgId || target.id;
@@ -355,13 +381,20 @@ export function useMessages({
           }
         });
     },
-    [deviceId, messages, decryptPack, mergeAndStoreMessages, onSessionEndedNotice],
+    [deviceId, decryptPack, mergeAndStoreMessages, onSessionEndedNotice, setMessages],
   );
 
   const handleEditMessage = useCallback(
     async (messageId: string, newBody: string, currentSession: SessionView) => {
       if (!deviceId || !currentSession.id || !newBody.trim()) return;
       onActivity?.();
+
+      const safety = evaluateSafety(newBody.trim());
+      if (!safety.allowed) {
+        notifyError?.(`Message blocked: ${safety.reason}`);
+        throw new Error(`Message blocked: ${safety.reason}`);
+      }
+
       const encrypted = await encryptText(newBody.trim(), currentSession.id);
       await apiEditMessage({
         deviceId,
@@ -371,16 +404,17 @@ export function useMessages({
       });
 
       const nowIso = new Date().toISOString();
-      const nextMsgs = messages.map((m) =>
+      const nextMsgs = messagesRef.current.map((m) =>
         m.id === messageId ? { ...m, body: newBody.trim(), editedAt: nowIso } : m,
       );
-      setMessages(nextMsgs);
+      messagesRef.current = nextMsgs;
+      setRawMessages(nextMsgs);
       updateCachedMessage(currentSession.id, messageId, newBody.trim());
 
       saveHistorySession({
         sessionId: currentSession.id,
         peerCallsign: currentSession.peerCallsign,
-        startedAt: new Date(currentSession.createdAt).getTime(),
+        startedAt: currentSession.createdAt ? new Date(currentSession.createdAt).getTime() : Date.now(),
         savedAt: Date.now(),
         messageCount: nextMsgs.length,
         preview: nextMsgs[nextMsgs.length - 1]?.body ?? "",
@@ -389,7 +423,7 @@ export function useMessages({
       });
       onHistoryUpdated?.(loadChatHistory());
     },
-    [deviceId, messages, onActivity, onHistoryUpdated],
+    [deviceId, onActivity, onHistoryUpdated, notifyError],
   );
 
   const handleDeleteMessage = useCallback(
@@ -402,15 +436,16 @@ export function useMessages({
         messageId,
       });
 
-      const nextMsgs = messages.filter((m) => m.id !== messageId);
-      setMessages(nextMsgs);
+      const nextMsgs = messagesRef.current.filter((m) => m.id !== messageId);
+      messagesRef.current = nextMsgs;
+      setRawMessages(nextMsgs);
       deleteCachedMessage(currentSession.id, messageId);
 
       if (nextMsgs.length > 0) {
         saveHistorySession({
           sessionId: currentSession.id,
           peerCallsign: currentSession.peerCallsign,
-          startedAt: new Date(currentSession.createdAt).getTime(),
+          startedAt: currentSession.createdAt ? new Date(currentSession.createdAt).getTime() : Date.now(),
           savedAt: Date.now(),
           messageCount: nextMsgs.length,
           preview: nextMsgs[nextMsgs.length - 1]?.body ?? "",
@@ -422,7 +457,7 @@ export function useMessages({
       }
       onHistoryUpdated?.(loadChatHistory());
     },
-    [deviceId, messages, onActivity, onHistoryUpdated],
+    [deviceId, onActivity, onHistoryUpdated],
   );
 
   const handleSendReaction = useCallback(

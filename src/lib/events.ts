@@ -1,18 +1,31 @@
 import { getSql } from "./database";
+import type { DeskView, MessagesPack, SessionView } from "./types";
 
-export type LunaEventType =
-  | "desk_update"
-  | "message"
-  | "message_edited"
-  | "message_deleted"
-  | "messages_seen"
-  | "reconnect_requested"
-  | "presence_update"
-  | "typing"
-  | "session_started"
-  | "session_ended"
-  | "friend_request"
-  | "ping";
+export interface LunaEventDataMap {
+  desk_update: DeskView;
+  message: MessagesPack;
+  message_edited: { sessionId: string; messageId: string; body: string; editedAt: string };
+  message_deleted: { sessionId: string; messageId: string };
+  messages_seen: { sessionId: string; seenAt: string };
+  reconnect_requested: { sessionId: string; fromCallsign: string; session: SessionView };
+  presence_update: { sessionId: string; peerId: string; isAway: boolean };
+  typing: { sessionId: string; isTyping: boolean };
+  session_started: { sessionId: string; desk?: DeskView };
+  session_ended: { sessionId: string; desk?: DeskView };
+  friend_request: DeskView;
+  ping: string;
+}
+
+export type LunaEventType = keyof LunaEventDataMap;
+
+export type LunaStreamEvent = {
+  [K in keyof LunaEventDataMap]: {
+    type: K;
+    data: LunaEventDataMap[K];
+    id?: number;
+    timestamp?: string;
+  };
+}[keyof LunaEventDataMap];
 
 export interface LunaEvent<T = unknown> {
   id?: number;
@@ -71,7 +84,16 @@ export function isDeviceConnected(deviceId: string): boolean {
   return Boolean(listeners && listeners.size > 0);
 }
 
-export function emitToDevice<T = unknown>(deviceId: string, type: LunaEventType, data: T): void {
+export function emitToDevice<K extends keyof LunaEventDataMap>(
+  deviceId: string,
+  type: K,
+  data: LunaEventDataMap[K],
+): void;
+export function emitToDevice(
+  deviceId: string,
+  type: LunaEventType,
+  data: unknown,
+): void {
   void (async () => {
     let eventId: number | undefined;
     try {
@@ -93,7 +115,7 @@ export function emitToDevice<T = unknown>(deviceId: string, type: LunaEventType,
       });
     }
 
-    const event: LunaEvent<T> = {
+    const event: LunaEvent<unknown> = {
       id: eventId,
       type,
       data,
@@ -104,7 +126,7 @@ export function emitToDevice<T = unknown>(deviceId: string, type: LunaEventType,
     if (listeners && listeners.size > 0) {
       for (const listener of listeners) {
         try {
-          listener(event as LunaEvent);
+          listener(event);
         } catch (err) {
           console.error("[Luna Event Listener Error]", {
             deviceId,

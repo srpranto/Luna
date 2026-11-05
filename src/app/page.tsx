@@ -18,6 +18,7 @@ import { OfflineBanner } from "@/components/chat/offline-banner";
 import { usePresence } from "@/hooks/use-presence";
 import { useMessages } from "@/hooks/use-messages";
 import { useChatStream } from "@/hooks/use-chat-stream";
+import type { LunaStreamEvent } from "@/lib/events";
 import { useVisualViewport } from "@/hooks/use-visual-viewport";
 import { sanitizeInterests } from "@/lib/constants";
 import { deskName, getCachedCustomName, getOrCreateDeviceId, getOrCreateDeviceSecret } from "@/lib/identity";
@@ -58,7 +59,8 @@ import {
   setSoundEnabled,
   triggerHaptic,
 } from "@/lib/sound-effects";
-import type { DeskView, MessagesPack, SessionView, HistorySession } from "@/lib/types";
+import type { DeskView, SessionView, HistorySession } from "@/lib/types";
+import { isApiClientError } from "@/lib/errors";
 
 const INTEREST_KEY = "luna.interests";
 const BLOCKED_KEY = "luna.blocked";
@@ -96,6 +98,14 @@ function saveBlockedStation(peerId: string): void {
 function errorMessage(error: unknown): string {
   if (typeof navigator !== "undefined" && !navigator.onLine) {
     return "You're offline. Please check your internet connection.";
+  }
+  if (isApiClientError(error)) {
+    if (error.statusCode === 404 || error.code === "NOT_FOUND") {
+      return "";
+    }
+    if (error.statusCode === 429) {
+      return error.message;
+    }
   }
   if (error instanceof Error && error.message) {
     const msg = error.message;
@@ -277,6 +287,7 @@ export default function Home() {
       playLeaveTone();
       triggerHaptic("disconnect");
     },
+    notifyError,
   });
 
   const triggerResync = useCallback(() => {
@@ -385,29 +396,30 @@ export default function Home() {
   }, [deviceId, notifyError, handleDeskUpdate]);
 
   const handleStreamEvent = useCallback(
-    async (eventType: string, data: unknown) => {
-      if (eventType === "message") {
-        const pack = data as MessagesPack;
-        const packId = pack.session?.id;
-        const isActive =
-          packId &&
-          (packId === activeSessionRef.current?.id ||
-            (!activeSessionRef.current && !leftSessionIdsRef.current.has(packId) && !pack.session.closed));
+    async (event: LunaStreamEvent) => {
+      switch (event.type) {
+        case "message": {
+          const pack = event.data;
+          const packId = pack.session?.id;
+          const isActive =
+            packId &&
+            (packId === activeSessionRef.current?.id ||
+              (!activeSessionRef.current && !leftSessionIdsRef.current.has(packId) && !pack.session.closed));
 
-        if (isActive && deviceId) {
-          const displayMsgs = await decryptPack(pack, deviceId);
-          if (!leftSessionIdsRef.current.has(packId)) {
-            setSessionView(pack.session);
-            mergeAndStoreMessages(pack.session.id, pack.session, displayMsgs, true);
-            if (isWindowFocused() && !pack.session.closed) {
-              void markSeen({ deviceId, sessionId: pack.session.id }).catch(() => {});
+          if (isActive && deviceId) {
+            const displayMsgs = await decryptPack(pack, deviceId);
+            if (!leftSessionIdsRef.current.has(packId)) {
+              setSessionView(pack.session);
+              mergeAndStoreMessages(pack.session.id, pack.session, displayMsgs, true);
+              if (isWindowFocused() && !pack.session.closed) {
+                void markSeen({ deviceId, sessionId: pack.session.id }).catch(() => {});
+              }
             }
           }
+          break;
         }
-      } else if (eventType === "message_edited") {
-        const payload = data as Record<string, unknown>;
-        if (typeof payload?.messageId === "string" && typeof payload?.sessionId === "string") {
-          const info = payload as { sessionId: string; messageId: string; body: string; editedAt: string };
+        case "message_edited": {
+          const info = event.data;
           if (info.sessionId === activeSessionRef.current?.id && deviceId) {
             const decryptedBody = await decryptText(info.body, info.sessionId);
             setMessages((prev) =>
@@ -425,100 +437,106 @@ export default function Home() {
               );
             }
           }
-        } else {
-          const pack = data as MessagesPack;
-          const packId = pack.session?.id;
-          const isActive =
-            packId &&
-            (packId === activeSessionRef.current?.id ||
-              (!activeSessionRef.current && !leftSessionIdsRef.current.has(packId) && !pack.session.closed));
-
-          if (isActive && deviceId) {
-            const displayMsgs = await decryptPack(pack, deviceId);
-            if (!leftSessionIdsRef.current.has(packId)) {
-              setSessionView(pack.session);
-              mergeAndStoreMessages(pack.session.id, pack.session, displayMsgs, false);
-            }
-          }
+          break;
         }
-      } else if (eventType === "messages_seen") {
-        const info = data as { sessionId: string; seenAt: string };
-        if (info.sessionId === activeSessionRef.current?.id) {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.mine && !m.seenAt ? { ...m, seenAt: info.seenAt, status: "seen" as const } : m,
-            ),
-          );
-          const cached = loadCachedMessages(info.sessionId);
-          if (cached.length > 0) {
-            saveCachedMessages(
-              info.sessionId,
-              cached.map((m) =>
+        case "messages_seen": {
+          const info = event.data;
+          if (info.sessionId === activeSessionRef.current?.id) {
+            setMessages((prev) =>
+              prev.map((m) =>
                 m.mine && !m.seenAt ? { ...m, seenAt: info.seenAt, status: "seen" as const } : m,
               ),
             );
+            const cached = loadCachedMessages(info.sessionId);
+            if (cached.length > 0) {
+              saveCachedMessages(
+                info.sessionId,
+                cached.map((m) =>
+                  m.mine && !m.seenAt ? { ...m, seenAt: info.seenAt, status: "seen" as const } : m,
+                ),
+              );
+            }
           }
+          break;
         }
-      } else if (eventType === "reconnect_requested") {
-        const info = data as { sessionId: string; fromCallsign: string; session: SessionView };
-        if (activeSessionRef.current?.id === info.sessionId) {
-          setSessionView(info.session);
-          triggerHaptic("match");
-          setNote(`${info.fromCallsign} wants to reconnect! Click Accept Reconnect.`);
-        }
-      } else if (eventType === "message_deleted") {
-        const info = data as { sessionId: string; messageId: string };
-        if (info.sessionId === activeSessionRef.current?.id) {
-          setMessages((prev) => prev.filter((m) => m.id !== info.messageId));
-        }
-      } else if (eventType === "presence_update") {
-        const info = data as { sessionId: string; peerId: string; isAway: boolean };
-        setSessionView((prev) => (prev?.id === info.sessionId ? {
-          ...prev,
-          peerIsAway: info.isAway,
-          peerPresence: prev.closed ? "disconnected" : info.isAway ? "away" : "active",
-        } : prev));
-      } else if (eventType === "typing") {
-        const info = data as { sessionId?: string; isTyping: boolean };
-        if (info.sessionId === activeSessionRef.current?.id) {
-          setSessionView((prev) => (prev && prev.id === info.sessionId ? { ...prev, peerTyping: info.isTyping } : prev));
-          if (peerTypingTimeoutRef.current) clearTimeout(peerTypingTimeoutRef.current);
-          if (info.isTyping) {
-            peerTypingTimeoutRef.current = setTimeout(() => {
-              setSessionView((prev) => (prev ? { ...prev, peerTyping: false } : prev));
-            }, 3000);
+        case "reconnect_requested": {
+          const info = event.data;
+          if (activeSessionRef.current?.id === info.sessionId) {
+            setSessionView(info.session);
+            triggerHaptic("match");
+            setNote(`${info.fromCallsign} wants to reconnect! Click Accept Reconnect.`);
           }
+          break;
         }
-      } else if (eventType === "session_started") {
-        const info = data as { sessionId: string; desk?: DeskView };
-        setSessionView(null);
-        setMessages([]);
-        setIsAway(false);
-        if (info.desk) handleDeskUpdate(info.desk);
-        else if (deviceId) getDesk({ deviceId }).then(handleDeskUpdate).catch(() => {});
-
-        if (info.sessionId && lastMatchChimeRef.current !== info.sessionId) {
-          lastMatchChimeRef.current = info.sessionId;
-          playMatchChime();
-          triggerHaptic("match");
-          notifyUser({
-            title: "Stranger Connected! 🌙",
-            body: "You've been paired with a new stranger. Say hello!",
-            type: "match",
-            tag: "luna-match",
-          });
+        case "message_deleted": {
+          const info = event.data;
+          if (info.sessionId === activeSessionRef.current?.id) {
+            setMessages((prev) => prev.filter((m) => m.id !== info.messageId));
+          }
+          break;
         }
-      } else if (eventType === "session_ended") {
-        const info = data as { sessionId: string; desk?: DeskView };
-        if (info.sessionId && info.sessionId === activeSessionRef.current?.id) {
-          markSessionClosed(info.sessionId);
+        case "presence_update": {
+          const info = event.data;
+          setSessionView((prev) => (prev?.id === info.sessionId ? {
+            ...prev,
+            peerIsAway: info.isAway,
+            peerPresence: prev.closed ? "disconnected" : info.isAway ? "away" : "active",
+          } : prev));
+          break;
+        }
+        case "typing": {
+          const info = event.data;
+          if (info.sessionId === activeSessionRef.current?.id) {
+            setSessionView((prev) => (prev && prev.id === info.sessionId ? { ...prev, peerTyping: info.isTyping } : prev));
+            if (peerTypingTimeoutRef.current) clearTimeout(peerTypingTimeoutRef.current);
+            if (info.isTyping) {
+              peerTypingTimeoutRef.current = setTimeout(() => {
+                setSessionView((prev) => (prev ? { ...prev, peerTyping: false } : prev));
+              }, 3000);
+            }
+          }
+          break;
+        }
+        case "session_started": {
+          const info = event.data;
+          setSessionView(null);
+          setMessages([]);
+          setIsAway(false);
           if (info.desk) handleDeskUpdate(info.desk);
-          playLeaveTone();
-          triggerHaptic("disconnect");
+          else if (deviceId) getDesk({ deviceId }).then(handleDeskUpdate).catch(() => {});
+
+          if (info.sessionId && lastMatchChimeRef.current !== info.sessionId) {
+            lastMatchChimeRef.current = info.sessionId;
+            playMatchChime();
+            triggerHaptic("match");
+            notifyUser({
+              title: "Stranger Connected! 🌙",
+              body: "You've been paired with a new stranger. Say hello!",
+              type: "match",
+              tag: "luna-match",
+            });
+          }
+          break;
         }
-      } else if (eventType === "desk_update" || eventType === "friend_request") {
-        const refreshed = data as DeskView;
-        if (refreshed?.station) handleDeskUpdate(refreshed);
+        case "session_ended": {
+          const info = event.data;
+          if (info.sessionId && info.sessionId === activeSessionRef.current?.id) {
+            markSessionClosed(info.sessionId);
+            if (info.desk) handleDeskUpdate(info.desk);
+            playLeaveTone();
+            triggerHaptic("disconnect");
+          }
+          break;
+        }
+        case "desk_update":
+        case "friend_request": {
+          const refreshed = event.data;
+          if (refreshed?.station) handleDeskUpdate(refreshed);
+          break;
+        }
+        case "ping": {
+          break;
+        }
       }
     },
     [deviceId, decryptPack, mergeAndStoreMessages, setMessages, markSessionClosed, setIsAway, handleDeskUpdate],

@@ -1,5 +1,9 @@
 import type { DeskView, MessagesPack, QueueHeartbeatResult, VoidLetter } from "./types";
+import type { LunaStreamEvent } from "./events";
 import { getOrCreateDeviceSecret } from "./identity";
+import { ApiClientError } from "./errors";
+
+export { ApiClientError };
 
 interface ApiSuccess<T> {
   ok: true;
@@ -9,26 +13,55 @@ interface ApiSuccess<T> {
 interface ApiFailure {
   ok: false;
   error: string;
+  code?: string;
 }
 
 type ApiResponse<T> = ApiSuccess<T> | ApiFailure;
 
+const IDEMPOTENT_ACTIONS = new Set(["getDesk", "listMessages", "listVoidLetters"]);
+
 async function request<T>(action: string, payload: Record<string, unknown>): Promise<T> {
   const secret = getOrCreateDeviceSecret();
-  const res = await fetch("/api/chat", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-luna-device-secret": secret,
-    },
-    body: JSON.stringify({ action, deviceSecret: secret, ...payload }),
-  });
+  const isIdempotent = IDEMPOTENT_ACTIONS.has(action);
+  const maxAttempts = isIdempotent ? 2 : 1;
 
-  const json = (await res.json()) as ApiResponse<T>;
-  if (!res.ok || !json.ok) {
-    throw new Error("error" in json ? json.error : `HTTP ${res.status}`);
+  let lastError: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-luna-device-secret": secret,
+        },
+        body: JSON.stringify({ action, deviceSecret: secret, ...payload }),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      let json: ApiResponse<T> | null = null;
+      try {
+        json = (await res.json()) as ApiResponse<T>;
+      } catch {
+        throw new ApiClientError(`Server returned invalid response (HTTP ${res.status})`, res.status, "INVALID_RESPONSE");
+      }
+      if (!res.ok || !json || !json.ok) {
+        const errorMsg = json && "error" in json ? json.error : `HTTP ${res.status}`;
+        const errorCode = json && "code" in json ? json.code : "HTTP_ERROR";
+        throw new ApiClientError(errorMsg, res.status, errorCode);
+      }
+      return json.data;
+    } catch (err) {
+      lastError = err;
+      if (attempt < maxAttempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+      }
+    }
   }
-  return json.data;
+
+  if (lastError instanceof ApiClientError) {
+    throw lastError;
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 const rpc = <TResult, TPayload extends Record<string, unknown> = Record<string, unknown>>(action: string) =>
@@ -59,7 +92,7 @@ export const starVoidLetter = rpc<{ ok: boolean; stars: number; hasStarred: bool
 export const blockUser = rpc<{ ok: boolean }, { deviceId: string; targetId: string }>("blockUser");
 export const reportUser = rpc<{ ok: boolean }, { deviceId: string; targetId: string; reason: string }>("reportUser");
 
-type StreamHandler = (eventType: string, data: unknown) => void;
+type StreamHandler = (event: LunaStreamEvent) => void;
 
 const STREAM_EVENT_TYPES = [
   "message",
@@ -73,6 +106,7 @@ const STREAM_EVENT_TYPES = [
   "message_deleted",
   "messages_seen",
   "reconnect_requested",
+  "ping",
 ] as const;
 
 export function subscribeDeskStream(
@@ -131,8 +165,15 @@ export function subscribeDeskStream(
           }
         }
         try {
-          onEvent(type, JSON.parse(e.data));
-        } catch {}
+          const parsedData = JSON.parse(e.data);
+          onEvent({
+            type,
+            data: parsedData,
+            id: e.lastEventId ? Number(e.lastEventId) : undefined,
+          } as LunaStreamEvent);
+        } catch (parseErr) {
+          console.warn(`[Luna Stream] Failed to parse event data for "${type}":`, parseErr);
+        }
       });
     }
   };

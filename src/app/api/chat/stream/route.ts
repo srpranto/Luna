@@ -8,7 +8,12 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const deviceId = searchParams.get("deviceId");
-  const secretParam = searchParams.get("secret");
+  const authHeader = req.headers.get("authorization");
+  let bearerSecret: string | null = null;
+  if (authHeader && authHeader.toLowerCase().startsWith("bearer ")) {
+    bearerSecret = authHeader.slice(7).trim();
+  }
+  const secretParam = bearerSecret || searchParams.get("secret");
 
   if (!deviceId) {
     return new Response(JSON.stringify({ error: "Missing deviceId." }), {
@@ -44,17 +49,19 @@ export async function GET(req: NextRequest) {
   const deliveredIds = new Set<number>();
 
   let pingInterval: NodeJS.Timeout | null = null;
-  let pollInterval: NodeJS.Timeout | null = null;
+  let pollTimeout: NodeJS.Timeout | null = null;
   let unsubscribe: (() => void) | null = null;
+  let isClosed = false;
 
   const cleanup = () => {
+    isClosed = true;
     if (pingInterval) {
       clearInterval(pingInterval);
       pingInterval = null;
     }
-    if (pollInterval) {
-      clearInterval(pollInterval);
-      pollInterval = null;
+    if (pollTimeout) {
+      clearTimeout(pollTimeout);
+      pollTimeout = null;
     }
     if (unsubscribe) {
       unsubscribe();
@@ -167,10 +174,19 @@ export async function GET(req: NextRequest) {
       }
       buffer.length = 0;
 
-      // 4. Cross-instance realtime delivery via adaptive 800ms DB cursor poll
+      // 4. Cross-instance realtime delivery via adaptive DB cursor poll with backoff
       let isPolling = false;
-      pollInterval = setInterval(async () => {
-        if (isPolling) return;
+      let currentDelay = 800;
+      const MIN_POLL_DELAY = 600;
+      const MAX_POLL_DELAY = 4000;
+
+      const schedulePoll = (delay: number) => {
+        if (isClosed) return;
+        pollTimeout = setTimeout(pollLoop, delay);
+      };
+
+      const pollLoop = async () => {
+        if (isClosed || isPolling) return;
         isPolling = true;
         try {
           const sql = await getSql();
@@ -180,19 +196,31 @@ export async function GET(req: NextRequest) {
             order by id asc
             limit 50
           `;
-          for (const row of rows) {
-            const rowId = Number(row.id);
-            if (!deliveredIds.has(rowId)) {
-              deliveredIds.add(rowId);
-              lastEventId = Math.max(lastEventId, rowId);
-              let parsedData: unknown = row.data;
-              try {
-                parsedData = JSON.parse(row.data);
-              } catch {}
-              controller.enqueue(
-                encoder.encode(`id: ${row.id}\nevent: ${row.type}\ndata: ${JSON.stringify(parsedData)}\n\n`),
-              );
+
+          if (rows.length > 0) {
+            currentDelay = MIN_POLL_DELAY;
+            for (const row of rows) {
+              if (isClosed) break;
+              const rowId = Number(row.id);
+              if (!deliveredIds.has(rowId)) {
+                deliveredIds.add(rowId);
+                lastEventId = Math.max(lastEventId, rowId);
+                let parsedData: unknown = row.data;
+                try {
+                  parsedData = JSON.parse(row.data);
+                } catch {}
+                try {
+                  controller.enqueue(
+                    encoder.encode(`id: ${row.id}\nevent: ${row.type}\ndata: ${JSON.stringify(parsedData)}\n\n`),
+                  );
+                } catch {
+                  cleanup();
+                  break;
+                }
+              }
             }
+          } else {
+            currentDelay = Math.min(MAX_POLL_DELAY, Math.round(currentDelay * 1.5));
           }
 
           if (deliveredIds.size > 1500) {
@@ -204,14 +232,22 @@ export async function GET(req: NextRequest) {
             }
           }
         } catch (err) {
-          console.error("[Luna Stream Cross-Instance Poll Error]", {
-            deviceId,
-            error: err instanceof Error ? err.message : String(err),
-          });
+          if (!isClosed) {
+            console.error("[Luna Stream Cross-Instance Poll Error]", {
+              deviceId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+            currentDelay = Math.min(MAX_POLL_DELAY, currentDelay * 2);
+          }
         } finally {
           isPolling = false;
+          if (!isClosed) {
+            schedulePoll(currentDelay);
+          }
         }
-      }, 800);
+      };
+
+      schedulePoll(currentDelay);
 
       // Initial last seen touch
       void touchLastSeen(deviceId).catch(() => {});

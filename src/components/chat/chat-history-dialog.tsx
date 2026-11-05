@@ -173,7 +173,7 @@ export function ChatHistoryDialog({
                     <div className="flex items-center gap-1 pb-1 text-[10px] text-zinc-500 font-mono">
                       <span>{msg.mine ? "You" : activeSession.peerCallsign}</span>
                       <span>•</span>
-                      <span>{formatClock(new Date(msg.createdAt))}</span>
+                      <span className="tabular-nums font-mono">{formatClock(new Date(msg.createdAt))}</span>
                     </div>
                     <div
                       className={cn(

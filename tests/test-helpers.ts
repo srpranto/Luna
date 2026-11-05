@@ -220,6 +220,8 @@ async function initApiHandlers(): Promise<void> {
   }
 }
 
+const deviceSecrets = new Map<string, string>();
+
 export async function callApi<T = any>(
   action: string,
   payload: Record<string, unknown> = {},
@@ -229,7 +231,13 @@ export async function callApi<T = any>(
   const ip =
     clientIp ||
     `10.0.${Math.floor(Math.random() * 200) + 1}.${Math.floor(Math.random() * 200) + 1}`;
-  const body = { action, ...payload };
+  const deviceId = payload.deviceId as string | undefined;
+  const secret = (payload.deviceSecret as string | undefined) ?? (deviceId ? deviceSecrets.get(deviceId) : undefined);
+  const body = {
+    action,
+    ...(secret !== undefined && payload.deviceSecret === undefined ? { deviceSecret: secret } : {}),
+    ...payload,
+  };
   const req = new Request("http://localhost:3000/api/chat", {
     method: "POST",
     headers: {
@@ -252,18 +260,22 @@ export async function callApi<T = any>(
 
 export async function createStation(customName: string | null = null): Promise<{
   deviceId: string;
+  secret: string;
   callsign: string;
   desk: any;
 }> {
   const deviceId = crypto.randomUUID();
-  const res = await callApi("registerStation", { deviceId });
+  const secret = `sec_${crypto.randomUUID()}_${crypto.randomUUID()}`.replace(/-/g, "");
+  deviceSecrets.set(deviceId, secret);
+  const res = await callApi("registerStation", { deviceId, deviceSecret: secret });
   if (customName) {
-    await callApi("updateCallsign", { deviceId, callsign: customName });
-    const deskRes = await callApi("getDesk", { deviceId });
-    return { deviceId, callsign: customName, desk: deskRes.data };
+    await callApi("updateCallsign", { deviceId, deviceSecret: secret, callsign: customName });
+    const deskRes = await callApi("getDesk", { deviceId, deviceSecret: secret });
+    return { deviceId, secret, callsign: customName, desk: deskRes.data };
   }
   return {
     deviceId,
+    secret,
     callsign: res.data?.station?.callsign ?? "Stranger",
     desk: res.data,
   };

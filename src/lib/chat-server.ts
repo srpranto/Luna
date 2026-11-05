@@ -113,13 +113,7 @@ export async function verifyStationAuth(
   }
   const storedHash = rows[0]?.secret_hash;
   if (!storedHash) {
-    if (action === "registerStation") {
-      return true;
-    }
-    if (deviceSecret) {
-      return false;
-    }
-    return true;
+    return action === "registerStation";
   }
   if (!deviceSecret || typeof deviceSecret !== "string") {
     return false;
@@ -309,7 +303,7 @@ export async function runPeriodicCleanup(sql?: Sql, force = false): Promise<void
   await reapAbandonedSessions(sql);
 }
 
-async function cleanup(sql?: Sql): Promise<void> {
+export async function cleanup(sql?: Sql): Promise<void> {
   return runPeriodicCleanup(sql, false);
 }
 
@@ -702,8 +696,6 @@ async function heartbeatQueueHandler(
     await sql`update queue set last_beat = now() where device_id = ${deviceId}`;
     await sql`update stations set last_seen = now() where device_id = ${deviceId}`;
 
-    await cleanup(sql);
-
     const openExisting = await openSessionFor(deviceId);
     if (openExisting) {
       await sql`delete from queue where device_id = ${deviceId}`;
@@ -969,7 +961,6 @@ export async function joinQueue(input: {
     }
   }
 
-  await cleanup(sql);
   await touchStation(deviceId, input.clientIp, input.publicKey);
 
   const payload = JSON.stringify(interests);
@@ -1308,6 +1299,14 @@ export async function editMessage(input: {
 }): Promise<MessagesPack> {
   const deviceId = requireDeviceId(input.deviceId);
   const body = requireText(input.body, MAX_LINE_CHARS);
+
+  if (!body.startsWith("e2e:")) {
+    const safety = evaluateSafety(body);
+    if (!safety.allowed) {
+      throw new Error(`Message blocked: ${safety.reason}`);
+    }
+  }
+
   const sql = await getSql();
 
   const sessions = await sql<SessionRow>`

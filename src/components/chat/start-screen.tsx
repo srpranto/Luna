@@ -30,11 +30,11 @@ export function StartScreen({
           </span>
         </div>
 
-        <h1 className="animate-fade-up stagger-1 text-4xl sm:text-6xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-b from-white via-zinc-100 to-zinc-400">
+        <h1 className="animate-fade-up stagger-1 text-4xl sm:text-6xl font-extrabold tracking-tight text-zinc-100 text-balance">
           Luna
         </h1>
 
-        <p className="animate-fade-up stagger-2 mt-2 max-w-sm text-xs sm:text-sm text-zinc-400 leading-relaxed px-2 font-normal">
+        <p className="animate-fade-up stagger-2 mt-2 max-w-sm text-xs sm:text-sm text-zinc-400 leading-relaxed px-2 font-normal text-pretty">
           Late-night conversations with strangers. No login, zero logs, end-to-end encrypted.
         </p>
       </div>

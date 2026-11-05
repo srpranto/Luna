@@ -115,6 +115,13 @@ export function MessageInput({
     if (disabled) return;
     function handleGlobalKeyDown(e: globalThis.KeyboardEvent) {
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const isModalOpen = Boolean(
+          document.querySelector(
+            '[role="dialog"], [role="alertdialog"], [aria-modal="true"], [data-state="open"], .modal-open, [data-dialog-open="true"]',
+          ),
+        );
+        if (isModalOpen) return;
+
         const active = document.activeElement;
         const isEditable =
           active &&
@@ -283,7 +290,7 @@ export function MessageInput({
                 onClick={onReconnect}
                 disabled={outboundReconnect}
                 className={cn(
-                  "h-10 min-h-[40px] px-4 text-xs font-semibold cursor-pointer gap-2 rounded-full touch-manipulation active:scale-[0.97]",
+                  "h-10 min-h-[40px] px-4 text-xs font-semibold cursor-pointer gap-2 rounded-full touch-manipulation active:scale-[0.96] transition-transform duration-100",
                   inboundReconnect
                     ? "bg-emerald-500 hover:bg-emerald-400 text-zinc-950 shadow-[0_0_20px_rgba(16,185,129,0.3)] animate-pulse"
                     : outboundReconnect
@@ -332,7 +339,7 @@ export function MessageInput({
             aria-label="Google Keyboard emojis"
             title="Google Keyboard emojis"
             className={cn(
-              "h-10 w-10 min-h-[40px] min-w-[40px] p-0 rounded-full border border-white/10 bg-zinc-900/60 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 hover:border-white/20 shrink-0 cursor-pointer transition-all duration-150 ease-coloros active:scale-95 touch-manipulation flex items-center justify-center shadow-sm",
+              "h-10 w-10 min-h-[40px] min-w-[40px] p-0 rounded-full border border-white/10 bg-zinc-900/60 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 hover:border-white/20 shrink-0 cursor-pointer transition-transform duration-100 active:scale-[0.96] touch-manipulation flex items-center justify-center shadow-sm",
               showEmojiPicker && "text-zinc-100 bg-zinc-800 border-white/30 ring-1 ring-white/20",
             )}
           >
@@ -402,7 +409,7 @@ export function MessageInput({
             size="sm"
             aria-label="Send message"
             title="Send message (Enter, Shift+Enter for new line)"
-            className="h-10 min-h-[40px] p-0 sm:px-4 w-10 sm:w-auto min-w-[40px] shrink-0 bg-white text-zinc-950 hover:bg-zinc-100 disabled:bg-zinc-800 disabled:text-zinc-500 disabled:border-white/5 border border-transparent shadow-[0_0_20px_rgba(255,255,255,0.15)] active:scale-95 transition-all duration-150 ease-coloros rounded-full font-semibold cursor-pointer touch-manipulation flex items-center justify-center gap-1.5"
+            className="h-10 min-h-[40px] p-0 sm:px-4 w-10 sm:w-auto min-w-[40px] shrink-0 bg-white text-zinc-950 hover:bg-zinc-100 disabled:bg-zinc-800 disabled:text-zinc-500 disabled:border-white/5 border border-transparent shadow-[0_0_20px_rgba(255,255,255,0.15)] active:scale-[0.96] transition-transform duration-100 rounded-full font-semibold cursor-pointer touch-manipulation flex items-center justify-center gap-1.5"
           >
             <ArrowUp className="h-4 w-4 stroke-[2.5]" />
             <span className="hidden sm:inline text-xs font-semibold">Send</span>

@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import dns from "node:dns";
+import http from "node:http";
+import https from "node:https";
 import { checkPreviewRateLimit } from "@/lib/rate-limiter";
 
 export const dynamic = "force-dynamic";
 
 function isPrivateIp(ip: string): boolean {
-  if (ip.startsWith("::ffff:")) {
-    return isPrivateIp(ip.slice(7));
+  const norm = ip.toLowerCase().trim().replace(/^\[|\]$/g, "");
+  if (norm.startsWith("::ffff:")) {
+    return isPrivateIp(norm.slice(7));
   }
 
-  if (ip.includes(":")) {
-    const norm = ip.toLowerCase();
+  if (norm.includes(":")) {
     if (
       norm === "::1" ||
       norm === "::" ||
@@ -23,7 +25,7 @@ function isPrivateIp(ip: string): boolean {
     return false;
   }
 
-  const parts = ip.split(".");
+  const parts = norm.split(".");
   if (parts.length !== 4) {
     return false;
   }
@@ -49,38 +51,141 @@ function isPrivateIp(ip: string): boolean {
   return false;
 }
 
-async function validateHostSecurity(hostname: string): Promise<boolean> {
-  const lower = hostname.toLowerCase();
+interface PinnedHostResult {
+  safe: boolean;
+  pinnedIp?: string;
+  family?: number;
+}
+
+async function validateAndPinHost(hostname: string): Promise<PinnedHostResult> {
+  const lower = hostname.toLowerCase().trim().replace(/^\[|\]$/g, "");
   if (
     lower === "localhost" ||
     lower.endsWith(".localhost") ||
     lower.endsWith(".local") ||
     lower.endsWith(".internal") ||
+    lower.endsWith(".lan") ||
+    lower.endsWith(".home") ||
+    lower.endsWith(".corp") ||
     lower.endsWith(".arpa") ||
     lower === "0.0.0.0" ||
     lower === "::1"
   ) {
-    return false;
+    return { safe: false };
   }
 
   if (isPrivateIp(lower)) {
-    return false;
+    return { safe: false };
   }
 
   try {
     const lookupResults = await dns.promises.lookup(hostname, { all: true });
     if (!lookupResults || lookupResults.length === 0) {
-      return false;
+      return { safe: false };
     }
     for (const record of lookupResults) {
       if (isPrivateIp(record.address)) {
-        return false;
+        return { safe: false };
       }
     }
-    return true;
+    return {
+      safe: true,
+      pinnedIp: lookupResults[0].address,
+      family: lookupResults[0].family,
+    };
   } catch {
-    return false;
+    return { safe: false };
   }
+}
+
+async function validateHostSecurity(hostname: string): Promise<boolean> {
+  const res = await validateAndPinHost(hostname);
+  return res.safe;
+}
+
+function safeFetch(
+  targetUrl: URL,
+  pinnedIp: string,
+  family: number,
+  signal: AbortSignal,
+): Promise<{ status: number; headers: Record<string, string>; body: string }> {
+  return new Promise((resolve, reject) => {
+    let isResolved = false;
+    const finish = (result: { status: number; headers: Record<string, string>; body: string }) => {
+      if (isResolved) return;
+      isResolved = true;
+      resolve(result);
+    };
+    const fail = (err: unknown) => {
+      if (isResolved) return;
+      isResolved = true;
+      reject(err);
+    };
+
+    const isHttps = targetUrl.protocol === "https:";
+    const transport = isHttps ? https : http;
+    const port = targetUrl.port || (isHttps ? 443 : 80);
+
+    const req = transport.request(
+      {
+        protocol: targetUrl.protocol,
+        hostname: targetUrl.hostname,
+        port,
+        path: targetUrl.pathname + targetUrl.search,
+        method: "GET",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; LunaBot/1.0; +https://luna.chat)",
+          Accept: "text/html,application/xhtml+xml",
+          Host: targetUrl.host,
+        },
+        lookup: (_hostname, options, callback) => {
+          const cb = typeof options === "function" ? options : callback;
+          const opts = typeof options === "object" ? options : {};
+          if (opts && opts.all) {
+            cb(null, [{ address: pinnedIp, family }]);
+          } else {
+            cb(null, pinnedIp, family);
+          }
+        },
+        signal,
+      },
+      (res) => {
+        const headers: Record<string, string> = {};
+        for (const [key, val] of Object.entries(res.headers)) {
+          if (typeof val === "string") headers[key.toLowerCase()] = val;
+          else if (Array.isArray(val)) headers[key.toLowerCase()] = val.join(", ");
+        }
+
+        let body = "";
+        let totalBytes = 0;
+        res.setEncoding("utf8");
+
+        res.on("data", (chunk: string) => {
+          totalBytes += Buffer.byteLength(chunk, "utf8");
+          body += chunk;
+          if (totalBytes >= 102400 || body.includes("</head>")) {
+            res.destroy();
+            finish({ status: res.statusCode ?? 200, headers, body });
+          }
+        });
+
+        res.on("end", () => {
+          finish({ status: res.statusCode ?? 200, headers, body });
+        });
+
+        res.on("error", (err) => {
+          if (body.length > 0) {
+            finish({ status: res.statusCode ?? 200, headers, body });
+          } else {
+            fail(err);
+          }
+        });
+      },
+    );
+
+    req.on("error", fail);
+    req.end();
+  });
 }
 
 function extractClientIp(req: Request): string {
@@ -141,6 +246,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Unsupported protocol" }, { status: 400 });
     }
 
+    if (parsedUrl.port && ![80, 443, 8080, 8443].includes(Number(parsedUrl.port))) {
+      return NextResponse.json({ ok: false, error: "Unsupported port" }, { status: 400 });
+    }
+
     const domain = parsedUrl.hostname.replace(/^www\./, "");
     const defaultFavicon = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`;
 
@@ -150,26 +259,24 @@ export async function GET(req: NextRequest) {
     let html = "";
     try {
       let currentUrl = parsedUrl;
-      let response: Response | null = null;
+      let finalResponse: { status: number; headers: Record<string, string>; body: string } | null = null;
 
       // Manual redirect follow with strict SSRF re-validation on every hop (max 3 hops)
       for (let hop = 0; hop <= 3; hop++) {
-        const isSafe = await validateHostSecurity(currentUrl.hostname);
-        if (!isSafe) {
+        const hostCheck = await validateAndPinHost(currentUrl.hostname);
+        if (!hostCheck.safe || !hostCheck.pinnedIp) {
           return NextResponse.json({ ok: false, error: "Restricted host" }, { status: 403 });
         }
 
-        response = await fetch(currentUrl.toString(), {
-          signal: controller.signal,
-          headers: {
-            "User-Agent": "Mozilla/5.0 (compatible; LunaBot/1.0; +https://luna.chat)",
-            Accept: "text/html,application/xhtml+xml",
-          },
-          redirect: "manual",
-        });
+        const resp = await safeFetch(
+          currentUrl,
+          hostCheck.pinnedIp,
+          hostCheck.family ?? 4,
+          controller.signal,
+        );
 
-        if ([301, 302, 303, 307, 308].includes(response.status)) {
-          const location = response.headers.get("location");
+        if ([301, 302, 303, 307, 308].includes(resp.status)) {
+          const location = resp.headers["location"];
           if (!location || hop === 3) break;
           currentUrl = new URL(location, currentUrl);
           if (currentUrl.protocol !== "http:" && currentUrl.protocol !== "https:") {
@@ -178,14 +285,15 @@ export async function GET(req: NextRequest) {
           continue;
         }
 
+        finalResponse = resp;
         break;
       }
 
-      if (!response || !response.ok) {
+      if (!finalResponse || finalResponse.status < 200 || finalResponse.status >= 400) {
         throw new Error("Fetch failed");
       }
 
-      const contentType = response.headers.get("content-type") || "";
+      const contentType = finalResponse.headers["content-type"] || "";
       if (!contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) {
         return NextResponse.json(
           {
@@ -207,20 +315,7 @@ export async function GET(req: NextRequest) {
         );
       }
 
-      const reader = response.body?.getReader();
-      if (reader) {
-        let total = 0;
-        const decoder = new TextDecoder();
-        while (total < 102400) {
-          // Cap at 100KB max stream read
-          const { done, value } = await reader.read();
-          if (done || !value) break;
-          total += value.byteLength;
-          html += decoder.decode(value, { stream: true });
-          if (html.includes("</head>")) break;
-        }
-        reader.cancel().catch(() => {});
-      }
+      html = finalResponse.body;
     } catch {
       return NextResponse.json(
         {
@@ -263,9 +358,7 @@ export async function GET(req: NextRequest) {
     let rawImage = ogImageMatch ? ogImageMatch[1] : null;
     if (rawImage) {
       try {
-        const resolvedUrl = rawImage.startsWith("/")
-          ? new URL(rawImage, parsedUrl.origin)
-          : new URL(rawImage);
+        const resolvedUrl = new URL(rawImage, parsedUrl);
         if (resolvedUrl.protocol !== "http:" && resolvedUrl.protocol !== "https:") {
           rawImage = null;
         } else {

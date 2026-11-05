@@ -53,7 +53,7 @@ export function NotificationToastHost() {
           setActiveToast(null);
         }}
         className={cn(
-          "w-full max-w-sm pointer-events-auto animate-scale-in flex items-center justify-between gap-3 p-3.5 rounded-2xl border border-white/20 bg-zinc-950/95 backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.9),inset_0_1px_0_0_rgba(255,255,255,0.15)] cursor-pointer transition-transform active:scale-[0.98]",
+          "w-full max-w-sm pointer-events-auto animate-scale-in flex items-center justify-between gap-3 p-3.5 rounded-3xl border border-white/20 bg-zinc-950/95 backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.9),inset_0_1px_0_0_rgba(255,255,255,0.15)] cursor-pointer transition-transform active:scale-[0.96]",
         )}
       >
         <div className="flex items-center gap-2.5 min-w-0">
@@ -77,7 +77,7 @@ export function NotificationToastHost() {
             setActiveToast(null);
           }}
           aria-label="Dismiss notification"
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-850 transition-colors"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-850 transition-all active:scale-[0.96]"
         >
           <X className="h-3.5 w-3.5" />
         </button>

@@ -260,7 +260,7 @@ export function ChatHeader({
             }}
             aria-label="Connections"
             title="Connections"
-            className="h-8.5 w-8.5 sm:h-8 sm:w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 touch-manipulation"
+            className="relative after:absolute after:-inset-1.5 after:content-[''] after:rounded-full h-8.5 w-8.5 sm:h-8 sm:w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 touch-manipulation"
           >
             {logOpen ? <X className="h-4 w-4" /> : <HeartHandshake className="h-4 w-4" />}
           </Button>
@@ -276,7 +276,7 @@ export function ChatHeader({
               }}
               aria-label="24h Chat History"
               title="24h Chat History"
-              className="h-8.5 w-8.5 sm:h-8 sm:w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 cursor-pointer touch-manipulation"
+              className="relative after:absolute after:-inset-1.5 after:content-[''] after:rounded-full h-8.5 w-8.5 sm:h-8 sm:w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 cursor-pointer touch-manipulation"
             >
               {historyOpen ? <X className="h-4 w-4" /> : <History className="h-4 w-4" />}
             </Button>
@@ -294,7 +294,7 @@ export function ChatHeader({
               aria-label={voidOpen ? "Close The Void" : "The Void (24h Orbit Letters)"}
               title={voidOpen ? "Close The Void" : "The Void (24h Orbit Letters)"}
               className={cn(
-                "h-8.5 w-8.5 sm:h-8 sm:w-8 touch-manipulation cursor-pointer",
+                "relative after:absolute after:-inset-1.5 after:content-[''] after:rounded-full h-8.5 w-8.5 sm:h-8 sm:w-8 touch-manipulation cursor-pointer",
                 voidOpen
                   ? "text-zinc-100 bg-zinc-800"
                   : "text-zinc-300 hover:text-white hover:bg-zinc-800/80",
@@ -315,7 +315,7 @@ export function ChatHeader({
               }}
               aria-label="Settings"
               title="Settings"
-              className="h-8.5 w-8.5 sm:h-8 sm:w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 cursor-pointer touch-manipulation"
+              className="relative after:absolute after:-inset-1.5 after:content-[''] after:rounded-full h-8.5 w-8.5 sm:h-8 sm:w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 cursor-pointer touch-manipulation"
             >
               {settingsOpen ? <X className="h-4 w-4" /> : <Settings className="h-4 w-4" />}
             </Button>

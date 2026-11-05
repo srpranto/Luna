@@ -305,7 +305,7 @@ export function ChatScreen({
               disabled={busy || locked}
               aria-label={closed ? "Search for someone" : confirmNext ? "Confirm next stranger" : "Leave and find next stranger"}
               className={cn(
-                "h-7.5 px-2.5 gap-1 text-xs cursor-pointer rounded-full transition-all touch-manipulation active:scale-95 shadow-sm",
+                "relative after:absolute after:-inset-2 after:content-[''] after:rounded-full h-7.5 px-2.5 gap-1 text-xs cursor-pointer rounded-full transition-all touch-manipulation active:scale-[0.96] shadow-sm",
                 closed
                   ? "bg-white text-zinc-950 hover:bg-zinc-200 font-medium shadow-[0_0_12px_rgba(255,255,255,0.2)]"
                   : confirmNext
@@ -331,7 +331,7 @@ export function ChatScreen({
             disabled={busy}
             aria-label="Leave chat"
             title="Leave chat"
-            className="h-7.5 px-2.5 gap-1 text-xs cursor-pointer rounded-full border border-white/10 bg-zinc-900/60 text-zinc-300 hover:text-white hover:bg-zinc-800 active:scale-95 touch-manipulation font-medium shadow-sm"
+            className="relative after:absolute after:-inset-2 after:content-[''] after:rounded-full h-7.5 px-2.5 gap-1 text-xs cursor-pointer rounded-full border border-white/10 bg-zinc-900/60 text-zinc-300 hover:text-white hover:bg-zinc-800 active:scale-[0.96] touch-manipulation font-medium shadow-sm"
           >
             <DoorOpen className="h-3.5 w-3.5 text-zinc-400" />
             <span className="text-xs">Leave</span>
@@ -347,7 +347,7 @@ export function ChatScreen({
             }}
             aria-label="More actions"
             title="More actions"
-            className="h-7.5 w-7.5 rounded-full border border-white/10 bg-zinc-900/80 text-zinc-300 hover:text-white hover:bg-zinc-800 active:scale-95 touch-manipulation cursor-pointer"
+            className="relative after:absolute after:-inset-2 after:content-[''] after:rounded-full h-7.5 w-7.5 rounded-full border border-white/10 bg-zinc-900/80 text-zinc-300 hover:text-white hover:bg-zinc-800 active:scale-[0.96] touch-manipulation cursor-pointer"
           >
             <MoreHorizontal className="h-4 w-4" />
           </Button>

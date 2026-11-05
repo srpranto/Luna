@@ -1,4 +1,6 @@
 import type { ChatMessage, HistorySession } from "./types";
+import { evaluateSafety } from "./content-moderation";
+import { ValidationError, AppError } from "./errors";
 
 const CHAT_CACHE_PREFIX = "luna.chat";
 const HISTORY_INDEX_KEY = "luna.history.sessions";
@@ -23,6 +25,36 @@ interface CachedEnvelope {
   savedAt: number;
 }
 
+function safeLocalStorageSet(key: string, value: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(key, value);
+  } catch (err) {
+    if (
+      err instanceof DOMException &&
+      (err.name === "QuotaExceededError" || err.code === 22 || err.name === "NS_ERROR_DOM_QUOTA_REACHED")
+    ) {
+      sweepExpiredCaches();
+      try {
+        const history = loadChatHistory();
+        if (history.length > 5) {
+          const half = Math.floor(history.length / 2);
+          const toPrune = history.slice(half);
+          for (const s of toPrune) {
+            localStorage.removeItem(`${CHAT_CACHE_PREFIX}.${s.sessionId}`);
+          }
+          localStorage.setItem(HISTORY_INDEX_KEY, JSON.stringify(history.slice(0, half)));
+        }
+        localStorage.setItem(key, value);
+      } catch (retryErr) {
+        console.warn("[Luna Storage] LocalStorage quota exceeded, unable to persist:", retryErr);
+      }
+    } else {
+      console.warn("[Luna Storage] LocalStorage write failed:", err);
+    }
+  }
+}
+
 export function loadCachedMessages(sessionId: string): ChatMessage[] {
   if (typeof window === "undefined") return [];
   try {
@@ -44,14 +76,11 @@ export function loadCachedMessages(sessionId: string): ChatMessage[] {
 }
 
 export function saveCachedMessages(sessionId: string, msgs: ChatMessage[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    const envelope: CachedEnvelope = {
-      messages: msgs,
-      savedAt: Date.now(),
-    };
-    localStorage.setItem(`${CHAT_CACHE_PREFIX}.${sessionId}`, JSON.stringify(envelope));
-  } catch {}
+  const envelope: CachedEnvelope = {
+    messages: msgs,
+    savedAt: Date.now(),
+  };
+  safeLocalStorageSet(`${CHAT_CACHE_PREFIX}.${sessionId}`, JSON.stringify(envelope));
 }
 
 export function updateCachedMessage(sessionId: string, messageId: string, newBody: string): void {
@@ -71,12 +100,9 @@ export function deleteCachedMessage(sessionId: string, messageId: string): void 
 }
 
 export function saveHistorySession(session: HistorySession): void {
-  if (typeof window === "undefined") return;
-  try {
-    const existing = loadChatHistory();
-    const updated = [session, ...existing.filter((s) => s.sessionId !== session.sessionId)].slice(0, 50);
-    localStorage.setItem(HISTORY_INDEX_KEY, JSON.stringify(updated));
-  } catch {}
+  const existing = loadChatHistory();
+  const updated = [session, ...existing.filter((s) => s.sessionId !== session.sessionId)].slice(0, 50);
+  safeLocalStorageSet(HISTORY_INDEX_KEY, JSON.stringify(updated));
 }
 
 export function loadChatHistory(): HistorySession[] {
@@ -89,13 +115,14 @@ export function loadChatHistory(): HistorySession[] {
     const now = Date.now();
     const valid = parsed.filter((item): item is HistorySession => {
       if (item && typeof item === "object" && "sessionId" in item && "savedAt" in item) {
-        if (now - item.savedAt <= CACHE_TTL_MS) return true;
-        localStorage.removeItem(`${CHAT_CACHE_PREFIX}.${item.sessionId}`);
+        const s = item as { sessionId: string; savedAt: number };
+        if (now - s.savedAt <= CACHE_TTL_MS) return true;
+        localStorage.removeItem(`${CHAT_CACHE_PREFIX}.${s.sessionId}`);
       }
       return false;
     });
     if (valid.length !== parsed.length) {
-      localStorage.setItem(HISTORY_INDEX_KEY, JSON.stringify(valid));
+      safeLocalStorageSet(HISTORY_INDEX_KEY, JSON.stringify(valid));
     }
     return valid;
   } catch {
@@ -107,7 +134,7 @@ export function deleteHistorySession(sessionId: string): void {
   if (typeof window === "undefined") return;
   try {
     const existing = loadChatHistory();
-    localStorage.setItem(HISTORY_INDEX_KEY, JSON.stringify(existing.filter((s) => s.sessionId !== sessionId)));
+    safeLocalStorageSet(HISTORY_INDEX_KEY, JSON.stringify(existing.filter((s) => s.sessionId !== sessionId)));
     localStorage.removeItem(`${CHAT_CACHE_PREFIX}.${sessionId}`);
   } catch {}
 }
@@ -195,7 +222,7 @@ async function getOrCreateDeviceKeyPair(deviceId: string): Promise<CryptoKeyPair
     try {
       const priv = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
       const pub = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
-      localStorage.setItem(storageKey, JSON.stringify({ priv, pub }));
+      safeLocalStorageSet(storageKey, JSON.stringify({ priv, pub }));
     } catch {}
 
     const entry = ecdhStore.get(`device:${deviceId}`) ?? {};
@@ -262,13 +289,20 @@ export function destroySessionKey(sessionId: string): void {
 }
 
 export async function encryptText(text: string, sessionId: string): Promise<string> {
+  if (!text.startsWith("[reaction:")) {
+    const safety = evaluateSafety(text);
+    if (!safety.allowed) {
+      throw new ValidationError(`Message blocked: ${safety.reason || "Content policy violation."}`);
+    }
+  }
+
   if (typeof window === "undefined" || !crypto?.subtle) {
-    throw new Error("Web Crypto API is not available in this environment.");
+    throw new AppError("Web Crypto API is not available in this environment.", 500, "CRYPTO_UNAVAILABLE");
   }
   const entry = ecdhStore.get(sessionId);
   const sharedKey = entry?.sharedKey;
   if (!sharedKey) {
-    throw new Error("End-to-end encryption key has not been established yet. Message held.");
+    throw new AppError("End-to-end encryption key has not been established yet. Message held.", 400, "KEY_NOT_ESTABLISHED");
   }
 
   const iv = crypto.getRandomValues(new Uint8Array(12));

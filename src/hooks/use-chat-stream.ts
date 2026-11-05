@@ -3,13 +3,15 @@
 import { useEffect, useRef } from "react";
 import { subscribeDeskStream, getDesk } from "@/lib/api-client";
 import type { DeskView } from "@/lib/types";
+import type { LunaStreamEvent } from "@/lib/events";
 
 interface UseChatStreamOptions {
   deviceId: string | null;
-  onEvent: (eventType: string, data: unknown) => void;
+  onEvent: (event: LunaStreamEvent) => void;
   onDeskUpdate: (desk: DeskView) => void;
   onResync: () => void;
   isListening?: boolean;
+  onError?: (error: unknown) => void;
 }
 
 export function useChatStream({
@@ -18,17 +20,20 @@ export function useChatStream({
   onDeskUpdate,
   onResync,
   isListening = false,
+  onError,
 }: UseChatStreamOptions) {
   const onEventRef = useRef(onEvent);
   const onDeskUpdateRef = useRef(onDeskUpdate);
   const onResyncRef = useRef(onResync);
   const isListeningRef = useRef(isListening);
+  const onErrorRef = useRef(onError);
 
   useEffect(() => {
     onEventRef.current = onEvent;
     onDeskUpdateRef.current = onDeskUpdate;
     onResyncRef.current = onResync;
     isListeningRef.current = isListening;
+    onErrorRef.current = onError;
   });
 
   useEffect(() => {
@@ -38,8 +43,8 @@ export function useChatStream({
 
     const unsubscribe = subscribeDeskStream(
       deviceId,
-      (type, data) => {
-        if (!cancelled) onEventRef.current(type, data);
+      (event) => {
+        if (!cancelled) onEventRef.current(event);
       },
       () => {
         if (cancelled) return;
@@ -49,7 +54,9 @@ export function useChatStream({
               onDeskUpdateRef.current(d);
             }
           })
-          .catch(() => {});
+          .catch((err) => {
+            onErrorRef.current?.(err);
+          });
         onResyncRef.current();
       },
     );
@@ -63,7 +70,9 @@ export function useChatStream({
             onDeskUpdateRef.current(data);
           }
         })
-          .catch(() => {});
+        .catch((err) => {
+          onErrorRef.current?.(err);
+        });
     }, 20000);
 
     return () => {

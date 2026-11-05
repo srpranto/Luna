@@ -114,7 +114,7 @@ export function LinkPreviewCard({
       rel="noopener noreferrer"
       onClick={() => triggerHaptic("selection")}
       className={cn(
-        "group mt-2 block overflow-hidden rounded-xl border text-left transition-all duration-200 cursor-pointer touch-manipulation active:scale-[0.98]",
+        "group mt-2 block overflow-hidden rounded-xl border text-left transition-transform duration-100 cursor-pointer touch-manipulation active:scale-[0.96]",
         isMine
           ? "border-zinc-300 bg-zinc-100 hover:bg-zinc-200/90 text-zinc-900 shadow-sm"
           : "border-white/10 bg-zinc-900/70 hover:border-white/20 hover:bg-zinc-850/90 text-zinc-100 shadow-md backdrop-blur-md",
@@ -130,6 +130,7 @@ export function LinkPreviewCard({
             onError={() => setFailedUrl(url)}
             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
           />
+          <div className="absolute inset-0 ring-1 ring-inset ring-white/10 pointer-events-none" />
         </div>
       )}
 
