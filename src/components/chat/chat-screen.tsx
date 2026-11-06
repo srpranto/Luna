@@ -163,6 +163,22 @@ export function ChatScreen({
 
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const [unreadScrolledCount, setUnreadScrolledCount] = useState(0);
+  const prevMessagesCountRef = useRef(messages.length);
+
+  useEffect(() => {
+    const prevCount = prevMessagesCountRef.current;
+    prevMessagesCountRef.current = messages.length;
+
+    if (showScrollBottom && messages.length > prevCount) {
+      const newMessages = messages.slice(prevCount);
+      const incomingCount = newMessages.filter((m) => !m.mine && !m.system).length;
+      if (incomingCount > 0) {
+        setUnreadScrolledCount((prev) => prev + incomingCount);
+      }
+    }
+  }, [messages, showScrollBottom]);
+
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportReason, setReportReason] = useState("Spam or unwanted advertising");
   const [confirmNext, setConfirmNext] = useState(false);
@@ -235,7 +251,11 @@ export function ChatScreen({
     const el = transcriptScrollRef.current;
     if (!el) return;
     const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    setShowScrollBottom(distanceToBottom > 160);
+    const isScrolledUp = distanceToBottom > 160;
+    setShowScrollBottom(isScrolledUp);
+    if (!isScrolledUp) {
+      setUnreadScrolledCount(0);
+    }
   }
 
   function handleScrollToBottom() {
@@ -244,6 +264,7 @@ export function ChatScreen({
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     setShowScrollBottom(false);
+    setUnreadScrolledCount(0);
   }
 
   return (
@@ -579,7 +600,13 @@ export function ChatScreen({
           outboundReconnect={outboundReconnect}
           inboundReconnect={inboundReconnect}
         />
-        <ScrollToBottomButton visible={showScrollBottom} onClick={handleScrollToBottom} />
+        <ScrollToBottomButton
+          visible={showScrollBottom}
+          onClick={handleScrollToBottom}
+          unreadCount={unreadScrolledCount}
+          peerTyping={peerTyping}
+          peerCallsign={peerCallsign}
+        />
       </div>
 
       {showReportModal && (

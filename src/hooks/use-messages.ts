@@ -27,6 +27,7 @@ import {
 import { playMessagePop, playMessageReceived, triggerHaptic } from "@/lib/sound-effects";
 import { notifyUser, clearNotificationBadge } from "@/lib/notifications";
 import { evaluateSafety } from "@/lib/content-moderation";
+import { UNRESPONDED_NOTIFICATION_DELAY_MS } from "@/lib/constants";
 
 const REACTION_REGEX = /^\[reaction:(.+?)\]$/u;
 
@@ -37,6 +38,7 @@ interface UseMessagesOptions {
   onHistoryUpdated?: (sessions: HistorySession[]) => void;
   onSessionEndedNotice?: () => void;
   notifyError?: (err: unknown) => void;
+  unrespondedDelayMs?: number;
 }
 
 function computeMergedMessages(
@@ -109,6 +111,7 @@ export function useMessages({
   onHistoryUpdated,
   onSessionEndedNotice,
   notifyError,
+  unrespondedDelayMs,
 }: UseMessagesOptions) {
   const [messages, setRawMessages] = useState<ChatMessage[]>(() => {
     if (sessionId) {
@@ -153,6 +156,66 @@ export function useMessages({
   const sendQueueRef = useRef<Promise<void>>(Promise.resolve());
   const unreadRef = useRef(0);
 
+  const delayMs = unrespondedDelayMs ?? UNRESPONDED_NOTIFICATION_DELAY_MS;
+  const unrespondedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingNotificationRef = useRef<{
+    fromCallsign: string;
+    text: string;
+    sessionId: string;
+  } | null>(null);
+  const hasNotifiedRef = useRef<boolean>(false);
+
+  const cancelUnrespondedNotification = useCallback(() => {
+    if (unrespondedTimerRef.current !== null) {
+      clearTimeout(unrespondedTimerRef.current);
+      unrespondedTimerRef.current = null;
+    }
+    pendingNotificationRef.current = null;
+    hasNotifiedRef.current = false;
+  }, []);
+
+  const scheduleUnrespondedNotification = useCallback(
+    (targetSessionId: string, fromCallsign: string, text: string) => {
+      // Keep pending message preview updated with the latest message
+      pendingNotificationRef.current = {
+        fromCallsign,
+        text,
+        sessionId: targetSessionId,
+      };
+
+      // If user was already alerted for this unresponded streak, do not trigger duplicate alerts
+      if (hasNotifiedRef.current) {
+        return;
+      }
+
+      // Start the unresponded notification timer if not already ticking
+      if (unrespondedTimerRef.current === null) {
+        unrespondedTimerRef.current = setTimeout(() => {
+          unrespondedTimerRef.current = null;
+          const pending = pendingNotificationRef.current;
+          if (pending && pending.sessionId === targetSessionId && !hasNotifiedRef.current) {
+            hasNotifiedRef.current = true;
+            unreadRef.current += 1;
+            const clean = pending.text.replace(/[\r\n]+/g, " ").trim().slice(0, 48);
+            notifyUser({
+              title: `Message from ${pending.fromCallsign}`,
+              body: clean || "Encrypted message received",
+              type: "message",
+              tag: "luna-message",
+            });
+          }
+        }, delayMs);
+      }
+    },
+    [delayMs],
+  );
+
+  useEffect(() => {
+    return () => {
+      cancelUnrespondedNotification();
+    };
+  }, [sessionId, cancelUnrespondedNotification]);
+
   const triggerFloatingReaction = useCallback((emoji: string) => {
     const id = crypto.randomUUID();
     const leftPercent = 20 + Math.random() * 60;
@@ -163,21 +226,11 @@ export function useMessages({
     setFloatingReactions((prev) => prev.filter((item) => item.id !== id));
   }, []);
 
-  const notifyUnread = useCallback((fromCallsign: string, text: string) => {
-    unreadRef.current += 1;
-    const clean = text.replace(/[\r\n]+/g, " ").trim().slice(0, 48);
-    notifyUser({
-      title: `Message from ${fromCallsign}`,
-      body: clean || "Encrypted message received",
-      type: "message",
-      tag: "luna-message",
-    });
-  }, []);
-
   const clearUnread = useCallback(() => {
     unreadRef.current = 0;
+    cancelUnrespondedNotification();
     clearNotificationBadge();
-  }, []);
+  }, [cancelUnrespondedNotification]);
 
   const decryptPack = useCallback(async (pack: MessagesPack, targetDeviceId: string) => {
     if (pack.session.peerPublicKey) {
@@ -238,11 +291,11 @@ export function useMessages({
           onActivity?.();
           playMessageReceived();
           triggerHaptic("message-received");
-          notifyUnread(lastMsg.fromCallsign, lastMsg.body);
+          scheduleUnrespondedNotification(sessionId, lastMsg.fromCallsign, lastMsg.body);
         }
       }
     },
-    [deviceId, notifyUnread, onActivity, onHistoryUpdated],
+    [deviceId, scheduleUnrespondedNotification, onActivity, onHistoryUpdated],
   );
 
   const handleSendMessage = useCallback(
@@ -250,6 +303,7 @@ export function useMessages({
       if (!deviceId || !currentSession.id || !text.trim() || currentSession.closed) return;
 
       onActivity?.();
+      cancelUnrespondedNotification();
       const rawText = text.trim();
       let textToSend = rawText;
       if (replyingTo) {
@@ -288,7 +342,7 @@ export function useMessages({
       triggerHaptic("message-sent");
       setMessages((prev) => [...prev, optimisticMsg]);
 
-      sendQueueRef.current = sendQueueRef.current
+      const nextPromise = sendQueueRef.current
         .catch(() => {})
         .then(async () => {
           try {
@@ -325,8 +379,10 @@ export function useMessages({
             }
           }
         });
+      sendQueueRef.current = nextPromise;
+      await nextPromise;
     },
-    [deviceId, replyingTo, onActivity, decryptPack, mergeAndStoreMessages, onSessionEndedNotice, notifyError, setMessages],
+    [deviceId, replyingTo, onActivity, decryptPack, mergeAndStoreMessages, onSessionEndedNotice, notifyError, setMessages, cancelUnrespondedNotification],
   );
 
   const handleRetryMessage = useCallback(
@@ -334,6 +390,7 @@ export function useMessages({
       const target = messagesRef.current.find((m) => m.id === messageId || m.clientMsgId === messageId);
       if (!target || !deviceId || !currentSession.id || currentSession.closed) return;
 
+      cancelUnrespondedNotification();
       const clientMsgId = target.clientMsgId || target.id;
       const textToSend = target.body;
 
@@ -381,7 +438,7 @@ export function useMessages({
           }
         });
     },
-    [deviceId, decryptPack, mergeAndStoreMessages, onSessionEndedNotice, setMessages],
+    [deviceId, decryptPack, mergeAndStoreMessages, onSessionEndedNotice, setMessages, cancelUnrespondedNotification],
   );
 
   const handleEditMessage = useCallback(
@@ -464,6 +521,7 @@ export function useMessages({
     async (emoji: string, currentSession: SessionView) => {
       if (!deviceId || !currentSession.id) return;
       onActivity?.();
+      cancelUnrespondedNotification();
       triggerFloatingReaction(emoji);
       try {
         if (currentSession.peerPublicKey) {
@@ -478,7 +536,7 @@ export function useMessages({
         });
       } catch {}
     },
-    [deviceId, onActivity, triggerFloatingReaction],
+    [deviceId, onActivity, cancelUnrespondedNotification, triggerFloatingReaction],
   );
 
   return {
@@ -498,5 +556,6 @@ export function useMessages({
     mergeAndStoreMessages,
     clearUnread,
     hydrateCachedMessages: hydrateCached,
+    cancelUnrespondedNotification,
   };
 }

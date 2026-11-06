@@ -1331,6 +1331,227 @@ export function registerTier2Tests() {
       const standardErr = new Error('Random error');
       expect(isApiClientError(standardErr)).toBe(false);
     });
+
+    it('TC-2.16.16: Unresponded 2-minute message notification delay and response cancellation', async () => {
+      const { UNRESPONDED_NOTIFICATION_DELAY_MS } = await import('@/lib/constants.ts');
+      const { subscribeToToastNotifications, notifyUser } = await import('@/lib/notifications.ts');
+
+      // 1. Verify exact 2-minute delay constant (120,000 ms)
+      expect(UNRESPONDED_NOTIFICATION_DELAY_MS).toBe(120000);
+
+      const receivedNotifications: any[] = [];
+      const unsubscribe = subscribeToToastNotifications((toast) => {
+        receivedNotifications.push(toast);
+      });
+
+      try {
+        // 2. Scenario: Person 1 sends text, Person 2 responds in time -> NO notification
+        let timer: any = null;
+        let pending: any = null;
+        let hasNotified = false;
+
+        const schedule = (fromCallsign: string, text: string, delay: number) => {
+          pending = { fromCallsign, text };
+          if (!timer && !hasNotified) {
+            timer = setTimeout(() => {
+              timer = null;
+              if (pending && !hasNotified) {
+                hasNotified = true;
+                notifyUser({
+                  title: `Message from ${pending.fromCallsign}`,
+                  body: pending.text,
+                  type: 'message',
+                  tag: 'luna-message',
+                });
+              }
+            }, delay);
+          }
+        };
+
+        const cancel = () => {
+          if (timer) {
+            clearTimeout(timer);
+            timer = null;
+          }
+          pending = null;
+          hasNotified = false;
+        };
+
+        // Person 1 sends message
+        schedule('Midnight-Echo', 'Hey there!', 40);
+
+        // Person 2 responds before timer expires (at 15ms)
+        await new Promise((r) => setTimeout(r, 15));
+        cancel();
+
+        // Wait past original timer duration
+        await new Promise((r) => setTimeout(r, 40));
+        expect(receivedNotifications.length).toBe(0);
+
+        // 3. Scenario: Person 1 sends text, Person 2 does NOT respond -> notification fires after delay
+        schedule('Midnight-Echo', 'Are you still there?', 40);
+
+        // Person 1 sends another message while Person 2 is still unresponded
+        await new Promise((r) => setTimeout(r, 15));
+        schedule('Midnight-Echo', 'Testing 1 2 3', 40);
+
+        // Wait for unresponded notification to fire
+        await new Promise((r) => setTimeout(r, 45));
+        expect(receivedNotifications.length).toBe(1);
+        expect(receivedNotifications[0].title).toBe('Message from Midnight-Echo');
+        expect(receivedNotifications[0].message).toBe('Testing 1 2 3');
+
+        // Subsequent message during the same unresponded streak does not trigger duplicate spam
+        schedule('Midnight-Echo', 'Another text', 40);
+        await new Promise((r) => setTimeout(r, 50));
+        expect(receivedNotifications.length).toBe(1);
+
+        // Once Person 2 responds, cancel resets state for next turn
+        cancel();
+        expect(hasNotified).toBe(false);
+      } finally {
+        unsubscribe();
+      }
+    });
+
+    it('TC-2.16.17: Smart scroll unread message pill and typing indicator behavior', async () => {
+      // 1. Simulate ChatScreen unread count tracking when scrolled up
+      let distanceToBottom = 200; // Scrolled up > 160
+      let showScrollBottom = distanceToBottom > 160;
+      let unreadScrolledCount = 0;
+      let prevCount = 0;
+
+      const trackNewMessages = (messages: Array<{ mine: boolean; system: boolean; body: string }>) => {
+        if (showScrollBottom && messages.length > prevCount) {
+          const newMessages = messages.slice(prevCount);
+          const incoming = newMessages.filter((m) => !m.mine && !m.system).length;
+          if (incoming > 0) {
+            unreadScrolledCount += incoming;
+          }
+        }
+        prevCount = messages.length;
+      };
+
+      // Initial messages
+      const msgs = [
+        { mine: false, system: false, body: 'Hello' },
+        { mine: true, system: false, body: 'Hey' },
+      ];
+      trackNewMessages(msgs);
+      expect(unreadScrolledCount).toBe(1); // User started scrolled up, saw 1 peer message
+
+      // User sends a message (mine: true) -> unread count should NOT increase
+      msgs.push({ mine: true, system: false, body: 'What are you working on?' });
+      trackNewMessages(msgs);
+      expect(unreadScrolledCount).toBe(1);
+
+      // System notification arrives (system: true) -> unread count should NOT increase
+      msgs.push({ mine: false, system: true, body: 'Resonance established' });
+      trackNewMessages(msgs);
+      expect(unreadScrolledCount).toBe(1);
+
+      // Peer sends 2 messages while user is scrolled up
+      msgs.push({ mine: false, system: false, body: 'Building a nocturnal app' });
+      msgs.push({ mine: false, system: false, body: 'With end-to-end encryption' });
+      trackNewMessages(msgs);
+      expect(unreadScrolledCount).toBe(3);
+
+      // User scrolls back down to bottom (distanceToBottom <= 160)
+      distanceToBottom = 50;
+      showScrollBottom = distanceToBottom > 160;
+      if (!showScrollBottom) {
+        unreadScrolledCount = 0;
+      }
+      expect(showScrollBottom).toBe(false);
+      expect(unreadScrolledCount).toBe(0);
+
+      // Peer typing indicator state priority logic
+      const getScrollButtonState = (unread: number, typing: boolean, callsign: string) => {
+        if (unread > 0) {
+          return { mode: 'unread', label: `${unread} new ${unread === 1 ? 'message' : 'messages'}` };
+        }
+        if (typing) {
+          return { mode: 'typing', label: `${callsign || 'Stranger'} is typing…` };
+        }
+        return { mode: 'default', label: 'Jump to latest' };
+      };
+
+      // No unread, peer typing -> typing mode
+      expect(getScrollButtonState(0, true, 'Midnight-Echo')).toEqual({
+        mode: 'typing',
+        label: 'Midnight-Echo is typing…',
+      });
+
+      // Unread arrives while peer typing -> unread count takes priority
+      expect(getScrollButtonState(2, true, 'Midnight-Echo')).toEqual({
+        mode: 'unread',
+        label: '2 new messages',
+      });
+
+      // Neither -> default jump pill
+      expect(getScrollButtonState(0, false, 'Midnight-Echo')).toEqual({
+        mode: 'default',
+        label: 'Jump to latest',
+      });
+    });
+
+    it('TC-2.16.18: Poetic farewell parting word dispatch before session teardown', async () => {
+      const { MIDNIGHT_FAREWELLS } = await import('@/lib/constants.ts');
+
+      // 1. Verify curated midnight farewells
+      expect(MIDNIGHT_FAREWELLS).toContain('🌙 Rest well, stranger');
+      expect(MIDNIGHT_FAREWELLS).toContain('✨ Safe travels through the night');
+      expect(MIDNIGHT_FAREWELLS).toContain('🤍 Thank you for the conversation');
+      expect(MIDNIGHT_FAREWELLS).toContain('🪐 Until our orbits cross again');
+
+      // 2. Setup paired session to verify farewell dispatch and closure
+      const { alice, bob, session } = await createPairedSession();
+
+      // Alice selects a poetic farewell before leaving
+      const chosenFarewell = MIDNIGHT_FAREWELLS[0]; // '🌙 Rest well, stranger'
+
+      // Simulate handleLeaveSession with chosenFarewell
+      let farewellSent = false;
+      const handleLeaveWithFarewell = async (farewell?: string) => {
+        if (farewell && !session.closed) {
+          await callApi('sendMessage', {
+            deviceId: alice.deviceId,
+            sessionId: session.id,
+            body: farewell,
+            clientMsgId: crypto.randomUUID(),
+          });
+          farewellSent = true;
+        }
+        await callApi('leaveSession', {
+          deviceId: alice.deviceId,
+          sessionId: session.id,
+        });
+      };
+
+      await handleLeaveWithFarewell(chosenFarewell);
+      expect(farewellSent).toBe(true);
+
+      // Verify Bob received the farewell message before the session was closed
+      const bobRes = await callApi('listMessages', { deviceId: bob.deviceId, sessionId: session.id });
+      expect(bobRes.ok).toBe(true);
+      const bobPack = bobRes.data;
+      expect(bobPack.session?.closed).toBe(true);
+
+      // In Bob's transcript, the last non-system message should match chosenFarewell
+      const nonSystemMessages = bobPack.messages.filter((m: any) => !m.system);
+      const lastMessage = nonSystemMessages[nonSystemMessages.length - 1];
+      expect(lastMessage?.body).toBe(chosenFarewell);
+
+      // Verify farewell detection logic for rendering the luminous parting card
+      const isFarewell = (MIDNIGHT_FAREWELLS as readonly string[]).includes(lastMessage?.body);
+      expect(isFarewell).toBe(true);
+
+      // 3. Scenario: Leaving silently does NOT dispatch farewell
+      const pair2 = await createPairedSession();
+      farewellSent = false;
+      await handleLeaveWithFarewell(); // no farewell argument -> silent exit
+      expect(farewellSent).toBe(false);
+    });
   });
 }
 

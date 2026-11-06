@@ -4,6 +4,16 @@ export const STRANGER_TTL_MINUTES = 1440;
 export const IDLE_AWAY_THRESHOLD_MS = 60000;
 export const ABANDON_AFTER_MINUTES = 5;
 export const FRIEND_TTL_DAYS = 7;
+export const UNRESPONDED_NOTIFICATION_DELAY_MS = 2 * 60 * 1000; // 2 minutes (120,000ms)
+
+export const MIDNIGHT_FAREWELLS = [
+  "🌙 Rest well, stranger",
+  "✨ Safe travels through the night",
+  "🤍 Thank you for the conversation",
+  "🪐 Until our orbits cross again",
+] as const;
+
+export type MidnightFarewell = (typeof MIDNIGHT_FAREWELLS)[number];
 
 export function sanitizeInterests(input: unknown): string[] {
   if (!input) return [];

@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect } from "react";
-import { DoorOpen, Compass, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { DoorOpen, Compass, X, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { triggerHaptic } from "@/lib/sound-effects";
+import { MIDNIGHT_FAREWELLS } from "@/lib/constants";
+import { cn } from "@/lib/utils";
 
 interface LeaveChatDialogProps {
   isOpen: boolean;
   type: "chat" | "queue";
-  onConfirm: () => void;
+  onConfirm: (farewell?: string) => void;
   onCancel: () => void;
 }
 
@@ -18,6 +20,18 @@ export function LeaveChatDialog({
   onConfirm,
   onCancel,
 }: LeaveChatDialogProps) {
+  const [selectedFarewell, setSelectedFarewell] = useState<string | null>(null);
+
+  const handleCancel = useCallback(() => {
+    setSelectedFarewell(null);
+    onCancel();
+  }, [onCancel]);
+
+  const handleConfirm = useCallback((farewell?: string) => {
+    setSelectedFarewell(null);
+    onConfirm(farewell);
+  }, [onConfirm]);
+
   useEffect(() => {
     if (!isOpen) return;
 
@@ -25,14 +39,14 @@ export function LeaveChatDialog({
       if (e.key === "Escape") {
         e.stopPropagation();
         e.stopImmediatePropagation();
-        onCancel();
+        handleCancel();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isOpen, onCancel]);
+  }, [isOpen, handleCancel]);
 
   if (!isOpen) return null;
 
@@ -47,7 +61,7 @@ export function LeaveChatDialog({
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           triggerHaptic("tap");
-          onCancel();
+          handleCancel();
         }
       }}
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
@@ -74,7 +88,7 @@ export function LeaveChatDialog({
             type="button"
             onClick={() => {
               triggerHaptic("tap");
-              onCancel();
+              handleCancel();
             }}
             aria-label="Close dialog"
             className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors cursor-pointer touch-manipulation"
@@ -89,7 +103,39 @@ export function LeaveChatDialog({
             : "You will stop searching and be removed from the midnight matchmaking queue."}
         </p>
 
-        <div className="mt-5 flex items-center justify-end gap-2.5">
+        {isChat && (
+          <div className="mt-4 space-y-2">
+            <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 block">
+              Leave a parting thought? (Optional)
+            </span>
+            <div className="grid grid-cols-1 gap-1.5">
+              {MIDNIGHT_FAREWELLS.map((farewell) => {
+                const isSelected = selectedFarewell === farewell;
+                return (
+                  <button
+                    key={farewell}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setSelectedFarewell(isSelected ? null : farewell);
+                    }}
+                    className={cn(
+                      "flex items-center justify-between px-3 py-2 rounded-xl border text-xs text-left transition-all cursor-pointer touch-manipulation active:scale-[0.98]",
+                      isSelected
+                        ? "border-sky-400/50 bg-sky-950/40 text-sky-200 ring-1 ring-sky-400/30 shadow-[0_0_12px_rgba(14,165,233,0.15)]"
+                        : "border-white/10 bg-zinc-900/60 text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100",
+                    )}
+                  >
+                    <span>{farewell}</span>
+                    {isSelected && <Sparkles className="h-3.5 w-3.5 text-sky-300 shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="mt-5 flex items-center justify-end gap-2.5 flex-wrap">
           <Button
             autoFocus
             type="button"
@@ -97,23 +143,52 @@ export function LeaveChatDialog({
             size="sm"
             onClick={() => {
               triggerHaptic("tap");
-              onCancel();
+              handleCancel();
             }}
-            className="h-9 px-4 text-xs font-medium text-zinc-300 hover:text-zinc-100 hover:bg-zinc-900 rounded-xl cursor-pointer touch-manipulation active:scale-[0.96] transition-all"
+            className="h-9 px-3.5 text-xs font-medium text-zinc-300 hover:text-zinc-100 hover:bg-zinc-900 rounded-xl cursor-pointer touch-manipulation active:scale-[0.96] transition-all"
           >
-            {isChat ? "Stay in Chat" : "Keep Searching"}
+            {isChat ? "Stay" : "Keep Searching"}
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => {
-              triggerHaptic("disconnect");
-              onConfirm();
-            }}
-            className="h-9 px-4 text-xs font-semibold bg-white text-zinc-950 hover:bg-zinc-200 rounded-xl shadow-[0_0_20px_rgba(255,255,255,0.15)] active:scale-[0.96] transition-all cursor-pointer touch-manipulation"
-          >
-            {isChat ? "Leave Chat" : "Leave Queue"}
-          </Button>
+
+          {isChat && selectedFarewell ? (
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  triggerHaptic("disconnect");
+                  handleConfirm();
+                }}
+                className="h-9 px-3 text-xs font-medium text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 rounded-xl cursor-pointer touch-manipulation active:scale-[0.96] transition-all"
+              >
+                Leave Silently
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  triggerHaptic("disconnect");
+                  handleConfirm(selectedFarewell);
+                }}
+                className="h-9 px-4 text-xs font-semibold bg-sky-500 hover:bg-sky-400 text-zinc-950 rounded-xl shadow-[0_0_20px_rgba(14,165,233,0.3)] active:scale-[0.96] transition-all cursor-pointer touch-manipulation"
+              >
+                Say Goodbye & Leave
+              </Button>
+            </>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                triggerHaptic("disconnect");
+                handleConfirm();
+              }}
+              className="h-9 px-4 text-xs font-semibold bg-white text-zinc-950 hover:bg-zinc-200 rounded-xl shadow-[0_0_20px_rgba(255,255,255,0.15)] active:scale-[0.96] transition-all cursor-pointer touch-manipulation"
+            >
+              {isChat ? "Leave Chat" : "Leave Queue"}
+            </Button>
+          )}
         </div>
       </div>
     </div>

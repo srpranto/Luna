@@ -14,11 +14,12 @@ import {
 import { formatClock, formatRemaining } from "@/lib/identity";
 import type { ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { ArrowRight, Pencil, Trash2, Reply, Lock, Check, Copy } from "lucide-react";
+import { ArrowRight, Pencil, Trash2, Reply, Lock, Check, Copy, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { triggerHaptic } from "@/lib/sound-effects";
 import { LinkPreviewCard } from "@/components/chat/link-preview-card";
 import { DeliveryCheckmark } from "@/components/chat/delivery-checkmark";
+import { MIDNIGHT_FAREWELLS } from "@/lib/constants";
 
 const URL_REGEX = /https?:\/\/[^\s<]+[^<.,:;"')\]\s]/i;
 
@@ -684,6 +685,12 @@ export function MessageList({
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPressTriggeredRef = useRef<boolean>(false);
 
+  const lastNonSystemMsg = [...messages].reverse().find((m) => !m.system);
+  const isFarewell = Boolean(
+    lastNonSystemMsg &&
+    (MIDNIGHT_FAREWELLS as readonly string[]).includes(lastNonSystemMsg.body),
+  );
+
   useEffect(() => {
     return () => {
       if (longPressTimerRef.current) {
@@ -989,6 +996,20 @@ export function MessageList({
               <span className="h-1.5 w-1.5 rounded-full bg-zinc-400 animate-bounce [animation-delay:-0.15s]" />
               <span className="h-1.5 w-1.5 rounded-full bg-zinc-400 animate-bounce" />
             </div>
+          </div>
+        )}
+
+        {closed && isFarewell && lastNonSystemMsg && (
+          <div className="animate-fade-up mx-auto my-3 w-full max-w-sm rounded-2xl border border-sky-400/25 bg-gradient-to-b from-sky-950/40 via-zinc-950/80 to-zinc-950 p-4 text-center shadow-[0_8px_32px_rgba(14,165,233,0.12)] backdrop-blur-xl">
+            <div className="mx-auto flex h-8 w-8 items-center justify-center rounded-full bg-sky-500/15 border border-sky-400/30 text-sky-300 mb-2">
+              <Sparkles className="h-4 w-4" />
+            </div>
+            <span className="text-[10px] uppercase font-mono tracking-wider text-sky-400 font-medium block">
+              Parting Thought • {lastNonSystemMsg.mine ? "You" : peerCallsign || "Stranger"}
+            </span>
+            <p className="mt-1.5 text-xs sm:text-sm font-medium text-zinc-100 italic">
+              &ldquo;{lastNonSystemMsg.body}&rdquo;
+            </p>
           </div>
         )}
 

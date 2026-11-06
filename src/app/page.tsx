@@ -277,12 +277,14 @@ export default function Home() {
     mergeAndStoreMessages,
     clearUnread,
     hydrateCachedMessages,
+    cancelUnrespondedNotification,
   } = useMessages({
     deviceId,
     sessionId: currentSession?.id,
     onActivity: () => {},
     onHistoryUpdated: setHistorySessions,
     onSessionEndedNotice: () => {
+      cancelUnrespondedNotification();
       markSessionClosed(currentSession?.id);
       playLeaveTone();
       triggerHaptic("disconnect");
@@ -789,15 +791,23 @@ export default function Home() {
     }
   }, [deviceId, busy, notifyError, handleDeskUpdate]);
 
-  const handleLeaveSession = useCallback(async () => {
+  const handleLeaveSession = useCallback(async (farewell?: string) => {
     if (!deviceId || busy || isLeavingSessionRef.current) return;
     const targetSessionId = currentSession?.id;
+    if (farewell && currentSession && !currentSession.closed) {
+      try {
+        await runSendMessage(farewell, currentSession, desk?.station.callsign ?? "You");
+      } catch {
+        // Proceed with teardown even if farewell dispatch fails
+      }
+    }
     if (currentSession?.peerId) {
       recentPeersRef.current.set(currentSession.peerId, Date.now());
     }
     setBusy(true);
     isLeavingSessionRef.current = true;
     activeSessionRef.current = null;
+    cancelUnrespondedNotification();
     setExitConfirm(null);
     exitConfirmRef.current = null;
     playLeaveTone();
@@ -830,7 +840,7 @@ export default function Home() {
       isLeavingSessionRef.current = false;
       setBusy(false);
     }
-  }, [deviceId, busy, currentSession, setIsAway, setReplyingTo, setMessages, handleDeskUpdate]);
+  }, [deviceId, busy, currentSession, desk, runSendMessage, setIsAway, setReplyingTo, setMessages, handleDeskUpdate, cancelUnrespondedNotification]);
 
   const handleRequestLeaveSession = useCallback(() => {
     if (activeSessionRef.current && !activeSessionRef.current.closed) {
@@ -1536,12 +1546,12 @@ export default function Home() {
             }
           }
         }}
-        onConfirm={() => {
+        onConfirm={(farewell?: string) => {
           const type = exitConfirm?.type;
           setExitConfirm(null);
           exitConfirmRef.current = null;
           if (type === "chat") {
-            void handleLeaveSession();
+            void handleLeaveSession(farewell);
           } else {
             void handleLeaveQueue();
           }
