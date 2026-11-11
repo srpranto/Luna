@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { motion } from "framer-motion";
 import { Smile, Hand, Heart, PartyPopper, X } from "lucide-react";
+import { springTactile } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/sound-effects";
 
@@ -81,10 +83,14 @@ export function EmojiPicker({ onSelectEmoji, onClose }: EmojiPickerProps) {
         aria-hidden="true"
       />
 
-      <div
+      <motion.div
         role="dialog"
         aria-label="Google Keyboard Emojis"
-        className="absolute bottom-full right-0 sm:right-2 mb-2 w-[calc(100vw-1.5rem)] sm:w-88 max-w-sm rounded-2xl border border-white/15 bg-zinc-950/95 backdrop-blur-2xl shadow-[0_16px_40px_rgba(0,0,0,0.85),inset_0_1px_0_0_rgba(255,255,255,0.12)] z-50 p-2.5 animate-in fade-in slide-in-from-bottom-2 duration-150"
+        initial={{ opacity: 0, scale: 0.95, y: 8 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 8 }}
+        transition={springTactile}
+        className="absolute bottom-full right-0 sm:right-2 mb-2 w-[calc(100vw-1.5rem)] sm:w-88 max-w-sm rounded-2xl border border-white/15 bg-zinc-950/95 backdrop-blur-2xl shadow-[0_16px_40px_rgba(0,0,0,0.85),inset_0_1px_0_0_rgba(255,255,255,0.12)] z-50 p-2.5"
       >
         {/* Category Header */}
         <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-2">
@@ -151,7 +157,7 @@ export function EmojiPicker({ onSelectEmoji, onClose }: EmojiPickerProps) {
             </button>
           ))}
         </div>
-      </div>
+      </motion.div>
     </>
   );
 }

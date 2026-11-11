@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { ExternalLink, Globe } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/sound-effects";
@@ -108,13 +109,15 @@ export function LinkPreviewCard({
   }
 
   return (
-    <a
+    <motion.a
       href={data.url}
       target="_blank"
       rel="noopener noreferrer"
       onClick={() => triggerHaptic("selection")}
+      whileHover={{ y: -2 }}
+      whileTap={{ scale: 0.96 }}
       className={cn(
-        "group mt-2 block overflow-hidden rounded-xl border text-left transition-transform duration-100 cursor-pointer touch-manipulation active:scale-[0.96]",
+        "group mt-2 block overflow-hidden rounded-xl border text-left cursor-pointer touch-manipulation",
         isMine
           ? "border-zinc-300 bg-zinc-100 hover:bg-zinc-200/90 text-zinc-900 shadow-sm"
           : "border-white/10 bg-zinc-900/70 hover:border-white/20 hover:bg-zinc-850/90 text-zinc-100 shadow-md backdrop-blur-md",
@@ -174,6 +177,6 @@ export function LinkPreviewCard({
           </div>
         )}
       </div>
-    </a>
+    </motion.a>
   );
 }

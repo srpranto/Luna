@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
   Ban,
@@ -23,9 +24,12 @@ import { MessageList } from "@/components/chat/message-list";
 import { ScrollToBottomButton } from "@/components/chat/scroll-to-bottom-button";
 import { MessageInput } from "@/components/chat/message-input";
 import { triggerHaptic } from "@/lib/sound-effects";
+import { springTactile } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@/lib/types";
 import { SessionElapsedBadge } from "@/components/chat/chat-header";
+import { SwipeToSkip } from "@/components/chat/swipe-to-skip";
+import { TypingWaveform } from "@/components/chat/typing-waveform";
 
 export function ChatScreen({
   sessionKind,
@@ -270,7 +274,7 @@ export function ChatScreen({
   return (
     <section className="relative flex min-h-0 flex-1 flex-col">
       {/* 1. Mobile Phone Unified Dynamic Island Capsule Header */}
-      <div className="sm:hidden flex items-center justify-between gap-1.5 mx-2 mt-2 px-3 py-2 rounded-2xl border border-white/[0.12] bg-zinc-900/60 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.12)] shrink-0 z-30">
+      <div className="sm:hidden flex items-center justify-between gap-1.5 mx-2 mt-2 px-3 py-2 rounded-2xl border border-white/[0.08] bg-[#0c101a]/80 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.08)] shrink-0 z-30">
         {/* Left: Full Callsign + Active/Away Status in Stranger's Location */}
         <div className="flex items-center gap-2 min-w-0 max-w-[150px]">
           <div className="min-w-0 flex flex-col">
@@ -289,9 +293,7 @@ export function ChatScreen({
                 )}
               />
               {peerTyping ? (
-                <span className="text-[10px] font-mono text-emerald-400 animate-pulse block leading-none">
-                  typing...
-                </span>
+                <TypingWaveform variant="inline" />
               ) : peerPresence === "away" ? (
                 <span className="text-[10px] font-mono text-amber-400/90 block leading-none">
                   away
@@ -376,7 +378,7 @@ export function ChatScreen({
       </div>
 
       {/* 2. Desktop Top Bar (Hidden on Mobile) */}
-      <div className="hidden sm:flex items-center justify-between gap-2 sm:gap-3 border-b border-white/[0.08] bg-zinc-950/40 px-3 py-1.5 sm:px-6 sm:py-2 backdrop-blur-md">
+      <div className="hidden sm:flex items-center justify-between gap-2 sm:gap-3 border-b border-white/[0.08] bg-[#06070a]/60 px-3 py-1.5 sm:px-6 sm:py-2 backdrop-blur-md">
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="text-[11px] sm:text-xs text-zinc-500 font-mono">
             {sessionKind === "friend" ? "Direct Line" : "Open Orbit"}
@@ -609,106 +611,127 @@ export function ChatScreen({
         />
       </div>
 
-      {showReportModal && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="report-modal-title"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) closeReportModal();
-          }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in"
-        >
-          <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-zinc-950 p-5 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <div className="flex items-center gap-2 text-rose-400 font-medium">
-                <AlertTriangle className="h-4 w-4" />
-                <span id="report-modal-title" className="text-sm font-semibold text-zinc-100">
-                  Report Stranger
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={closeReportModal}
-                aria-label="Close dialog"
-                className="text-zinc-500 hover:text-zinc-200 transition-colors p-1"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <p className="text-xs text-zinc-400 leading-relaxed">
-              Help keep Luna safe. Submitting a report records the violation category and permanently blocks this user. Message content is not collected or retained.
-            </p>
-
-            <div className="space-y-2">
-              {[
-                "Spam or unwanted advertising",
-                "Harassment or offensive behavior",
-                "Inappropriate or harmful content",
-                "Other safety concern",
-              ].map((reason) => (
-                <label
-                  key={reason}
-                  className={cn(
-                    "flex items-center gap-2.5 p-2.5 rounded-xl border text-xs cursor-pointer transition-colors",
-                    reportReason === reason
-                      ? "border-rose-500/50 bg-rose-500/10 text-zinc-100"
-                      : "border-white/5 bg-zinc-900/50 text-zinc-300 hover:bg-zinc-900",
-                  )}
-                >
-                  <input
-                    type="radio"
-                    name="reportReason"
-                    value={reason}
-                    checked={reportReason === reason}
-                    onChange={(e) => setReportReason(e.target.value)}
-                    className="accent-rose-500"
-                  />
-                  <span>{reason}</span>
-                </label>
-              ))}
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={closeReportModal}
-                className="text-xs text-zinc-400 hover:text-zinc-200"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => {
-                  triggerHaptic("heavy");
-                  closeReportModal();
-                  onReport?.(reportReason);
-                }}
-                className="text-xs bg-rose-600 hover:bg-rose-700 text-white font-medium"
-              >
-                Submit Report & Block
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {actionSheetOpen && !closed && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Chat Actions"
-          onClick={closeActionSheet}
-          className="fixed inset-0 z-50 flex flex-col justify-end bg-black/65 backdrop-blur-sm animate-fade-up sm:hidden"
-        >
-          <div
-            className="w-full rounded-t-3xl border-t border-white/[0.14] bg-zinc-950/95 p-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-2xl animate-sheet-up space-y-3"
-            onClick={(e) => e.stopPropagation()}
+      <AnimatePresence>
+        {showReportModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="report-modal-title"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) closeReportModal();
+            }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
           >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 16 }}
+              transition={springTactile}
+              className="w-full max-w-sm rounded-2xl border border-white/10 bg-zinc-950 p-5 shadow-2xl space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <div className="flex items-center gap-2 text-rose-400 font-medium">
+                  <AlertTriangle className="h-4 w-4" />
+                  <span id="report-modal-title" className="text-sm font-semibold text-zinc-100">
+                    Report Stranger
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeReportModal}
+                  aria-label="Close dialog"
+                  className="text-zinc-500 hover:text-zinc-200 transition-colors p-1"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                Help keep Luna safe. Submitting a report records the violation category and permanently blocks this user. Message content is not collected or retained.
+              </p>
+
+              <div className="space-y-2">
+                {[
+                  "Spam or unwanted advertising",
+                  "Harassment or offensive behavior",
+                  "Inappropriate or harmful content",
+                  "Other safety concern",
+                ].map((reason) => (
+                  <label
+                    key={reason}
+                    className={cn(
+                      "flex items-center gap-2.5 p-2.5 rounded-xl border text-xs cursor-pointer transition-colors",
+                      reportReason === reason
+                        ? "border-rose-500/50 bg-rose-500/10 text-zinc-100"
+                        : "border-white/5 bg-zinc-900/50 text-zinc-300 hover:bg-zinc-900",
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="reportReason"
+                      value={reason}
+                      checked={reportReason === reason}
+                      onChange={(e) => setReportReason(e.target.value)}
+                      className="accent-rose-500"
+                    />
+                    <span>{reason}</span>
+                  </label>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={closeReportModal}
+                  className="text-xs text-zinc-400 hover:text-zinc-200"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => {
+                    triggerHaptic("heavy");
+                    closeReportModal();
+                    onReport?.(reportReason);
+                  }}
+                  className="text-xs bg-rose-600 hover:bg-rose-700 text-white font-medium"
+                >
+                  Submit Report & Block
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {actionSheetOpen && !closed && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Chat Actions"
+            onClick={closeActionSheet}
+            className="fixed inset-0 z-50 flex flex-col justify-end bg-black/65 backdrop-blur-sm sm:hidden"
+          >
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={springTactile}
+              className="w-full rounded-t-3xl border-t border-white/[0.14] bg-zinc-950/95 p-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-2xl space-y-3"
+              onClick={(e) => e.stopPropagation()}
+            >
             <div className="mx-auto h-1 w-10 rounded-full bg-white/20 mb-1" />
 
             <div className="flex items-center justify-between px-1 pb-2 border-b border-white/10">
@@ -888,9 +911,10 @@ export function ChatScreen({
             >
               Cancel
             </Button>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+    </AnimatePresence>
 
       <MessageInput
         value={draft}
@@ -912,6 +936,10 @@ export function ChatScreen({
         outboundReconnect={outboundReconnect}
         inboundReconnect={inboundReconnect}
       />
+
+      {sessionKind === "stranger" && (
+        <SwipeToSkip closed={closed} onNext={onNext} busy={busy || locked} />
+      )}
     </section>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, type FormEvent } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Settings,
   Trash2,
@@ -19,6 +20,7 @@ import { mintCallsign } from "@/lib/constants";
 import { setCachedCustomName, clearCachedCustomName } from "@/lib/identity";
 import { triggerHaptic, isHapticEnabled, setHapticEnabled } from "@/lib/sound-effects";
 import { usePwa } from "@/components/chat/service-worker-provider";
+import { springTactile } from "@/lib/motion";
 import type { DeskView } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -161,22 +163,32 @@ export function SettingsDialog({
     }
   }
 
-  if (!isOpen) return null;
-
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="settings-modal-title"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          triggerHaptic("light");
-          onClose();
-        }
-      }}
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
-    >
-      <div className="relative flex flex-col w-full max-w-lg max-h-[90vh] sm:max-h-[85vh] rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 bg-zinc-950/95 shadow-2xl overflow-hidden animate-sheet-up sm:animate-none pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-0">
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="settings-modal-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              triggerHaptic("light");
+              onClose();
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 bg-black/80 backdrop-blur-md"
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 20 }}
+            transition={springTactile}
+            className="relative flex flex-col w-full max-w-lg max-h-[90vh] sm:max-h-[85vh] rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 bg-zinc-950/95 shadow-2xl overflow-hidden pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-0"
+          >
         <div className="w-10 h-1 bg-zinc-700/60 rounded-full mx-auto my-2.5 sm:hidden" />
         <div className="flex flex-col gap-6 p-4 sm:p-6 overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))]">
           <div className="flex items-center justify-between border-b border-white/10 pb-3">
@@ -442,8 +454,10 @@ export function SettingsDialog({
           )}
         </div>
       </div>
-    </div>
-  </div>
-</div>
+          </div>
+        </motion.div>
+      </motion.div>
+    )}
+  </AnimatePresence>
   );
 }

@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback, useSyncExternalStore } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { springTactile } from "@/lib/motion";
 import { DebugLogPanel } from "@/components/chat/debug-log-panel";
 import { SettingsDialog } from "@/components/chat/settings-dialog";
 import { ChatContainer } from "@/components/chat/chat-container";
@@ -1310,7 +1312,7 @@ export default function Home() {
   };
 
   return (
-    <div className="flex h-[var(--visual-viewport-height,100dvh)] max-h-[var(--visual-viewport-height,100dvh)] w-full flex-col bg-zinc-950 text-zinc-100 antialiased selection:bg-white/20 select-none overflow-hidden overscroll-none">
+    <div className="flex h-[var(--visual-viewport-height,100dvh)] max-h-[var(--visual-viewport-height,100dvh)] w-full flex-col bg-[#06070a] text-zinc-100 antialiased selection:bg-indigo-500/25 select-none overflow-hidden overscroll-none">
       <ChatContainer>
         <ChatHeader
           callsign={desk?.station.callsign}
@@ -1377,90 +1379,122 @@ export default function Home() {
             onClose={() => closeOverlayModal("log")}
             busy={busy}
           />
-        ) : currentSession ? (
-          <ChatScreen
-            key={`chat-${currentSession.id}`}
-            sessionKind={currentSession.kind}
-            peerCallsign={currentSession.peerCallsign}
-            createdAt={currentSession.createdAt}
-            interests={currentSession.interests}
-            messages={messages}
-            draft={draft}
-            onDraft={handleDraftChange}
-            onActivity={resetIdle}
-            onSend={handleSendMessage}
-            onTyping={handleTyping}
-            closed={currentSession.closed}
-            peerTyping={currentSession.peerTyping}
-            replyingTo={replyingTo}
-            onReply={setReplyingTo}
-            onCancelReply={() => setReplyingTo(null)}
-            canQsl={
-              currentSession.kind === "stranger" &&
-              !currentSession.alreadyFriends &&
-              currentSession.outboundQsl !== "pending" &&
-              currentSession.outboundQsl !== "accepted"
-            }
-            qslState={currentSession.outboundQsl}
-            inbound={currentSession.inboundQsl}
-            onQsl={handleOfferQsl}
-            onAcceptInbound={() => {
-              if (currentSession.inboundQsl?.id) void handleRespondQsl(currentSession.inboundQsl.id, true);
-            }}
-            onDeclineInbound={() => {
-              if (currentSession.inboundQsl?.id) void handleRespondQsl(currentSession.inboundQsl.id, false);
-            }}
-            onLeave={handleRequestLeaveSession}
-            onNext={handleNextStranger}
-            onBlock={handleSeverAndBlock}
-            onReport={handleReportAndBlock}
-            onRetryMessage={(mid) => currentSession && runRetryMessage(mid, currentSession)}
-            busy={busy}
-            onReaction={(emoji) => runSendReaction(emoji, currentSession)}
-            floatingReactions={floatingReactions}
-            onReactionFinished={handleReactionFinished}
-            onEditMessage={(mid, body) => runEditMessage(mid, body, currentSession)}
-            onDeleteMessage={(mid) => runDeleteMessage(mid, currentSession)}
-            onReconnect={handleReconnect}
-            outboundReconnect={currentSession.outboundReconnect}
-            inboundReconnect={currentSession.inboundReconnect}
-            peerPresence={currentSession.peerPresence}
-            soundEnabled={soundActive}
-            onToggleSound={handleToggleSound}
-            hasHistory={historySessions.length > 0}
-            onToggleHistory={() => openOverlayModal("history")}
-            onToggleSettings={() => openOverlayModal("settings")}
-            onToggleLog={() => openOverlayModal("log")}
-          />
-        ) : listening ? (
-          <SearchingScreen
-            key="listening-view"
-            enteredAt={desk?.enteredAt ?? null}
-            interests={desk?.queuedInterests ?? interests}
-            onStop={handleLeaveQueue}
-            onAddPopular={() => {
-              const combined = Array.from(new Set([...interests, ...POPULAR_MIDNIGHT_TOPICS]));
-              setInterests(combined);
-              void handleJoinQueue(combined);
-            }}
-            onRestartSearch={() => {
-              void handleJoinQueue(desk?.queuedInterests ?? interests);
-            }}
-            onBroadenSearch={() => {
-              setInterests([]);
-              void handleJoinQueue([]);
-            }}
-            busy={busy}
-          />
         ) : (
-          <StartScreen
-            interests={interests}
-            onInterests={setInterests}
-            onCall={() => void handleJoinQueue()}
-            busy={busy}
-            onlineCount={desk?.onlineCount}
-            activeQueueTopics={desk?.activeQueueTopics}
-          />
+          <AnimatePresence mode="wait">
+            {currentSession ? (
+              <motion.div
+                key={`chat-${currentSession.id}`}
+                initial={{ opacity: 0, scale: 0.985 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.985 }}
+                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                className="flex flex-col flex-1 min-h-0"
+              >
+                <ChatScreen
+                  key={`chat-${currentSession.id}`}
+                  sessionKind={currentSession.kind}
+                  peerCallsign={currentSession.peerCallsign}
+                  createdAt={currentSession.createdAt}
+                  interests={currentSession.interests}
+                  messages={messages}
+                  draft={draft}
+                  onDraft={handleDraftChange}
+                  onActivity={resetIdle}
+                  onSend={handleSendMessage}
+                  onTyping={handleTyping}
+                  closed={currentSession.closed}
+                  peerTyping={currentSession.peerTyping}
+                  replyingTo={replyingTo}
+                  onReply={setReplyingTo}
+                  onCancelReply={() => setReplyingTo(null)}
+                  canQsl={
+                    currentSession.kind === "stranger" &&
+                    !currentSession.alreadyFriends &&
+                    currentSession.outboundQsl !== "pending" &&
+                    currentSession.outboundQsl !== "accepted"
+                  }
+                  qslState={currentSession.outboundQsl}
+                  inbound={currentSession.inboundQsl}
+                  onQsl={handleOfferQsl}
+                  onAcceptInbound={() => {
+                    if (currentSession.inboundQsl?.id) void handleRespondQsl(currentSession.inboundQsl.id, true);
+                  }}
+                  onDeclineInbound={() => {
+                    if (currentSession.inboundQsl?.id) void handleRespondQsl(currentSession.inboundQsl.id, false);
+                  }}
+                  onLeave={handleRequestLeaveSession}
+                  onNext={handleNextStranger}
+                  onBlock={handleSeverAndBlock}
+                  onReport={handleReportAndBlock}
+                  onRetryMessage={(mid) => currentSession && runRetryMessage(mid, currentSession)}
+                  busy={busy}
+                  onReaction={(emoji) => runSendReaction(emoji, currentSession)}
+                  floatingReactions={floatingReactions}
+                  onReactionFinished={handleReactionFinished}
+                  onEditMessage={(mid, body) => runEditMessage(mid, body, currentSession)}
+                  onDeleteMessage={(mid) => runDeleteMessage(mid, currentSession)}
+                  onReconnect={handleReconnect}
+                  outboundReconnect={currentSession.outboundReconnect}
+                  inboundReconnect={currentSession.inboundReconnect}
+                  peerPresence={currentSession.peerPresence}
+                  soundEnabled={soundActive}
+                  onToggleSound={handleToggleSound}
+                  hasHistory={historySessions.length > 0}
+                  onToggleHistory={() => openOverlayModal("history")}
+                  onToggleSettings={() => openOverlayModal("settings")}
+                  onToggleLog={() => openOverlayModal("log")}
+                />
+              </motion.div>
+            ) : listening ? (
+              <motion.div
+                key="listening-view"
+                initial={{ opacity: 0, scale: 0.985 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.985 }}
+                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                className="flex flex-col flex-1 min-h-0"
+              >
+                <SearchingScreen
+                  key="listening-view"
+                  enteredAt={desk?.enteredAt ?? null}
+                  interests={desk?.queuedInterests ?? interests}
+                  onStop={handleLeaveQueue}
+                  onAddPopular={() => {
+                    const combined = Array.from(new Set([...interests, ...POPULAR_MIDNIGHT_TOPICS]));
+                    setInterests(combined);
+                    void handleJoinQueue(combined);
+                  }}
+                  onRestartSearch={() => {
+                    void handleJoinQueue(desk?.queuedInterests ?? interests);
+                  }}
+                  onBroadenSearch={() => {
+                    setInterests([]);
+                    void handleJoinQueue([]);
+                  }}
+                  busy={busy}
+                />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="start-view"
+                initial={{ opacity: 0, scale: 0.985 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.985 }}
+                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                className="flex flex-col flex-1 min-h-0"
+              >
+                <StartScreen
+                  interests={interests}
+                  onInterests={setInterests}
+                  onCall={() => void handleJoinQueue()}
+                  busy={busy}
+                  onlineCount={desk?.onlineCount}
+                  activeQueueTopics={desk?.activeQueueTopics}
+                  activeTopicStats={desk?.activeTopicStats}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
         )}
       </ChatContainer>
 
@@ -1478,52 +1512,61 @@ export default function Home() {
         }}
       />
 
-      {settingsOpen && (
-        <SettingsDialog
-          isOpen={settingsOpen}
-          desk={fallbackDesk}
-          onClose={() => closeOverlayModal("settings")}
-          onCallsignUpdated={handleDeskUpdate}
-          onStationReset={() => {
-            setDeviceId(null);
-            const nextId = getOrCreateDeviceId();
-            setDeviceId(nextId);
-            if (nextId) void getDesk({ deviceId: nextId }).then(handleDeskUpdate).catch(() => {});
-          }}
-        />
-      )}
+      <SettingsDialog
+        isOpen={settingsOpen}
+        desk={fallbackDesk}
+        onClose={() => closeOverlayModal("settings")}
+        onCallsignUpdated={handleDeskUpdate}
+        onStationReset={() => {
+          setDeviceId(null);
+          const nextId = getOrCreateDeviceId();
+          setDeviceId(nextId);
+          if (nextId) void getDesk({ deviceId: nextId }).then(handleDeskUpdate).catch(() => {});
+        }}
+      />
 
-      {logOpen && currentSession && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Connections Log"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) closeOverlayModal("log");
-          }}
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
-        >
-          <div className="relative flex flex-col w-full max-w-lg max-h-[90vh] sm:max-h-[85vh] rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 bg-zinc-950/95 shadow-2xl overflow-hidden animate-sheet-up sm:animate-none">
-            <DebugLogPanel
-              desk={fallbackDesk}
-              onOpenFriend={(fid) => {
-                closeOverlayModal("log");
-                handleOpenFriendLine(fid);
-              }}
-              onRespond={handleRespondQsl}
-              onClose={() => closeOverlayModal("log")}
-              busy={busy}
-            />
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {logOpen && currentSession && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Connections Log"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) closeOverlayModal("log");
+            }}
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 bg-black/80 backdrop-blur-md"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 20 }}
+              transition={springTactile}
+              className="relative flex flex-col w-full max-w-lg max-h-[90vh] sm:max-h-[85vh] rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 bg-zinc-950/95 shadow-2xl overflow-hidden"
+            >
+              <DebugLogPanel
+                desk={fallbackDesk}
+                onOpenFriend={(fid) => {
+                  closeOverlayModal("log");
+                  handleOpenFriendLine(fid);
+                }}
+                onRespond={handleRespondQsl}
+                onClose={() => closeOverlayModal("log")}
+                busy={busy}
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {voidOpen && (
-        <AnonymousNotesDialog
-          deviceId={deviceId ?? ""}
-          onClose={() => closeOverlayModal("void")}
-        />
-      )}
+      <AnonymousNotesDialog
+        isOpen={voidOpen}
+        deviceId={deviceId ?? ""}
+        onClose={() => closeOverlayModal("void")}
+      />
 
       <NotificationToastHost />
       <WelcomeDialog />

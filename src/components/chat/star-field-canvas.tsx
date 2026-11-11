@@ -81,7 +81,7 @@ export function StarFieldCanvas({
       // Refresh-rate normalized trail decay: identical fade per millisecond across 30Hz/60Hz/90Hz/120Hz/144Hz
       const baseAlpha = hyperspace ? 0.25 : 0.4;
       const decayAlpha = Math.min(0.95, Math.max(0.05, 1 - Math.pow(1 - baseAlpha, dt)));
-      ctx.fillStyle = `rgba(9, 9, 11, ${decayAlpha.toFixed(4)})`;
+      ctx.fillStyle = `rgba(6, 7, 10, ${decayAlpha.toFixed(4)})`;
       ctx.fillRect(0, 0, cssWidth, cssHeight);
 
       const cx = cssWidth / 2;

@@ -1,25 +1,34 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: #09090b;
+  --color-obsidian: #06070a;
+  --color-obsidian-card: #0c0f17;
+  --color-obsidian-elevated: #111522;
+  --color-lunar-beam: #f4f3ec;
+  --color-lunar-text: #0b0d13;
+  --color-starlight: #818cf8;
+  --color-starlight-glow: #38bdf8;
+  --color-amber-flare: #f59e0b;
+
+  --color-background: #06070a;
   --color-foreground: #fafafa;
-  --color-card: #09090b;
+  --color-card: #0c0f17;
   --color-card-foreground: #fafafa;
-  --color-popover: #09090b;
+  --color-popover: #0c0f17;
   --color-popover-foreground: #fafafa;
   --color-primary: #fafafa;
-  --color-primary-foreground: #18181b;
-  --color-secondary: #27272a;
+  --color-primary-foreground: #0b0d13;
+  --color-secondary: #1a1f2c;
   --color-secondary-foreground: #fafafa;
-  --color-muted: #27272a;
-  --color-muted-foreground: #a1a1aa;
-  --color-accent: #27272a;
+  --color-muted: #1a1f2c;
+  --color-muted-foreground: #9ba1b0;
+  --color-accent: #1a1f2c;
   --color-accent-foreground: #fafafa;
   --color-destructive: #ef4444;
   --color-destructive-foreground: #fafafa;
-  --color-border: #27272a;
-  --color-input: #27272a;
-  --color-ring: #d4d4d8;
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-input: rgba(255, 255, 255, 0.08);
+  --color-ring: #818cf8;
 
   --color-zinc-50: #fafafa;
   --color-zinc-100: #f4f4f5;
@@ -72,7 +81,7 @@
     min-height: 100%;
     min-height: 100dvh;
     min-height: var(--visual-viewport-height, 100dvh);
-    background-color: #09090b;
+    background-color: #06070a;
     color: #fafafa;
     font-family: var(--font-sans);
     margin: 0;

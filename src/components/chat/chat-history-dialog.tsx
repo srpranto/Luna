@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { History, X, Trash2, ChevronRight, ArrowLeft, Clock, MessageSquare } from "lucide-react";
 import type { HistorySession } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatClock } from "@/lib/identity";
 import { triggerHaptic } from "@/lib/sound-effects";
+import { springTactile } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 function formatRelativeTime(savedAt: number): string {
@@ -78,21 +80,31 @@ export function ChatHistoryDialog({
     };
   }, [isOpen, selectedSessionId, onClose]);
 
-  if (!isOpen) return null;
-
   const activeSession = sessions.find((s) => s.sessionId === selectedSessionId) ?? null;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="history-modal-title"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 bg-black/80 backdrop-blur-xl animate-in fade-in duration-200"
-    >
-      <div className="relative w-full max-w-lg max-h-[90vh] sm:max-h-[85vh] flex flex-col rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 bg-zinc-950/95 shadow-2xl overflow-hidden animate-sheet-up sm:animate-none pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-0">
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="history-modal-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) onClose();
+          }}
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 bg-black/80 backdrop-blur-xl"
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 20 }}
+            transition={springTactile}
+            className="relative w-full max-w-lg max-h-[90vh] sm:max-h-[85vh] flex flex-col rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 bg-zinc-950/95 shadow-2xl overflow-hidden pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-0"
+          >
         <div className="w-10 h-1 bg-zinc-700/60 rounded-full mx-auto my-2.5 sm:hidden" />
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 sm:px-6 sm:py-4 bg-zinc-900/40">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -302,7 +314,9 @@ export function ChatHistoryDialog({
             Close
           </Button>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
+    )}
+  </AnimatePresence>
   );
 }

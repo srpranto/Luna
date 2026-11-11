@@ -280,8 +280,13 @@ export async function POST(req: Request) {
     const deviceSecret = (payload.deviceSecret as string | undefined) || headerSecret;
     payload.deviceSecret = deviceSecret;
 
+    const isLocalhost = clientIp === "127.0.0.1" || clientIp === "::1" || clientIp === "localhost";
+    const ipLimit = isLocalhost ? 5000 : 120;
+    const deviceLimit = isLocalhost ? 5000 : 180;
+    const msgLimit = isLocalhost ? 5000 : 45;
+
     // 1. Enforce independent global IP rate limit (prevents deviceId rotation bypass)
-    if (!checkRateLimit(`ip:${clientIp}`, 120, 60000)) {
+    if (!checkRateLimit(`ip:${clientIp}`, ipLimit, 60000)) {
       return NextResponse.json(
         { ok: false, error: "Too many requests from this network. Please slow down." },
         { status: 429, headers: { ...NO_CACHE_HEADERS, "Retry-After": "5" } },
@@ -290,13 +295,13 @@ export async function POST(req: Request) {
 
     // 2. Enforce per-IP + per-device rate limit and direct device rate limit
     const rateKey = `${clientIp}:${deviceId ?? "anon"}`;
-    if (!checkRateLimit(rateKey, 180, 60000)) {
+    if (!checkRateLimit(rateKey, deviceLimit, 60000)) {
       return NextResponse.json(
         { ok: false, error: "Too many requests. Please slow down." },
         { status: 429, headers: { ...NO_CACHE_HEADERS, "Retry-After": "5" } },
       );
     }
-    if (deviceId && !checkRateLimit(`dev:${deviceId}`, 180, 60000)) {
+    if (deviceId && !checkRateLimit(`dev:${deviceId}`, deviceLimit, 60000)) {
       return NextResponse.json(
         { ok: false, error: "Too many requests from this device. Please slow down." },
         { status: 429, headers: { ...NO_CACHE_HEADERS, "Retry-After": "5" } },
@@ -304,7 +309,7 @@ export async function POST(req: Request) {
     }
 
     // 3. Action-specific rate limits
-    if (action === "sendMessage" && !checkRateLimit(`msg:${clientIp}:${deviceId}`, 45, 60000)) {
+    if (action === "sendMessage" && !checkRateLimit(`msg:${clientIp}:${deviceId}`, msgLimit, 60000)) {
       return NextResponse.json(
         { ok: false, error: "Sending messages too fast. Please wait a moment." },
         { status: 429, headers: { ...NO_CACHE_HEADERS, "Retry-After": "3" } },
@@ -328,7 +333,12 @@ export async function POST(req: Request) {
     }
 
     // 4. Verify cryptographic device ownership (prevents peerId impersonation)
-    const isAuthorized = await verifyStationAuth(deviceId, deviceSecret, action);
+    const authHeader = req.headers.get("authorization");
+    const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+    const bodyToken = typeof payload.stationToken === "string" ? payload.stationToken : undefined;
+    const stationToken = bearerToken || bodyToken;
+
+    const isAuthorized = await verifyStationAuth(deviceId, deviceSecret, action, stationToken);
     if (!isAuthorized) {
       return NextResponse.json(
         { ok: false, error: "Unauthorized device operation. Secret mismatch." },

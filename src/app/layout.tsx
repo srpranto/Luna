@@ -13,8 +13,8 @@ const googleSans = Google_Sans({
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#09090b" },
-    { media: "(prefers-color-scheme: dark)", color: "#09090b" },
+    { media: "(prefers-color-scheme: light)", color: "#06070a" },
+    { media: "(prefers-color-scheme: dark)", color: "#06070a" },
   ],
   width: "device-width",
   initialScale: 1,
@@ -76,7 +76,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`dark ${googleSans.variable} font-sans`} suppressHydrationWarning>
       <body
-        className="antialiased min-h-dvh bg-[#09090b] text-[#fafafa] font-sans selection:bg-white/20 selection:text-white"
+        className="antialiased min-h-dvh bg-[#06070a] text-[#fafafa] font-sans selection:bg-indigo-500/25 selection:text-white"
         suppressHydrationWarning
       >
         <ServiceWorkerProvider>{children}</ServiceWorkerProvider>

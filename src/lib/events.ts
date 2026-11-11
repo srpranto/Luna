@@ -1,5 +1,6 @@
 import { getSql } from "./database";
 import type { DeskView, MessagesPack, SessionView } from "./types";
+import { isRedisConfigured, redisPublish } from "./redis";
 
 export interface LunaEventDataMap {
   desk_update: DeskView;
@@ -121,6 +122,11 @@ export function emitToDevice(
       data,
       timestamp: new Date().toISOString(),
     };
+
+    // Optional Redis Fanout for multi-instance Vercel deployments
+    if (isRedisConfigured()) {
+      void redisPublish(`luna:device:${deviceId}`, JSON.stringify(event));
+    }
 
     const listeners = deviceListeners.get(deviceId);
     if (listeners && listeners.size > 0) {

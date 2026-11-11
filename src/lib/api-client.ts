@@ -18,23 +18,55 @@ interface ApiFailure {
 
 type ApiResponse<T> = ApiSuccess<T> | ApiFailure;
 
+let cachedStationToken: string | null = null;
+
+export function getCachedStationToken(): string | null {
+  if (cachedStationToken) return cachedStationToken;
+  if (typeof window !== "undefined") {
+    try {
+      cachedStationToken = sessionStorage.getItem("luna.station_token") || localStorage.getItem("luna.station_token");
+    } catch {}
+  }
+  return cachedStationToken;
+}
+
+export function setCachedStationToken(token: string | null): void {
+  cachedStationToken = token;
+  if (typeof window !== "undefined") {
+    try {
+      if (token) {
+        sessionStorage.setItem("luna.station_token", token);
+      } else {
+        sessionStorage.removeItem("luna.station_token");
+        localStorage.removeItem("luna.station_token");
+      }
+    } catch {}
+  }
+}
+
 const IDEMPOTENT_ACTIONS = new Set(["getDesk", "listMessages", "listVoidLetters"]);
 
 async function request<T>(action: string, payload: Record<string, unknown>): Promise<T> {
   const secret = getOrCreateDeviceSecret();
+  const token = getCachedStationToken();
   const isIdempotent = IDEMPOTENT_ACTIONS.has(action);
   const maxAttempts = isIdempotent ? 2 : 1;
 
   let lastError: unknown;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "x-luna-device-secret": secret,
+      };
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-luna-device-secret": secret,
-        },
-        body: JSON.stringify({ action, deviceSecret: secret, ...payload }),
+        headers,
+        body: JSON.stringify({ action, deviceSecret: secret, stationToken: token || undefined, ...payload }),
         signal: AbortSignal.timeout(10000),
       });
 
@@ -49,6 +81,17 @@ async function request<T>(action: string, payload: Record<string, unknown>): Pro
         const errorCode = json && "code" in json ? json.code : "HTTP_ERROR";
         throw new ApiClientError(errorMsg, res.status, errorCode);
       }
+
+      // Automatically capture fresh stationToken if returned in response
+      if (json.data && typeof json.data === "object") {
+        const dataObj = json.data as Record<string, unknown>;
+        if (typeof dataObj.stationToken === "string") {
+          setCachedStationToken(dataObj.stationToken);
+        } else if (dataObj.desk && typeof (dataObj.desk as Record<string, unknown>).stationToken === "string") {
+          setCachedStationToken((dataObj.desk as Record<string, unknown>).stationToken as string);
+        }
+      }
+
       return json.data;
     } catch (err) {
       lastError = err;
@@ -142,7 +185,9 @@ export function subscribeDeskStream(
     const cursorParam = lastSeenEventId > 0 ? `&lastEventId=${lastSeenEventId}` : "";
     const secret = getOrCreateDeviceSecret();
     const secretParam = secret ? `&secret=${encodeURIComponent(secret)}` : "";
-    const next = new EventSource(`/api/chat/stream?deviceId=${encodeURIComponent(deviceId)}${cursorParam}${secretParam}`);
+    const token = getCachedStationToken();
+    const tokenParam = token ? `&token=${encodeURIComponent(token)}` : "";
+    const next = new EventSource(`/api/chat/stream?deviceId=${encodeURIComponent(deviceId)}${cursorParam}${secretParam}${tokenParam}`);
     source = next;
 
     next.addEventListener("open", () => {

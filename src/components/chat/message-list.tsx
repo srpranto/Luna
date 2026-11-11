@@ -19,7 +19,10 @@ import { Button } from "@/components/ui/button";
 import { triggerHaptic } from "@/lib/sound-effects";
 import { LinkPreviewCard } from "@/components/chat/link-preview-card";
 import { DeliveryCheckmark } from "@/components/chat/delivery-checkmark";
+import { TypingWaveform } from "@/components/chat/typing-waveform";
 import { MIDNIGHT_FAREWELLS } from "@/lib/constants";
+import { motion, AnimatePresence } from "framer-motion";
+import { springBubble } from "@/lib/motion";
 
 const URL_REGEX = /https?:\/\/[^\s<]+[^<.,:;"')\]\s]/i;
 
@@ -389,25 +392,31 @@ export const MessageRow = memo(function MessageRow({
 }: MessageRowProps) {
   if (isSystem) {
     return (
-      <div
+      <motion.div
         id={`msg-${msg.id}`}
-        className="animate-fade-up flex justify-center my-2"
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.2 }}
+        className="flex justify-center my-2"
       >
         <span className="rounded-full bg-zinc-900/60 border border-white/10 px-2.5 py-0.5 text-[11px] sm:text-xs text-zinc-400 shadow-sm">
           {msg.body}
         </span>
-      </div>
+      </motion.div>
     );
   }
 
   const currentOffset = isSwiping ? swipeOffset : 0;
 
   return (
-    <div
+    <motion.div
       id={`msg-${msg.id}`}
+      initial={{ opacity: 0, y: 10, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={springBubble}
       className={cn(
         "flex flex-col group transition-opacity duration-150 contain-bubble",
-        isMine ? "items-end animate-bubble-mine" : "items-start animate-bubble-peer",
+        isMine ? "items-end" : "items-start",
         isConsecutive ? "mt-1" : "mt-3",
       )}
     >
@@ -563,8 +572,8 @@ export const MessageRow = memo(function MessageRow({
               className={cn(
                 "relative z-10 flex flex-col w-fit rounded-2xl px-3.5 py-2.5 sm:px-4 sm:py-3 text-[15px] sm:text-sm leading-relaxed break-words [overflow-wrap:anywhere] [word-break:break-word] shadow-sm touch-pan-y min-w-[72px] select-text transition-all duration-150 cursor-pointer",
                 isMine
-                  ? "bg-zinc-100 text-zinc-950 rounded-tr-xs font-normal shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
-                  : "bg-zinc-900/90 border border-white/[0.08] text-zinc-100 rounded-tl-xs shadow-[0_1px_3px_rgba(0,0,0,0.2)] backdrop-blur-xs",
+                  ? "bg-[#f4f3ec] text-[#090b10] rounded-tr-xs font-normal shadow-[0_2px_12px_-2px_rgba(0,0,0,0.25),inset_0_1px_0_0_rgba(255,255,255,0.7)]"
+                  : "bg-[#0e121d]/90 border border-white/[0.09] text-[#f2f4f8] rounded-tl-xs shadow-[0_2px_14px_-3px_rgba(0,0,0,0.45),inset_0_1px_0_0_rgba(255,255,255,0.04)] backdrop-blur-sm",
               )}
               title={formatClock(new Date(msg.createdAt))}
             >
@@ -623,7 +632,7 @@ export const MessageRow = memo(function MessageRow({
           </div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 });
 MessageRow.displayName = "MessageRow";
@@ -937,67 +946,69 @@ export function MessageList({
       </div>
 
       <div className="flex flex-col pt-1">
-        {messages.map((msg, idx) => {
-          const isMine = Boolean(msg.mine);
-          const isSystem = Boolean(msg.system);
-          const isConsecutive =
-            idx > 0 &&
-            messages[idx - 1]?.mine === isMine &&
-            !messages[idx - 1]?.system;
-          const remaining = stamp > 0 ? formatRemaining(msg.expiresAt, stamp) : null;
-          const showPeerHeader =
-            !isMine &&
-            !isSystem &&
-            Boolean(idx === 0 || messages[idx - 1]?.mine || messages[idx - 1]?.system);
+        <AnimatePresence initial={false}>
+          {messages.map((msg, idx) => {
+            const isMine = Boolean(msg.mine);
+            const isSystem = Boolean(msg.system);
+            const isConsecutive =
+              idx > 0 &&
+              messages[idx - 1]?.mine === isMine &&
+              !messages[idx - 1]?.system;
+            const remaining = stamp > 0 ? formatRemaining(msg.expiresAt, stamp) : null;
+            const showPeerHeader =
+              !isMine &&
+              !isSystem &&
+              Boolean(idx === 0 || messages[idx - 1]?.mine || messages[idx - 1]?.system);
 
-          return (
-            <MessageRow
-              key={msg.id}
-              msg={msg}
-              isConsecutive={isConsecutive}
-              showPeerHeader={showPeerHeader}
-              peerCallsign={peerCallsign}
-              isMine={isMine}
-              isSystem={isSystem}
-              remaining={remaining}
-              closed={closed}
-              isEditing={editingId === msg.id}
-              editDraft={editingId === msg.id ? editDraft : ""}
-              savingEdit={savingEdit}
-              isSwiping={swipingId === msg.id}
-              swipeOffset={swipingId === msg.id ? swipeOffset : 0}
-              linkPreviewsEnabled={linkPreviewsEnabled}
-              editTextareaRef={editTextareaRef}
-              onStartEditing={handleStartEditing}
-              onCancelEditing={handleCancelEditing}
-              onSubmitEdit={handleSubmitEdit}
-              onEditDraftChange={setEditDraft}
-              onTouchStart={handleTouchStart}
-              onTouchMove={handleTouchMove}
-              onTouchEnd={handleTouchEnd}
-              onTouchCancel={handleTouchCancel}
-              onContextMenu={handleContextMenu}
-              onClick={handleClick}
-              onReply={onReply}
-              onEditMessage={onEditMessage}
-              onDeleteMessage={onDeleteMessage}
-              onRetryMessage={onRetryMessage}
-            />
-          );
-        })}
+            return (
+              <MessageRow
+                key={msg.id}
+                msg={msg}
+                isConsecutive={isConsecutive}
+                showPeerHeader={showPeerHeader}
+                peerCallsign={peerCallsign}
+                isMine={isMine}
+                isSystem={isSystem}
+                remaining={remaining}
+                closed={closed}
+                isEditing={editingId === msg.id}
+                editDraft={editingId === msg.id ? editDraft : ""}
+                savingEdit={savingEdit}
+                isSwiping={swipingId === msg.id}
+                swipeOffset={swipingId === msg.id ? swipeOffset : 0}
+                linkPreviewsEnabled={linkPreviewsEnabled}
+                editTextareaRef={editTextareaRef}
+                onStartEditing={handleStartEditing}
+                onCancelEditing={handleCancelEditing}
+                onSubmitEdit={handleSubmitEdit}
+                onEditDraftChange={setEditDraft}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+                onTouchCancel={handleTouchCancel}
+                onContextMenu={handleContextMenu}
+                onClick={handleClick}
+                onReply={onReply}
+                onEditMessage={onEditMessage}
+                onDeleteMessage={onDeleteMessage}
+                onRetryMessage={onRetryMessage}
+              />
+            );
+          })}
+        </AnimatePresence>
 
-        {peerTyping && (
-          <div className="animate-in fade-in slide-in-from-bottom-2 duration-200 flex flex-col items-start space-y-1">
-            <span className="text-[10px] sm:text-[11px] text-zinc-500 px-1 font-mono">
-              {peerCallsign ?? "Stranger"} is typing…
-            </span>
-            <div className="flex items-center gap-1.5 rounded-2xl rounded-tl-xs bg-zinc-900/90 border border-white/10 px-3.5 py-2 sm:px-4 sm:py-2.5 shadow-sm">
-              <span className="h-1.5 w-1.5 rounded-full bg-zinc-400 animate-bounce [animation-delay:-0.3s]" />
-              <span className="h-1.5 w-1.5 rounded-full bg-zinc-400 animate-bounce [animation-delay:-0.15s]" />
-              <span className="h-1.5 w-1.5 rounded-full bg-zinc-400 animate-bounce" />
-            </div>
-          </div>
-        )}
+        <AnimatePresence>
+          {peerTyping && (
+            <motion.div
+              initial={{ opacity: 0, y: 8, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 4, scale: 0.96 }}
+              transition={{ duration: 0.2 }}
+            >
+              <TypingWaveform variant="bubble" callsign={peerCallsign ?? "Stranger"} />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {closed && isFarewell && lastNonSystemMsg && (
           <div className="animate-fade-up mx-auto my-3 w-full max-w-sm rounded-2xl border border-sky-400/25 bg-gradient-to-b from-sky-950/40 via-zinc-950/80 to-zinc-950 p-4 text-center shadow-[0_8px_32px_rgba(14,165,233,0.12)] backdrop-blur-xl">

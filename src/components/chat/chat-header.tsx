@@ -1,11 +1,13 @@
 "use client";
 
+import { motion } from "framer-motion";
 import { HeartHandshake, Settings, X, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AmbientSoundMenu } from "@/components/chat/ambient-sound-menu";
 import { BlackHoleIcon } from "@/components/chat/black-hole-icon";
 import { MoonLogo } from "@/components/chat/moon-logo";
+import { TypingWaveform } from "@/components/chat/typing-waveform";
 import { formatElapsed } from "@/lib/identity";
 import { triggerHaptic } from "@/lib/sound-effects";
 import { cn } from "@/lib/utils";
@@ -111,7 +113,7 @@ export function ChatHeader({
   return (
     <header
       className={cn(
-        "relative z-40 items-center justify-between border-b border-white/[0.08] bg-zinc-950/70 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:px-6 backdrop-blur-2xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]",
+        "relative z-40 items-center justify-between border-b border-white/[0.08] bg-[#06070a]/80 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:px-6 backdrop-blur-2xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]",
         activeChat ? "hidden sm:flex" : "flex",
       )}
     >
@@ -192,9 +194,7 @@ export function ChatHeader({
               {activeChat.peerCallsign}
             </span>
             {activeChat.peerTyping ? (
-              <span className="text-[10px] font-mono text-emerald-400/90 animate-pulse shrink-0">
-                (typing...)
-              </span>
+              <TypingWaveform variant="inline" className="shrink-0" />
             ) : activeChat.peerPresence === "away" ? (
               <span className="text-[10px] font-mono text-amber-400/90 shrink-0">(away)</span>
             ) : (
@@ -250,75 +250,83 @@ export function ChatHeader({
             <AmbientSoundMenu soundFxEnabled={soundEnabled} onToggleSoundFx={onToggleSound} />
           )}
 
-          <Button
-            type="button"
-            variant={logOpen ? "secondary" : "ghost"}
-            size="icon"
-            onClick={() => {
-              triggerHaptic("light");
-              onToggleLog();
-            }}
-            aria-label="Connections"
-            title="Connections"
-            className="relative after:absolute after:-inset-1.5 after:content-[''] after:rounded-full h-8.5 w-8.5 sm:h-8 sm:w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 touch-manipulation"
-          >
-            {logOpen ? <X className="h-4 w-4" /> : <HeartHandshake className="h-4 w-4" />}
-          </Button>
-
-          {hasHistory && onToggleHistory && (
+          <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }}>
             <Button
               type="button"
-              variant={historyOpen ? "secondary" : "ghost"}
+              variant={logOpen ? "secondary" : "ghost"}
               size="icon"
               onClick={() => {
                 triggerHaptic("light");
-                onToggleHistory();
+                onToggleLog();
               }}
-              aria-label="24h Chat History"
-              title="24h Chat History"
-              className="relative after:absolute after:-inset-1.5 after:content-[''] after:rounded-full h-8.5 w-8.5 sm:h-8 sm:w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 cursor-pointer touch-manipulation"
+              aria-label="Connections"
+              title="Connections"
+              className="relative after:absolute after:-inset-1.5 after:content-[''] after:rounded-full h-8.5 w-8.5 sm:h-8 sm:w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 touch-manipulation"
             >
-              {historyOpen ? <X className="h-4 w-4" /> : <History className="h-4 w-4" />}
+              {logOpen ? <X className="h-4 w-4" /> : <HeartHandshake className="h-4 w-4" />}
             </Button>
+          </motion.div>
+
+          {hasHistory && onToggleHistory && (
+            <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }}>
+              <Button
+                type="button"
+                variant={historyOpen ? "secondary" : "ghost"}
+                size="icon"
+                onClick={() => {
+                  triggerHaptic("light");
+                  onToggleHistory();
+                }}
+                aria-label="24h Chat History"
+                title="24h Chat History"
+                className="relative after:absolute after:-inset-1.5 after:content-[''] after:rounded-full h-8.5 w-8.5 sm:h-8 sm:w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 cursor-pointer touch-manipulation"
+              >
+                {historyOpen ? <X className="h-4 w-4" /> : <History className="h-4 w-4" />}
+              </Button>
+            </motion.div>
           )}
 
           {!activeChat && onToggleVoid && (
-            <Button
-              type="button"
-              variant={voidOpen ? "secondary" : "ghost"}
-              size="icon"
-              onClick={() => {
-                triggerHaptic("light");
-                onToggleVoid();
-              }}
-              aria-label={voidOpen ? "Close The Void" : "The Void (24h Orbit Letters)"}
-              title={voidOpen ? "Close The Void" : "The Void (24h Orbit Letters)"}
-              className={cn(
-                "relative after:absolute after:-inset-1.5 after:content-[''] after:rounded-full h-8.5 w-8.5 sm:h-8 sm:w-8 touch-manipulation cursor-pointer",
-                voidOpen
-                  ? "text-zinc-100 bg-zinc-800"
-                  : "text-zinc-300 hover:text-white hover:bg-zinc-800/80",
-              )}
-            >
-              {voidOpen ? <X className="h-4 w-4" /> : <BlackHoleIcon className="h-4 w-4" />}
-            </Button>
+            <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }}>
+              <Button
+                type="button"
+                variant={voidOpen ? "secondary" : "ghost"}
+                size="icon"
+                onClick={() => {
+                  triggerHaptic("light");
+                  onToggleVoid();
+                }}
+                aria-label={voidOpen ? "Close The Void" : "The Void (24h Orbit Letters)"}
+                title={voidOpen ? "Close The Void" : "The Void (24h Orbit Letters)"}
+                className={cn(
+                  "relative after:absolute after:-inset-1.5 after:content-[''] after:rounded-full h-8.5 w-8.5 sm:h-8 sm:w-8 touch-manipulation cursor-pointer",
+                  voidOpen
+                    ? "text-zinc-100 bg-zinc-800"
+                    : "text-zinc-300 hover:text-white hover:bg-zinc-800/80",
+                )}
+              >
+                {voidOpen ? <X className="h-4 w-4" /> : <BlackHoleIcon className="h-4 w-4" />}
+              </Button>
+            </motion.div>
           )}
 
           {onToggleSettings && (
-            <Button
-              type="button"
-              variant={settingsOpen ? "secondary" : "ghost"}
-              size="icon"
-              onClick={() => {
-                triggerHaptic("light");
-                onToggleSettings();
-              }}
-              aria-label="Settings"
-              title="Settings"
-              className="relative after:absolute after:-inset-1.5 after:content-[''] after:rounded-full h-8.5 w-8.5 sm:h-8 sm:w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 cursor-pointer touch-manipulation"
-            >
-              {settingsOpen ? <X className="h-4 w-4" /> : <Settings className="h-4 w-4" />}
-            </Button>
+            <motion.div whileHover={{ scale: 1.08, rotate: 15 }} whileTap={{ scale: 0.92 }}>
+              <Button
+                type="button"
+                variant={settingsOpen ? "secondary" : "ghost"}
+                size="icon"
+                onClick={() => {
+                  triggerHaptic("light");
+                  onToggleSettings();
+                }}
+                aria-label="Settings"
+                title="Settings"
+                className="relative after:absolute after:-inset-1.5 after:content-[''] after:rounded-full h-8.5 w-8.5 sm:h-8 sm:w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 cursor-pointer touch-manipulation"
+              >
+                {settingsOpen ? <X className="h-4 w-4" /> : <Settings className="h-4 w-4" />}
+              </Button>
+            </motion.div>
           )}
         </div>
       </div>

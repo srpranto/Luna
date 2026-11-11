@@ -1,7 +1,9 @@
 "use client";
 
+import { motion, AnimatePresence } from "framer-motion";
 import { MAX_LINE_CHARS } from "@/lib/constants";
 import { ArrowRight, ArrowUp, Reply, Smile, X } from "lucide-react";
+import { springTactile } from "@/lib/motion";
 import {
   useState,
   useRef,
@@ -219,56 +221,64 @@ export function MessageInput({
   return (
     <form
       onSubmit={submit}
-      className="relative border-t border-white/10 bg-zinc-950/70 py-2.5 sm:py-3 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] sm:px-6 backdrop-blur-md pb-[max(0.625rem,env(safe-area-inset-bottom))]"
+      className="relative border-t border-white/[0.08] bg-[#06070a]/80 py-2.5 sm:py-3 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] sm:px-6 backdrop-blur-2xl pb-[max(0.625rem,env(safe-area-inset-bottom))]"
     >
-      {showEmojiPicker && (
-        <EmojiPicker
-          onSelectEmoji={handleSelectEmoji}
-          onClose={() => setShowEmojiPicker(false)}
-        />
-      )}
+      <AnimatePresence>
+        {showEmojiPicker && (
+          <EmojiPicker
+            onSelectEmoji={handleSelectEmoji}
+            onClose={() => setShowEmojiPicker(false)}
+          />
+        )}
+      </AnimatePresence>
 
-      {replyingTo && (
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => {
-            document
-              .getElementById("msg-" + replyingTo.id)
-              ?.scrollIntoView({ behavior: "smooth", block: "center" });
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
+      <AnimatePresence>
+        {replyingTo && (
+          <motion.div
+            initial={{ opacity: 0, height: 0, y: 6 }}
+            animate={{ opacity: 1, height: "auto", y: 0 }}
+            exit={{ opacity: 0, height: 0, y: -6 }}
+            transition={springTactile}
+            role="button"
+            tabIndex={0}
+            onClick={() => {
               document
                 .getElementById("msg-" + replyingTo.id)
                 ?.scrollIntoView({ behavior: "smooth", block: "center" });
-            }
-          }}
-          aria-label={`Jump to message from ${replyingTo.fromCallsign}`}
-          className="flex items-center justify-between gap-2 px-3 py-1.5 mb-2 rounded-xl bg-zinc-900/90 border border-white/10 text-xs text-zinc-300 animate-fade-up cursor-pointer hover:bg-zinc-850/90 transition-colors select-none"
-        >
-          <div className="flex items-center gap-2 min-w-0">
-            <Reply className="h-3.5 w-3.5 text-zinc-200 shrink-0" />
-            <div className="truncate">
-              <span className="font-semibold text-zinc-100">{replyingTo.fromCallsign}</span>
-              <span className="text-zinc-500 mx-1.5">•</span>
-              <span className="text-zinc-400">{replyingTo.body.replace(/\n/g, " ").slice(0, 50)}</span>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onCancelReply?.();
             }}
-            aria-label="Cancel reply"
-            className="min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 p-1 rounded-md flex items-center justify-center text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors cursor-pointer shrink-0 touch-manipulation"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                document
+                  .getElementById("msg-" + replyingTo.id)
+                  ?.scrollIntoView({ behavior: "smooth", block: "center" });
+              }
+            }}
+            aria-label={`Jump to message from ${replyingTo.fromCallsign}`}
+            className="flex items-center justify-between gap-2 px-3 py-1.5 mb-2 rounded-xl bg-zinc-900/90 border border-white/10 text-xs text-zinc-300 cursor-pointer hover:bg-zinc-850/90 transition-colors select-none overflow-hidden"
           >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
+            <div className="flex items-center gap-2 min-w-0">
+              <Reply className="h-3.5 w-3.5 text-zinc-200 shrink-0" />
+              <div className="truncate">
+                <span className="font-semibold text-zinc-100">{replyingTo.fromCallsign}</span>
+                <span className="text-zinc-500 mx-1.5">•</span>
+                <span className="text-zinc-400">{replyingTo.body.replace(/\n/g, " ").slice(0, 50)}</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onCancelReply?.();
+              }}
+              aria-label="Cancel reply"
+              className="min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 p-1 rounded-md flex items-center justify-center text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors cursor-pointer shrink-0 touch-manipulation"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <label className="sr-only" htmlFor="chat-message-input">
         Chat message
@@ -320,31 +330,33 @@ export function MessageInput({
       ) : (
         <div className="flex items-end gap-2">
           {/* Google Keyboard (Gboard) Emojis Button */}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onPointerDown={(e) => {
-              // Crucial for mobile keyboard: prevent default on pointerdown to keep textarea focused!
-              e.preventDefault();
-            }}
-            onTouchStart={(e) => {
-              e.preventDefault();
-            }}
-            onClick={() => {
-              triggerHaptic("light");
-              setShowEmojiPicker((prev) => !prev);
-            }}
-            disabled={disabled}
-            aria-label="Google Keyboard emojis"
-            title="Google Keyboard emojis"
-            className={cn(
-              "h-10 w-10 min-h-[40px] min-w-[40px] p-0 rounded-full border border-white/10 bg-zinc-900/60 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 hover:border-white/20 shrink-0 cursor-pointer transition-transform duration-100 active:scale-[0.96] touch-manipulation flex items-center justify-center shadow-sm",
-              showEmojiPicker && "text-zinc-100 bg-zinc-800 border-white/30 ring-1 ring-white/20",
-            )}
-          >
-            <Smile className="h-4 w-4" />
-          </Button>
+          <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }} className="shrink-0">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onPointerDown={(e) => {
+                // Crucial for mobile keyboard: prevent default on pointerdown to keep textarea focused!
+                e.preventDefault();
+              }}
+              onTouchStart={(e) => {
+                e.preventDefault();
+              }}
+              onClick={() => {
+                triggerHaptic("light");
+                setShowEmojiPicker((prev) => !prev);
+              }}
+              disabled={disabled}
+              aria-label="Google Keyboard emojis"
+              title="Google Keyboard emojis"
+              className={cn(
+                "h-10 w-10 min-h-[40px] min-w-[40px] p-0 rounded-full border border-white/[0.08] bg-[#0c101a]/70 text-zinc-400 hover:text-zinc-100 hover:bg-[#141a28] hover:border-white/20 shrink-0 cursor-pointer touch-manipulation flex items-center justify-center shadow-sm",
+                showEmojiPicker && "text-zinc-100 bg-[#141a28] border-white/30 ring-1 ring-indigo-400/30",
+              )}
+            >
+              <Smile className="h-4 w-4" />
+            </Button>
+          </motion.div>
 
           {/* Textarea container with mathematical 40px subpixel base height */}
           <div className="relative flex-1 min-w-0">
@@ -377,7 +389,7 @@ export function MessageInput({
                 clearTypingTimer();
                 onTyping?.(false);
               }}
-              className="min-h-[40px] max-h-[200px] h-10 w-full resize-none rounded-full border border-white/10 bg-zinc-900/70 pl-4 pr-12 py-[9px] text-[16px] sm:text-sm text-zinc-100 placeholder:text-zinc-500 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] transition-all focus:border-white/25 focus:ring-1 focus:ring-white/20 focus:outline-none disabled:opacity-40 leading-5 overflow-y-auto box-border [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+              className="min-h-[40px] max-h-[200px] h-10 w-full resize-none rounded-full border border-white/[0.08] bg-[#0c101a]/75 pl-4 pr-12 py-[9px] text-[16px] sm:text-sm text-zinc-100 placeholder:text-zinc-500 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] transition-all focus:border-indigo-400/30 focus:ring-1 focus:ring-indigo-400/20 focus:outline-none disabled:opacity-40 leading-5 overflow-y-auto box-border [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             />
             {value.length > 0 && (
               <span
@@ -396,24 +408,30 @@ export function MessageInput({
           </div>
 
           {/* Send Button: perfect 40x40 circle on mobile, pill on desktop, with touch prevention */}
-          <Button
-            type="submit"
-            onPointerDown={(e) => {
-              // Crucial: prevent touch/pointer event from stealing focus and closing the mobile virtual keyboard!
-              e.preventDefault();
-            }}
-            onTouchStart={(e) => {
-              e.preventDefault();
-            }}
-            disabled={disabled || !value.trim()}
-            size="sm"
-            aria-label="Send message"
-            title="Send message (Enter, Shift+Enter for new line)"
-            className="h-10 min-h-[40px] p-0 sm:px-4 w-10 sm:w-auto min-w-[40px] shrink-0 bg-white text-zinc-950 hover:bg-zinc-100 disabled:bg-zinc-800 disabled:text-zinc-500 disabled:border-white/5 border border-transparent shadow-[0_0_20px_rgba(255,255,255,0.15)] active:scale-[0.96] transition-transform duration-100 rounded-full font-semibold cursor-pointer touch-manipulation flex items-center justify-center gap-1.5"
+          <motion.div
+            whileHover={!disabled && value.trim() ? { scale: 1.05 } : {}}
+            whileTap={!disabled && value.trim() ? { scale: 0.94 } : {}}
+            className="shrink-0"
           >
-            <ArrowUp className="h-4 w-4 stroke-[2.5]" />
-            <span className="hidden sm:inline text-xs font-semibold">Send</span>
-          </Button>
+            <Button
+              type="submit"
+              onPointerDown={(e) => {
+                // Crucial: prevent touch/pointer event from stealing focus and closing the mobile virtual keyboard!
+                e.preventDefault();
+              }}
+              onTouchStart={(e) => {
+                e.preventDefault();
+              }}
+              disabled={disabled || !value.trim()}
+              size="sm"
+              aria-label="Send message"
+              title="Send message (Enter, Shift+Enter for new line)"
+              className="h-10 min-h-[40px] p-0 sm:px-4 w-10 sm:w-auto min-w-[40px] shrink-0 bg-[#f4f3ec] text-[#08090d] hover:bg-white disabled:bg-[#121622] disabled:text-zinc-600 disabled:border-white/5 border border-transparent shadow-[0_0_20px_rgba(244,243,236,0.18)] rounded-full font-semibold cursor-pointer touch-manipulation flex items-center justify-center gap-1.5"
+            >
+              <ArrowUp className="h-4 w-4 stroke-[2.5]" />
+              <span className="hidden sm:inline text-xs font-semibold">Send</span>
+            </Button>
+          </motion.div>
         </div>
       )}
     </form>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, Radio, Volume2, VolumeX, Sliders, X } from "lucide-react";
 import {
   getSavedSoundscape,
@@ -9,6 +10,7 @@ import {
   type SoundscapeType,
 } from "@/lib/ambient-audio";
 import { triggerHaptic } from "@/lib/sound-effects";
+import { springTactile } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 interface AmbientSoundMenuProps {
@@ -77,18 +79,23 @@ export function AmbientSoundMenu({ soundFxEnabled, onToggleSoundFx }: AmbientSou
         )}
       </button>
 
-      {open && (
-        <>
-          <div
-            className="fixed inset-0 z-40 bg-transparent"
-            onClick={() => setOpen(false)}
-            aria-hidden="true"
-          />
+      <AnimatePresence>
+        {open && (
+          <>
+            <div
+              className="fixed inset-0 z-40 bg-transparent"
+              onClick={() => setOpen(false)}
+              aria-hidden="true"
+            />
 
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="absolute top-full right-0 mt-2 w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border border-white/15 bg-zinc-950 p-3.5 sm:p-4 shadow-[0_20px_50px_rgba(0,0,0,0.9),inset_0_1px_0_0_rgba(255,255,255,0.1)] backdrop-blur-2xl z-50 animate-in fade-in zoom-in-95 duration-150"
-          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: -6 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: -6 }}
+              transition={springTactile}
+              onClick={(e) => e.stopPropagation()}
+              className="absolute top-full right-0 mt-2 w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border border-white/15 bg-zinc-950 p-3.5 sm:p-4 shadow-[0_20px_50px_rgba(0,0,0,0.9),inset_0_1px_0_0_rgba(255,255,255,0.1)] backdrop-blur-2xl z-50"
+            >
             <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-white/10">
               <span className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
                 <Sparkles className="h-3.5 w-3.5 text-zinc-100" />
@@ -227,9 +234,10 @@ export function AmbientSoundMenu({ soundFxEnabled, onToggleSoundFx }: AmbientSou
                 />
               </div>
             )}
-          </div>
+          </motion.div>
         </>
       )}
+    </AnimatePresence>
     </div>
   );
 }

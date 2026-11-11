@@ -1,5 +1,7 @@
 "use client";
 
+import { StarFieldCanvas } from "@/components/chat/star-field-canvas";
+
 const FULL_VIEW_STARS = [
   { top: "4%", left: "8%", size: 1, duration: "3.6s", delay: "0.2s" },
   { top: "7%", left: "24%", size: 1.5, duration: "4.8s", delay: "1.1s", glow: true },
@@ -56,8 +58,9 @@ const FULL_VIEW_STARS = [
 export function BackgroundEffects() {
   return (
     <div className="pointer-events-none fixed inset-0 overflow-hidden z-0 hidden sm:block" aria-hidden="true">
-      <div className="absolute inset-0 bg-radial-[ellipse_80%_60%_at_50%_30%] from-white/[0.02] via-transparent to-transparent opacity-60" />
-      <div className="absolute inset-0 bg-radial-[ellipse_60%_50%_at_80%_70%] from-zinc-800/[0.03] via-transparent to-transparent opacity-50" />
+      <StarFieldCanvas speed={0.4} className="opacity-40" />
+      <div className="absolute inset-0 bg-radial-[ellipse_80%_60%_at_50%_20%] from-indigo-950/20 via-transparent to-transparent opacity-70" />
+      <div className="absolute inset-0 bg-radial-[ellipse_60%_50%_at_80%_80%] from-sky-950/15 via-transparent to-transparent opacity-60" />
 
       {FULL_VIEW_STARS.map((star, idx) => (
         <span
@@ -70,7 +73,7 @@ export function BackgroundEffects() {
             height: `${star.size}px`,
             animationDuration: star.duration,
             animationDelay: star.delay,
-            boxShadow: star.glow ? "0 0 4px 1.5px rgba(255, 255, 255, 0.75)" : undefined,
+            boxShadow: star.glow ? "0 0 6px 1.5px rgba(255, 255, 255, 0.85)" : undefined,
           }}
         />
       ))}

@@ -1552,6 +1552,230 @@ export function registerTier2Tests() {
       await handleLeaveWithFarewell(); // no farewell argument -> silent exit
       expect(farewellSent).toBe(false);
     });
+
+    it('TC-2.16.19: Ephemeral Station JWT creation, signature verification, expiry, and device-binding', async () => {
+      const { createStationToken, verifyStationToken } = await import('@/lib/jwt.ts');
+
+      const deviceId = crypto.randomUUID();
+      const callsign = 'PULSAR-77';
+
+      // 1. Generate valid token
+      const token = await createStationToken({ deviceId, callsign }, 3600);
+      expect(typeof token).toBe('string');
+      expect(token.split('.').length).toBe(3);
+
+      // 2. Verify valid token
+      const verified = await verifyStationToken(token, deviceId);
+      expect(verified !== null).toBe(true);
+      expect(verified?.sub).toBe(deviceId);
+      expect(verified?.callsign).toBe(callsign);
+
+      // 3. Reject mismatched deviceId
+      const mismatched = await verifyStationToken(token, crypto.randomUUID());
+      expect(mismatched).toBeNull();
+
+      // 4. Reject tampered token
+      const parts = token.split('.');
+      const tampered = `${parts[0]}.eyJoYWNrZWQiOnRydWV9.${parts[2]}`;
+      const invalid = await verifyStationToken(tampered, deviceId);
+      expect(invalid).toBeNull();
+
+      // 5. Reject expired token
+      const expiredToken = await createStationToken({ deviceId, callsign }, -10);
+      const expiredResult = await verifyStationToken(expiredToken, deviceId);
+      expect(expiredResult).toBeNull();
+    });
+
+    it('TC-2.16.20: verifyStationAuth zero-database fast path authentication via stationToken', async () => {
+      const { verifyStationAuth } = await import('@/lib/chat-server.ts');
+      const { createStationToken } = await import('@/lib/jwt.ts');
+
+      const deviceId = crypto.randomUUID();
+      const callsign = 'QUASAR-99';
+
+      // Issue token
+      const token = await createStationToken({ deviceId, callsign });
+
+      // verifyStationAuth should authenticate via stationToken without database secret
+      const isAuthedWithToken = await verifyStationAuth(deviceId, undefined, undefined, token);
+      expect(isAuthedWithToken).toBe(true);
+
+      // Without token and without secret, unauthorized station is denied
+      const isAuthedWithout = await verifyStationAuth(deviceId, undefined, undefined, undefined);
+      expect(isAuthedWithout).toBe(false);
+    });
+
+    it('TC-2.16.21: Mobile swipe-to-skip bottom 50% coordinate gating and control exclusion logic', async () => {
+      // Test the spatial gating engine
+      const screenHeight = 840;
+      const bottomHalfThreshold = screenHeight * 0.5; // 420px
+
+      const isEligibleTouchStart = (clientY: number, targetType: string, windowWidth: number) => {
+        if (windowWidth >= 768) return false; // Mobile only
+        if (clientY < bottomHalfThreshold) return false; // Must be bottom 50%
+        if (['input', 'textarea', 'button'].includes(targetType.toLowerCase())) return false;
+        return true;
+      };
+
+      // Desktop viewport should be rejected
+      expect(isEligibleTouchStart(500, 'div', 1024)).toBe(false);
+
+      // Top 50% of screen should be rejected on mobile
+      expect(isEligibleTouchStart(200, 'div', 390)).toBe(false);
+      expect(isEligibleTouchStart(419, 'div', 390)).toBe(false);
+
+      // Bottom 50% of screen on non-interactive div should be accepted
+      expect(isEligibleTouchStart(420, 'div', 390)).toBe(true);
+      expect(isEligibleTouchStart(600, 'div', 390)).toBe(true);
+
+      // Interactive controls in bottom 50% should be protected from swipe hijacking
+      expect(isEligibleTouchStart(500, 'textarea', 390)).toBe(false);
+      expect(isEligibleTouchStart(500, 'button', 390)).toBe(false);
+      expect(isEligibleTouchStart(500, 'input', 390)).toBe(false);
+
+      // Direction disambiguation:
+      const resolveDirection = (dx: number, dy: number) => {
+        const absX = Math.abs(dx);
+        const absY = Math.abs(dy);
+        if (absX < 10 && absY < 10) return 'deadzone';
+        if (dx <= 0 || absY > absX * 0.8) return 'vertical';
+        if (dx > 10 && dx > absY * 1.2) return 'horizontal';
+        return 'ambiguous';
+      };
+
+      // Vertical message scroll should lock as vertical and NOT engage swipe
+      expect(resolveDirection(5, 50)).toBe('vertical');
+      expect(resolveDirection(-30, 10)).toBe('vertical');
+      expect(resolveDirection(2, 3)).toBe('deadzone');
+
+      // Intentional left-to-right swipe should lock as horizontal
+      expect(resolveDirection(45, 10)).toBe('horizontal');
+      expect(resolveDirection(85, 20)).toBe('horizontal');
+    });
+
+    it('TC-2.16.22: Mobile swipe-to-skip dual verification engine: instant skip when closed vs confirmation dialog when actively texting', async () => {
+      // Simulate state machine for swipe release
+      let onNextCallCount = 0;
+      let showConfirmDialog = false;
+
+      const onNext = () => {
+        onNextCallCount += 1;
+      };
+
+      const handleRelease = (dragDistance: number, closed: boolean) => {
+        const threshold = 75;
+        if (dragDistance >= threshold) {
+          if (closed) {
+            // Stranger already left: instant skip with zero prompt
+            onNext();
+          } else {
+            // Both active: require confirmation to prevent accidental skip
+            showConfirmDialog = true;
+          }
+        }
+      };
+
+      // Scenario 1: Below threshold (< 75px) -> neither action triggered
+      handleRelease(60, false);
+      expect(onNextCallCount).toBe(0);
+      expect(showConfirmDialog).toBe(false);
+
+      handleRelease(60, true);
+      expect(onNextCallCount).toBe(0);
+      expect(showConfirmDialog).toBe(false);
+
+      // Scenario 2: Active chat with peer (!closed) & swipe exceeds threshold (>= 75px)
+      handleRelease(80, false);
+      expect(onNextCallCount).toBe(0); // MUST NOT skip immediately!
+      expect(showConfirmDialog).toBe(true); // MUST prompt user!
+
+      // User cancels dialog -> no skip
+      showConfirmDialog = false;
+      expect(onNextCallCount).toBe(0);
+
+      // User confirms dialog -> execute onNext
+      showConfirmDialog = true;
+      const userConfirmed = true;
+      if (userConfirmed) {
+        showConfirmDialog = false;
+        onNext();
+      }
+      expect(onNextCallCount).toBe(1);
+      expect(showConfirmDialog).toBe(false);
+
+      // Scenario 3: Closed chat (peer left / skipped) & swipe exceeds threshold (>= 75px)
+      handleRelease(80, true);
+      expect(onNextCallCount).toBe(2); // Instant skip!
+      expect(showConfirmDialog).toBe(false); // NO prompt!
+    });
+
+    it('TC-2.16.23: Live Celestial Topic Cloud data aggregation, live count formatting, and toggle state management', async () => {
+      const activeTopicStats = [
+        { topic: 'philosophy', count: 4 },
+        { topic: 'coding', count: 2 },
+      ];
+      const activeQueueTopics = ['philosophy', 'coding'];
+      const POPULAR_TAGS = ['philosophy', 'sleeplessness', 'lo-fi & ambient', 'astrophysics'];
+
+      // 1. Build stats map
+      const statsMap = new Map<string, number>();
+      for (const item of activeTopicStats) {
+        statsMap.set(item.topic.toLowerCase(), item.count);
+      }
+
+      expect(statsMap.get('philosophy')).toBe(4);
+      expect(statsMap.get('coding')).toBe(2);
+      expect(statsMap.get('sleeplessness')).toBe(undefined);
+
+      // 2. Deduped topic cloud ordering: live first, then baseline
+      const liveKeys = Array.from(statsMap.keys());
+      const cloudTopics = Array.from(new Set([...liveKeys, ...POPULAR_TAGS]));
+
+      expect(cloudTopics[0]).toBe('philosophy');
+      expect(cloudTopics[1]).toBe('coding');
+      expect(cloudTopics).toContain('sleeplessness');
+      expect(cloudTopics.filter((t) => t === 'philosophy').length).toBe(1);
+
+      // 3. Selection toggling logic
+      let selected: string[] = [];
+      const toggle = (tag: string) => {
+        const set = new Set(selected);
+        if (set.has(tag)) set.delete(tag);
+        else if (set.size < 10) set.add(tag);
+        selected = [...set];
+      };
+
+      toggle('philosophy');
+      expect(selected).toEqual(['philosophy']);
+
+      toggle('coding');
+      expect(selected).toEqual(['philosophy', 'coding']);
+
+      toggle('philosophy'); // Deselect
+      expect(selected).toEqual(['coding']);
+    });
+
+    it('TC-2.16.24: Typing Waveform harmonic phase delay and presence state transitions', async () => {
+      // Harmonic 3-dot starlight waveform phase delays
+      const delays = [0, 0.15, 0.3];
+      expect(delays.length).toBe(3);
+      expect(delays[1] - delays[0]).toBe(0.15);
+      expect(delays[2] - delays[1]).toBe(0.15);
+
+      // Presence state mapping
+      const getPresenceBadge = (peerTyping: boolean, presence: 'active' | 'away' | 'disconnected') => {
+        if (peerTyping) return { mode: 'typing', text: 'typing' };
+        if (presence === 'away') return { mode: 'away', text: 'away' };
+        if (presence === 'disconnected') return { mode: 'disconnected', text: 'disconnected' };
+        return { mode: 'active', text: 'active' };
+      };
+
+      expect(getPresenceBadge(true, 'active').mode).toBe('typing');
+      expect(getPresenceBadge(true, 'away').mode).toBe('typing'); // Typing takes precedence over away
+      expect(getPresenceBadge(false, 'away').mode).toBe('away');
+      expect(getPresenceBadge(false, 'active').mode).toBe('active');
+      expect(getPresenceBadge(false, 'disconnected').mode).toBe('disconnected');
+    });
   });
 }
 

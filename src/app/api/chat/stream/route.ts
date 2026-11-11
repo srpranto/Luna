@@ -29,7 +29,11 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const isAuthed = await verifyStationAuth(deviceId, secretParam);
+  const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+  const queryToken = searchParams.get("token") || undefined;
+  const stationToken = bearerToken || queryToken;
+
+  const isAuthed = await verifyStationAuth(deviceId, secretParam, undefined, stationToken);
   if (!isAuthed) {
     return new Response(JSON.stringify({ error: "Unauthorized device." }), {
       status: 401,

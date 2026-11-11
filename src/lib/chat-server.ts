@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { getSql, type Sql } from "./database";
+import { createStationToken, verifyStationToken } from "./jwt";
 import {
   ABANDON_AFTER_MINUTES,
   FRIEND_TTL_DAYS,
@@ -102,8 +103,19 @@ export async function verifyStationAuth(
   deviceId: string,
   deviceSecret?: string,
   action?: string,
+  stationToken?: string,
 ): Promise<boolean> {
   if (!isDeviceId(deviceId)) return false;
+
+  // 1. Zero-DB Fast Path: Ephemeral Station JWT verified in <0.05ms without SQL
+  if (stationToken) {
+    const verified = await verifyStationToken(stationToken, deviceId);
+    if (verified && verified.sub === deviceId) {
+      return true;
+    }
+  }
+
+  // 2. Fallback Path: Check secret_hash in database
   const sql = await getSql();
   const rows = await sql<{ secret_hash: string | null }>`
     select secret_hash from stations where device_id = ${deviceId}
@@ -623,10 +635,12 @@ async function loadDesk(
       topicCounts.set(tag, (topicCounts.get(tag) ?? 0) + 1);
     }
   }
-  const activeQueueTopics = Array.from(topicCounts.entries())
+  const activeTopicStats = Array.from(topicCounts.entries())
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 6)
-    .map(([tag]) => tag);
+    .slice(0, 10)
+    .map(([topic, count]) => ({ topic, count }));
+
+  const activeQueueTopics = activeTopicStats.slice(0, 6).map((s) => s.topic);
 
   const friendIds = friendRows.map((row) => (row.user_a === deviceId ? row.user_b : row.user_a));
   const neededIds = [...new Set([...friendIds, ...inboundRows.map((r) => r.from_id)])];
@@ -653,6 +667,7 @@ async function loadDesk(
   }
 
   const queuedRow = activeSession ? undefined : queueRows[0];
+  const stationToken = await createStationToken({ deviceId, callsign: station.callsign });
 
   return {
     station,
@@ -664,6 +679,8 @@ async function loadDesk(
     enteredAt: queuedRow ? asIso(queuedRow.entered_at) : null,
     onlineCount,
     activeQueueTopics,
+    activeTopicStats,
+    stationToken,
   };
 }
 

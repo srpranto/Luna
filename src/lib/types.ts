@@ -68,6 +68,13 @@ export interface DeskView {
   enteredAt: string | null;
   onlineCount?: number;
   activeQueueTopics?: string[];
+  activeTopicStats?: TopicStat[];
+  stationToken?: string;
+}
+
+export interface TopicStat {
+  topic: string;
+  count: number;
 }
 
 export interface QueueHeartbeatResult {
