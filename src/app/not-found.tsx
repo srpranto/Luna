@@ -11,7 +11,7 @@ export default function NotFound() {
         <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-zinc-900 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] mb-4">
           <MoonLogo className="h-6 w-6 text-zinc-300" />
         </div>
-        <h1 className="text-5xl sm:text-6xl font-mono font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-b from-white to-zinc-500">
+        <h1 className="text-5xl sm:text-6xl font-mono font-bold tracking-tight text-zinc-100 drop-shadow-[0_2px_16px_rgba(255,255,255,0.12)]">
           404
         </h1>
         <p className="mt-4 text-base font-semibold text-zinc-100">Page Not Found</p>

@@ -149,7 +149,9 @@ export function ChatHistoryDialog({
               triggerHaptic("light");
               onClose();
             }}
-            className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 shrink-0 touch-manipulation cursor-pointer"
+            aria-label="Close 24h Chat History"
+            title="Close"
+            className="relative after:absolute after:-inset-1.5 after:content-[''] after:rounded-full h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 shrink-0 touch-manipulation cursor-pointer"
           >
             <X className="h-4 w-4" />
           </Button>

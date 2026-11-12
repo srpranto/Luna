@@ -57,10 +57,14 @@ const FULL_VIEW_STARS = [
 
 export function BackgroundEffects() {
   return (
-    <div className="pointer-events-none fixed inset-0 overflow-hidden z-0 hidden sm:block" aria-hidden="true">
-      <StarFieldCanvas speed={0.4} className="opacity-40" />
-      <div className="absolute inset-0 bg-radial-[ellipse_80%_60%_at_50%_20%] from-indigo-950/20 via-transparent to-transparent opacity-70" />
-      <div className="absolute inset-0 bg-radial-[ellipse_60%_50%_at_80%_80%] from-sky-950/15 via-transparent to-transparent opacity-60" />
+    <div className="pointer-events-none fixed inset-0 overflow-hidden z-0 block" aria-hidden="true">
+      <StarFieldCanvas speed={0.4} className="opacity-50" />
+      {/* Top Lunar Aurora Halo */}
+      <div className="absolute inset-0 bg-radial-[ellipse_75%_55%_at_50%_-10%] from-indigo-500/22 via-violet-950/15 to-transparent pointer-events-none" />
+      {/* Electric Cyan Stardust Nebula (bottom right) */}
+      <div className="absolute inset-0 bg-radial-[ellipse_65%_50%_at_85%_85%] from-cyan-500/18 via-sky-950/10 to-transparent pointer-events-none" />
+      {/* Deep Violet Twilight Nebula (bottom left) */}
+      <div className="absolute inset-0 bg-radial-[ellipse_55%_45%_at_15%_75%] from-violet-600/14 via-transparent to-transparent pointer-events-none" />
 
       {FULL_VIEW_STARS.map((star, idx) => (
         <span

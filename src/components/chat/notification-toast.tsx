@@ -86,7 +86,7 @@ export function NotificationToastHost() {
                 setActiveToast(null);
               }}
               aria-label="Dismiss notification"
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-850 transition-all active:scale-[0.96]"
+              className="relative after:absolute after:-inset-2 after:content-[''] after:rounded-full flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-850 transition-colors active:scale-[0.96]"
             >
               <X className="h-3.5 w-3.5" />
             </button>

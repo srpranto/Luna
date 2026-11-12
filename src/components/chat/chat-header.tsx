@@ -113,7 +113,7 @@ export function ChatHeader({
   return (
     <header
       className={cn(
-        "relative z-40 items-center justify-between border-b border-white/[0.08] bg-[#06070a]/80 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:px-6 backdrop-blur-2xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]",
+        "relative z-40 items-center justify-between border-b border-indigo-500/15 bg-[#070914]/80 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:px-6 backdrop-blur-2xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]",
         activeChat ? "hidden sm:flex" : "flex",
       )}
     >
@@ -140,8 +140,8 @@ export function ChatHeader({
 
       <div className="relative z-10 flex items-center gap-2 sm:gap-3 min-w-0 shrink-0">
         {!activeChat && (
-          <div className="flex h-7.5 w-7.5 sm:h-8 sm:w-8 items-center justify-center rounded-xl border border-white/10 bg-zinc-900/90 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_2px_8px_rgba(0,0,0,0.4)] backdrop-blur-md">
-            <MoonLogo className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-zinc-100" glow />
+          <div className="flex h-7.5 w-7.5 sm:h-8 sm:w-8 items-center justify-center rounded-xl border border-indigo-400/25 bg-[#0e1428]/90 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.15),0_0_16px_rgba(99,102,241,0.25)] backdrop-blur-md">
+            <MoonLogo className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-indigo-100" glow />
           </div>
         )}
         <div className="min-w-0">
@@ -250,7 +250,7 @@ export function ChatHeader({
             <AmbientSoundMenu soundFxEnabled={soundEnabled} onToggleSoundFx={onToggleSound} />
           )}
 
-          <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }}>
+          <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.96 }}>
             <Button
               type="button"
               variant={logOpen ? "secondary" : "ghost"}
@@ -268,7 +268,7 @@ export function ChatHeader({
           </motion.div>
 
           {hasHistory && onToggleHistory && (
-            <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }}>
+            <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.96 }}>
               <Button
                 type="button"
                 variant={historyOpen ? "secondary" : "ghost"}
@@ -287,7 +287,7 @@ export function ChatHeader({
           )}
 
           {!activeChat && onToggleVoid && (
-            <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }}>
+            <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.96 }}>
               <Button
                 type="button"
                 variant={voidOpen ? "secondary" : "ghost"}
@@ -311,7 +311,7 @@ export function ChatHeader({
           )}
 
           {onToggleSettings && (
-            <motion.div whileHover={{ scale: 1.08, rotate: 15 }} whileTap={{ scale: 0.92 }}>
+            <motion.div whileHover={{ scale: 1.08, rotate: 15 }} whileTap={{ scale: 0.96 }}>
               <Button
                 type="button"
                 variant={settingsOpen ? "secondary" : "ghost"}

@@ -36,6 +36,21 @@ export function getOrCreateDeviceSecret(): string {
   return secret;
 }
 
+export function resetDeviceIdentity(): { deviceId: string; deviceSecret: string } {
+  if (typeof window !== "undefined") {
+    const desk = deskName();
+    localStorage.removeItem(`${STORAGE_PREFIX}.${desk}`);
+    localStorage.removeItem(`${SECRET_PREFIX}.${desk}`);
+    localStorage.removeItem("luna.station_token");
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.removeItem("luna.station_token");
+    }
+  }
+  const id = getOrCreateDeviceId();
+  const secret = getOrCreateDeviceSecret();
+  return { deviceId: id, deviceSecret: secret };
+}
+
 export const getCachedCustomName = (): string | null =>
   typeof window === "undefined" ? null : localStorage.getItem(`${STORAGE_PREFIX}.name.${deskName()}`);
 

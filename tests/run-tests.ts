@@ -33,11 +33,13 @@ async function run(): Promise<void> {
   const { registerTier2Tests } = await import("./edge-cases.test.ts");
   const { registerTier3Tests } = await import("./integration.test.ts");
   const { registerTier4Tests } = await import("./scenarios.test.ts");
+  const { registerCodeQualityTests } = await import("./code-quality.test.ts");
 
   registerTier1Tests();
   registerTier2Tests();
   registerTier3Tests();
   registerTier4Tests();
+  registerCodeQualityTests();
 
   let totalTests = 0;
   let totalPassed = 0;
@@ -49,6 +51,7 @@ async function run(): Promise<void> {
     "Tier 2 (Edge Cases)": { passed: 0, total: 0 },
     "Tier 3 (Integration)": { passed: 0, total: 0 },
     "Tier 4 (Scenarios)": { passed: 0, total: 0 },
+    "Tier 5 (Code Quality)": { passed: 0, total: 0 },
   };
 
   for (const suite of testRegistry.suites) {
@@ -57,6 +60,7 @@ async function run(): Promise<void> {
     if (suite.name.startsWith("Tier 2")) tierKey = "Tier 2 (Edge Cases)";
     else if (suite.name.startsWith("Tier 3")) tierKey = "Tier 3 (Integration)";
     else if (suite.name.startsWith("Tier 4")) tierKey = "Tier 4 (Scenarios)";
+    else if (suite.name.startsWith("Tier 5")) tierKey = "Tier 5 (Code Quality)";
 
     for (const test of suite.tests) {
       totalTests += 1;

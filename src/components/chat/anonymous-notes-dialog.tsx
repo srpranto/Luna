@@ -170,7 +170,9 @@ export function AnonymousNotesDialog({
               triggerHaptic("light");
               onClose();
             }}
-            className="rounded-lg p-1.5 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors touch-manipulation cursor-pointer"
+            aria-label="Close The Void"
+            title="Close"
+            className="relative after:absolute after:-inset-1.5 after:content-[''] after:rounded-full rounded-lg p-1.5 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors touch-manipulation cursor-pointer"
           >
             <X className="h-4 w-4" />
           </button>

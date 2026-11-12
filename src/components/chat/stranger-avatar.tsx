@@ -31,8 +31,8 @@ export function StrangerAvatar({
                 setOpen(false);
                 onDismiss?.();
               }}
-              aria-label="Minimize"
-              className="text-zinc-400 hover:text-zinc-100 p-1 rounded-md transition-colors cursor-pointer"
+              aria-label="Minimize match suggestions"
+              className="relative after:absolute after:-inset-2 after:content-[''] after:rounded-full text-zinc-400 hover:text-zinc-100 p-1 rounded-md transition-colors cursor-pointer"
               title="Minimize"
             >
               <X className="h-3.5 w-3.5" />

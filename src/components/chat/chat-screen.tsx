@@ -30,6 +30,7 @@ import type { ChatMessage } from "@/lib/types";
 import { SessionElapsedBadge } from "@/components/chat/chat-header";
 import { SwipeToSkip } from "@/components/chat/swipe-to-skip";
 import { TypingWaveform } from "@/components/chat/typing-waveform";
+import type { FloatingItem } from "@/hooks/use-messages";
 
 export function ChatScreen({
   sessionKind,
@@ -99,7 +100,7 @@ export function ChatScreen({
   onRetryMessage?: (messageId: string) => void;
   busy: boolean;
   onReaction?: (emoji: string) => void;
-  floatingReactions?: any[];
+  floatingReactions?: FloatingItem[];
   onReactionFinished?: (id: string) => void;
   onEditMessage: (messageId: string, newBody: string) => Promise<void>;
   onDeleteMessage: (messageId: string) => Promise<void>;
@@ -598,6 +599,7 @@ export function ChatScreen({
           onReply={onReply}
           onRetryMessage={onRetryMessage}
           sessionKind={sessionKind}
+          sessionCreatedAt={createdAt}
           onReconnect={onReconnect}
           outboundReconnect={outboundReconnect}
           inboundReconnect={inboundReconnect}

@@ -2,6 +2,7 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowDown } from "lucide-react";
+import { TypingWaveform } from "@/components/chat/typing-waveform";
 import { springTactile } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
@@ -62,15 +63,11 @@ export function ScrollToBottomButton({
                 <span className="font-semibold tabular-nums text-white">
                   {unreadCount} new {unreadCount === 1 ? "message" : "messages"}
                 </span>
-                <ArrowDown className="h-3.5 w-3.5 text-sky-300 animate-bounce" />
+                <ArrowDown className="h-3.5 w-3.5 text-sky-300 transition-transform duration-200 group-hover:translate-y-0.5" />
               </>
             ) : peerTyping ? (
               <>
-                <div className="flex items-center gap-1 shrink-0">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-bounce [animation-delay:-0.3s]" />
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-bounce [animation-delay:-0.15s]" />
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-bounce" />
-                </div>
+                <TypingWaveform variant="inline" className="shrink-0" />
                 <span className="text-zinc-200 font-mono text-[11px] truncate max-w-[140px]">
                   {peerCallsign || "Stranger"} is typing…
                 </span>
@@ -78,7 +75,7 @@ export function ScrollToBottomButton({
               </>
             ) : (
               <>
-                <ArrowDown className="h-3.5 w-3.5 text-zinc-100 animate-bounce" />
+                <ArrowDown className="h-3.5 w-3.5 text-zinc-100 transition-transform duration-200 group-hover:translate-y-0.5" />
                 <span>Jump to latest</span>
               </>
             )}

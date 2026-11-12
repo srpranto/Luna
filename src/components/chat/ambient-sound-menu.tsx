@@ -59,7 +59,7 @@ export function AmbientSoundMenu({ soundFxEnabled, onToggleSoundFx }: AmbientSou
         aria-label="Sound & Ambient Atmosphere"
         title="Sound & Ambient Atmosphere"
         className={cn(
-          "relative flex h-8.5 w-8.5 sm:h-8 sm:w-8 items-center justify-center rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 transition-colors cursor-pointer touch-manipulation active:scale-95",
+          "relative after:absolute after:-inset-1.5 after:content-[''] after:rounded-full flex h-8.5 w-8.5 sm:h-8 sm:w-8 items-center justify-center rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 transition-colors cursor-pointer touch-manipulation active:scale-[0.96]",
           open && "bg-zinc-800 text-zinc-100 ring-1 ring-white/20",
           isSoundscapeActive && "text-zinc-100 hover:text-white",
         )}

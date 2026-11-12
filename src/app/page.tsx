@@ -23,7 +23,7 @@ import { useChatStream } from "@/hooks/use-chat-stream";
 import type { LunaStreamEvent } from "@/lib/events";
 import { useVisualViewport } from "@/hooks/use-visual-viewport";
 import { sanitizeInterests } from "@/lib/constants";
-import { deskName, getCachedCustomName, getOrCreateDeviceId, getOrCreateDeviceSecret } from "@/lib/identity";
+import { deskName, getCachedCustomName, getOrCreateDeviceId, getOrCreateDeviceSecret, resetDeviceIdentity } from "@/lib/identity";
 import {
   sweepExpiredCaches,
   exportDevicePublicKeyHex,
@@ -62,7 +62,7 @@ import {
   triggerHaptic,
 } from "@/lib/sound-effects";
 import type { DeskView, SessionView, HistorySession } from "@/lib/types";
-import { isApiClientError } from "@/lib/errors";
+import { isApiClientError, formatUserFacingError, type ErrorContext } from "@/lib/errors";
 
 const INTEREST_KEY = "luna.interests";
 const BLOCKED_KEY = "luna.blocked";
@@ -97,34 +97,13 @@ function saveBlockedStation(peerId: string): void {
   }
 }
 
-function errorMessage(error: unknown): string {
-  if (typeof navigator !== "undefined" && !navigator.onLine) {
-    return "You're offline. Please check your internet connection.";
-  }
-  if (isApiClientError(error)) {
-    if (error.statusCode === 404 || error.code === "NOT_FOUND") {
-      return "";
-    }
-    if (error.statusCode === 429) {
-      return error.message;
-    }
-  }
-  if (error instanceof Error && error.message) {
-    const msg = error.message;
-    if (
-      msg.includes("Line not found") ||
-      msg.includes("Chat session not found") ||
-      msg.includes("conversation has ended") ||
-      msg.includes("aborted")
-    ) {
-      return "";
-    }
-    if (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("Load failed")) {
-      return "No internet connection. Waiting for network...";
-    }
-    return msg;
-  }
-  return "";
+function isInteractiveElement(el: EventTarget | null): boolean {
+  if (!el || !(el instanceof Element)) return false;
+  return Boolean(
+    el.closest(
+      'input, textarea, select, button, a[href], [tabindex]:not([tabindex="-1"]), [contenteditable="true"], [role="button"], [role="link"], [role="menuitem"], [role="option"], [role="tab"], [role="dialog"]',
+    ),
+  );
 }
 
 const subscribeNetwork = (cb: () => void) => {
@@ -153,7 +132,8 @@ export default function Home() {
   const [sessionView, setSessionView] = useState<SessionView | null>(null);
   const [busy, setBusy] = useState(false);
   const [soundActive, setSoundActive] = useState(true);
-  const [wireCutPrimed, setWireCutPrimed] = useState(false);
+  const [primedSessionId, setPrimedSessionId] = useState<string | null>(null);
+  const wireCutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [voidOpen, setVoidOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historySessions, setHistorySessions] = useState<HistorySession[]>([]);
@@ -194,8 +174,8 @@ export default function Home() {
     return valid;
   }, []);
 
-  const notifyError = useCallback((err: unknown) => {
-    const msg = errorMessage(err);
+  const notifyError = useCallback((err: unknown, context: ErrorContext = "general") => {
+    const msg = formatUserFacingError(err, context);
     if (msg) setNote(msg);
   }, []);
 
@@ -291,7 +271,7 @@ export default function Home() {
       playLeaveTone();
       triggerHaptic("disconnect");
     },
-    notifyError,
+    notifyError: (err) => notifyError(err, "session"),
   });
 
   const triggerResync = useCallback(() => {
@@ -391,7 +371,14 @@ export default function Home() {
         handleDeskUpdate(data);
       })
       .catch((err) => {
-        if (!cancelled) notifyError(err);
+        if (!cancelled) {
+          if (isApiClientError(err) && (err.statusCode === 401 || err.statusCode === 400)) {
+            const fresh = resetDeviceIdentity();
+            setDeviceId(fresh.deviceId);
+            return;
+          }
+          notifyError(err);
+        }
       });
 
     return () => {
@@ -681,14 +668,38 @@ export default function Home() {
     };
   }, [deviceId, listening, setIsAway, setMessages, handleDeskUpdate, getRecentPeerIds]);
 
-  useEffect(() => {
-    if (!wireCutPrimed) return;
-    const timer = window.setTimeout(() => {
-      setWireCutPrimed(false);
-      setNote((prev) => (prev?.includes("Esc again") ? null : prev));
+  const currentSessionId = currentSession?.id;
+  const wireCutPrimed = Boolean(currentSessionId && primedSessionId === currentSessionId);
+
+  const clearWireCut = useCallback(() => {
+    if (wireCutTimerRef.current) {
+      clearTimeout(wireCutTimerRef.current);
+      wireCutTimerRef.current = null;
+    }
+    setPrimedSessionId(null);
+    setNote((prev) => (prev?.includes("Esc again") ? null : prev));
+  }, []);
+
+  const armWireCut = useCallback(() => {
+    if (!currentSessionId) return;
+    if (wireCutTimerRef.current) {
+      clearTimeout(wireCutTimerRef.current);
+    }
+    setPrimedSessionId(currentSessionId);
+    setNote("Press Esc again within 2.5s to leave the chat.");
+    wireCutTimerRef.current = setTimeout(() => {
+      clearWireCut();
     }, 2500);
-    return () => window.clearTimeout(timer);
-  }, [wireCutPrimed]);
+  }, [currentSessionId, clearWireCut]);
+
+  useEffect(() => {
+    return () => {
+      if (wireCutTimerRef.current) {
+        clearTimeout(wireCutTimerRef.current);
+        wireCutTimerRef.current = null;
+      }
+    };
+  }, [currentSessionId]);
 
   const handleToggleSound = () => {
     const next = !soundActive;
@@ -750,7 +761,7 @@ export default function Home() {
       setLogOpen(false);
       setSettingsOpen(false);
     } catch (err) {
-      notifyError(err);
+      notifyError(err, "queue");
       if (deviceId) {
         void getDesk({ deviceId }).then(handleDeskUpdate).catch(() => {});
       }
@@ -786,7 +797,7 @@ export default function Home() {
       const next = await leaveQueue({ deviceId });
       handleDeskUpdate(next);
     } catch (err) {
-      notifyError(err);
+      notifyError(err, "queue");
     } finally {
       isLeavingQueueRef.current = false;
       setBusy(false);
@@ -794,6 +805,7 @@ export default function Home() {
   }, [deviceId, busy, notifyError, handleDeskUpdate]);
 
   const handleLeaveSession = useCallback(async (farewell?: string) => {
+    clearWireCut();
     if (!deviceId || busy || isLeavingSessionRef.current) return;
     const targetSessionId = currentSession?.id;
     if (farewell && currentSession && !currentSession.closed) {
@@ -842,9 +854,10 @@ export default function Home() {
       isLeavingSessionRef.current = false;
       setBusy(false);
     }
-  }, [deviceId, busy, currentSession, desk, runSendMessage, setIsAway, setReplyingTo, setMessages, handleDeskUpdate, cancelUnrespondedNotification]);
+  }, [deviceId, busy, currentSession, desk, runSendMessage, setIsAway, setReplyingTo, setMessages, handleDeskUpdate, cancelUnrespondedNotification, clearWireCut]);
 
   const handleRequestLeaveSession = useCallback(() => {
+    clearWireCut();
     if (activeSessionRef.current && !activeSessionRef.current.closed) {
       setExitConfirm({ type: "chat" });
       exitConfirmRef.current = { type: "chat" };
@@ -862,9 +875,10 @@ export default function Home() {
     } else {
       void handleLeaveSession();
     }
-  }, [handleLeaveSession]);
+  }, [handleLeaveSession, clearWireCut]);
 
   const handleNextStranger = useCallback(async () => {
+    clearWireCut();
     if (!deviceId || busyRef.current) return;
     const targetSessionId = currentSession?.id;
     if (currentSession?.peerId) {
@@ -917,7 +931,7 @@ export default function Home() {
       setLogOpen(false);
       setSettingsOpen(false);
     } catch (err) {
-      notifyError(err);
+      notifyError(err, "queue");
       if (deviceId) {
         void getDesk({ deviceId }).then(handleDeskUpdate).catch(() => {});
       }
@@ -925,7 +939,7 @@ export default function Home() {
       isQueueingRef.current = false;
       setBusy(false);
     }
-  }, [deviceId, currentSession, setIsAway, setReplyingTo, setMessages, notifyError, handleDeskUpdate, getRecentPeerIds]);
+  }, [deviceId, currentSession, setIsAway, setReplyingTo, setMessages, notifyError, handleDeskUpdate, getRecentPeerIds, clearWireCut]);
 
   const handleReconnect = useCallback(async () => {
     if (!deviceId || !currentSession?.id || busyRef.current) return;
@@ -941,7 +955,7 @@ export default function Home() {
       setSessionView((prev) => (prev ? { ...prev, outboundReconnect: true } : prev));
       setNote("Reconnect requested. Waiting for stranger to accept...");
     } catch (err) {
-      notifyError(err);
+      notifyError(err, "session");
     } finally {
       setBusy(false);
     }
@@ -1046,6 +1060,7 @@ export default function Home() {
   };
 
   const openOverlayModal = useCallback((name: "settings" | "log" | "history" | "void") => {
+    clearWireCut();
     setSettingsOpen(name === "settings");
     setLogOpen(name === "log");
     setHistoryOpen(name === "history");
@@ -1063,7 +1078,7 @@ export default function Home() {
         window.history.pushState(nextState, "");
       }
     }
-  }, []);
+  }, [clearWireCut]);
 
   const closeOverlayModal = useCallback((name?: "settings" | "log" | "history" | "void") => {
     if (!name || name === "settings") setSettingsOpen(false);
@@ -1200,21 +1215,29 @@ export default function Home() {
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
-        const target = e.target as HTMLElement | null;
-        const isInputOrTextarea =
-          target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA");
-        if (
-          !isInputOrTextarea &&
-          activeSessionRef.current?.closed &&
-          !busyRef.current &&
-          !settingsOpenRef.current &&
-          !logOpenRef.current &&
-          !historyOpenRef.current &&
-          !voidOpenRef.current &&
-          !exitConfirmRef.current
-        ) {
+      if (e.isComposing) return;
+
+      if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
+        const activeEl = document.activeElement;
+        const target = e.target;
+        const isInteractive = isInteractiveElement(activeEl) || isInteractiveElement(target);
+
+        const hasOpenModal =
+          Boolean(exitConfirmRef.current) ||
+          settingsOpenRef.current ||
+          logOpenRef.current ||
+          historyOpenRef.current ||
+          voidOpenRef.current;
+
+        const isPartingScreen =
+          activeSessionRef.current?.closed === true &&
+          !listeningRef.current &&
+          !isQueueingRef.current &&
+          !busyRef.current;
+
+        if (!isInteractive && !hasOpenModal && isPartingScreen) {
           e.preventDefault();
+          clearWireCut();
           void handleNextStranger();
           return;
         }
@@ -1223,6 +1246,7 @@ export default function Home() {
       if (e.key === "Escape") {
         if (exitConfirmRef.current) {
           e.preventDefault();
+          clearWireCut();
           const type = exitConfirmRef.current.type;
           setExitConfirm(null);
           exitConfirmRef.current = null;
@@ -1246,23 +1270,34 @@ export default function Home() {
           voidOpenRef.current
         ) {
           e.preventDefault();
+          clearWireCut();
           closeOverlayModal();
           return;
         }
 
-        if (activeSessionRef.current && !busyRef.current) {
+        const activeEl = document.activeElement as HTMLElement | null;
+        const isInputFocused =
+          activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA" || activeEl.isContentEditable);
+
+        if (isInputFocused && activeSessionRef.current && !activeSessionRef.current.closed) {
+          activeEl.blur();
+          return;
+        }
+
+        if (activeSessionRef.current && !activeSessionRef.current.closed && !busyRef.current) {
           e.preventDefault();
           if (wireCutPrimed) {
+            clearWireCut();
             void handleLeaveSession();
           } else {
-            setWireCutPrimed(true);
-            setNote("Press Esc again within 2.5s to leave the chat.");
+            armWireCut();
           }
           return;
         }
 
         if (listeningRef.current && !busyRef.current && !isLeavingQueueRef.current) {
           e.preventDefault();
+          clearWireCut();
           void handleLeaveQueue();
           return;
         }
@@ -1271,7 +1306,7 @@ export default function Home() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [wireCutPrimed, closeOverlayModal, handleLeaveSession, handleLeaveQueue, handleNextStranger]);
+  }, [wireCutPrimed, armWireCut, clearWireCut, closeOverlayModal, handleLeaveSession, handleLeaveQueue, handleNextStranger]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

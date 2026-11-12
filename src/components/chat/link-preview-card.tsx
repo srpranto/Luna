@@ -60,8 +60,6 @@ export function LinkPreviewCard({
 }) {
   const [data, setData] = useState<LinkPreviewData | null>(() => previewCache.get(url) || null);
   const [loading, setLoading] = useState(() => !previewCache.has(url));
-  const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  const imageError = failedUrl === url;
 
   useEffect(() => {
     if (previewCache.has(url)) {
@@ -123,36 +121,9 @@ export function LinkPreviewCard({
           : "border-white/10 bg-zinc-900/70 hover:border-white/20 hover:bg-zinc-850/90 text-zinc-100 shadow-md backdrop-blur-md",
       )}
     >
-      {data.image && !imageError && (
-        <div className="relative aspect-[16/9] w-full overflow-hidden bg-black/40 border-b border-inherit/20">
-          <img
-            src={data.image}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            onError={() => setFailedUrl(url)}
-            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-          />
-          <div className="absolute inset-0 ring-1 ring-inset ring-white/10 pointer-events-none" />
-        </div>
-      )}
-
       <div className="p-2.5 sm:p-3">
         <div className="flex items-center gap-1.5 mb-1 text-[10px] font-mono tracking-wide opacity-75">
-          {data.favicon ? (
-            <img
-              src={data.favicon}
-              alt=""
-              width={12}
-              height={12}
-              className="h-3 w-3 rounded-xs shrink-0"
-              onError={(e) => {
-                (e.currentTarget as HTMLElement).style.display = "none";
-              }}
-            />
-          ) : (
-            <Globe className="h-3 w-3 shrink-0" />
-          )}
+          <Globe className="h-3 w-3 shrink-0" />
           <span className="truncate uppercase font-medium">{data.domain}</span>
           <ExternalLink className="h-2.5 w-2.5 ml-auto opacity-60 group-hover:opacity-100 shrink-0 transition-opacity" />
         </div>

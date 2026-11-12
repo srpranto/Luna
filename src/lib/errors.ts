@@ -150,3 +150,124 @@ export async function tryCatchAsync<T>(operation: () => Promise<T>): Promise<Res
     return err(caught instanceof Error ? caught : new Error(String(caught)));
   }
 }
+
+// =============================================================================
+// Canonical User-Facing Error Translation
+// =============================================================================
+
+export type ErrorContext = "session" | "queue" | "auth" | "background_poll" | "general";
+
+/**
+ * Translates application and system errors into safe, human-facing sanctuary messages.
+ *
+ * Rules:
+ * 1. Cancellation (aborted / AbortError) is treated as a routine lifecycle event (returns null).
+ * 2. Explicitly handles SESSION_NOT_FOUND alongside NOT_FOUND.
+ * 3. In "session" context, missing session is reported ("This conversation has ended or is no longer available.").
+ * 4. In "background_poll" context, routine heartbeat/polling misses are silent (returns null).
+ * 5. In "general" context, genuine missing resources remain observable.
+ * 6. Offline status is only applied after checking cancellation and specific API codes.
+ * 7. Never leaks internal server strings, database diagnostics, or SQL keywords to users.
+ */
+export function formatUserFacingError(error: unknown, context: ErrorContext = "general"): string | null {
+  if (!error) return null;
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  // 1. Check for intentional user or component request cancellation
+  if (error instanceof Error) {
+    if (error.name === "AbortError" || error.message.includes("aborted")) {
+      return null;
+    }
+  }
+
+  // 2. Check for structured API and application errors
+  if (isApiClientError(error) || isAppError(error)) {
+    const isNotFound =
+      error.statusCode === 404 ||
+      error.code === "NOT_FOUND" ||
+      error.code === "SESSION_NOT_FOUND" ||
+      error.message.includes("Line not found") ||
+      error.message.includes("Chat session not found") ||
+      error.message.includes("conversation has ended");
+
+    if (isNotFound) {
+      if (context === "session") {
+        return "This conversation has ended or is no longer available.";
+      }
+      if (context === "background_poll") {
+        return null;
+      }
+      return "The requested sanctuary resource was not found.";
+    }
+
+    if (error.statusCode === 429 || error.code === "RATE_LIMIT_EXCEEDED") {
+      return "You are sending thoughts too quickly. Please pause a moment.";
+    }
+
+    if (error.statusCode === 401 || error.statusCode === 403 || error.code === "UNAUTHORIZED" || error.code === "FORBIDDEN") {
+      return "Session credentials out of sync. Reconnecting...";
+    }
+
+    if (error.code === "VALIDATION_ERROR" || error.statusCode === 400) {
+      if (error.message.includes("Message too long")) {
+        return "Message exceeds character limit (280 characters).";
+      }
+      if (error.message.includes("Callsign too long")) {
+        return "Callsign must be 64 characters or fewer.";
+      }
+      if (error.message.includes("Banned phrase") || error.message.includes("moderation")) {
+        return "Message contains language that violates sanctuary community guidelines.";
+      }
+      return "Unable to process request. Please check your message.";
+    }
+
+    if (error.statusCode >= 500) {
+      return "Sanctuary server encountered a quiet hitch. Please try again.";
+    }
+  }
+
+  // 3. Check for network transport errors
+  if (error instanceof Error) {
+    const msg = error.message;
+    const isNetworkFailure =
+      msg.includes("Failed to fetch") ||
+      msg.includes("NetworkError") ||
+      msg.includes("Load failed") ||
+      msg.includes("ECONNREFUSED") ||
+      msg.includes("ETIMEDOUT");
+
+    if (isNetworkFailure) {
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        return "You are offline. Please check your internet connection.";
+      }
+      return "Unable to reach Luna sanctuary. Reconnecting...";
+    }
+
+    // Check specific known message patterns from third-party wrappers
+    if (
+      msg.includes("Line not found") ||
+      msg.includes("Chat session not found") ||
+      msg.includes("conversation has ended")
+    ) {
+      if (context === "session") {
+        return "This conversation has ended or is no longer available.";
+      }
+      if (context === "background_poll") {
+        return null;
+      }
+      return "The requested sanctuary resource was not found.";
+    }
+  }
+
+  // 4. Refined offline check for unclassified failures while offline
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    return "You are offline. Please check your internet connection.";
+  }
+
+  // 5. Safe default: Never leak raw internal/server messages
+  return "An unexpected hitch occurred. Please try again.";
+}
+

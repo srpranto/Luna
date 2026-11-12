@@ -13,6 +13,14 @@ import { triggerHaptic } from "@/lib/sound-effects";
 import { springSmooth } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
+const MIDNIGHT_CONTEMPLATIONS = [
+  "Traversing the midnight cosmos… Connecting you as soon as someone arrives.",
+  "The quietest conversations often find us when we least expect them.",
+  "Searching nocturnal frequencies under the stars…",
+  "Patience in the dark — waiting for another night owl to arrive.",
+  "Honest conversations take a quiet moment to align.",
+];
+
 export function SearchingScreen({
   enteredAt,
   interests,
@@ -118,9 +126,11 @@ export function SearchingScreen({
             ? (interests.length > 0
                 ? `Searched for 2 minutes with #${interests.join(", #")}. Nobody with matching topics is online at this quiet hour.`
                 : "Searched for 2 minutes. The midnight cosmos is still quiet right now.")
-            : (waitMs < 4000 && interests.length > 0
-                ? "Searching for someone with matching interests..."
-                : "Traversing the cosmos for matching night owls...")}
+            : (waitMs < 5000 && interests.length > 0
+                ? `Focusing telescope on #${interests.join(", #")}...`
+                : waitMs < 15000 && interests.length > 0
+                  ? "Expanding search horizon across all late-night stations..."
+                  : "Traversing the cosmos for matching night owls...")}
         </p>
 
         {interests.length > 0 && (
@@ -137,9 +147,20 @@ export function SearchingScreen({
           </div>
         )}
 
-        {!isTimeout && waitMs >= 10000 && waitMs < 60000 && (
+        {!isTimeout && waitMs >= 5000 && interests.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-cyan-950/40 border border-cyan-500/25 text-[10px] sm:text-[11px] font-mono text-cyan-300 shadow-sm"
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />
+            <span>Horizon broadened to all night owls</span>
+          </motion.div>
+        )}
+
+        {!isTimeout && waitMs >= 8000 && waitMs < 60000 && (
           <div className="animate-fade-up stagger-4 mt-3.5 max-w-xs sm:max-w-sm rounded-lg border border-white/5 bg-zinc-900/60 px-3 py-1.5 sm:py-2 text-[11px] sm:text-xs text-zinc-400 text-center leading-relaxed backdrop-blur-sm">
-            <span>Traversing the midnight cosmos… Connecting you as soon as someone arrives.</span>
+            <span>{MIDNIGHT_CONTEMPLATIONS[Math.floor(waitMs / 10000) % MIDNIGHT_CONTEMPLATIONS.length]}</span>
           </div>
         )}
 

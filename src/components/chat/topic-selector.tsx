@@ -166,9 +166,9 @@ export function TopicSelector({
             onBlur={handleBlur}
             disabled={reachedMax}
             placeholder={reachedMax ? "10 topics max" : "Add topics (e.g. philosophy, coding)..."}
-            className="lowercase text-base sm:text-sm pr-9 bg-[#080b12]/90 border-white/[0.08] text-zinc-100 placeholder:text-zinc-500 focus-visible:border-indigo-400/40 focus-visible:ring-1 focus-visible:ring-indigo-400/20 rounded-xl h-10 shadow-inner"
+            className="lowercase text-base sm:text-sm pr-9 bg-[#080b18]/90 border-indigo-500/25 text-white placeholder:text-zinc-500 focus-visible:border-indigo-400/60 focus-visible:ring-1 focus-visible:ring-indigo-400/30 rounded-xl h-10 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]"
           />
-          <Hash className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500 pointer-events-none" />
+          <Hash className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-indigo-400/50 pointer-events-none" />
         </div>
         <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }} className="shrink-0">
           <Button
@@ -177,7 +177,7 @@ export function TopicSelector({
             size="sm"
             onClick={() => commitWords(draft)}
             disabled={!draft.trim() || reachedMax}
-            className="h-10 px-3.5 rounded-xl border border-white/[0.08] bg-[#141824] hover:bg-[#1c2233] text-zinc-200 text-xs cursor-pointer touch-manipulation"
+            className="h-10 px-3.5 rounded-xl border border-indigo-400/25 bg-[#141a32] hover:bg-[#1a2242] text-indigo-100 text-xs cursor-pointer touch-manipulation shadow-sm"
           >
             <Plus className="h-3.5 w-3.5 mr-1" />
             <span>Add</span>
@@ -200,14 +200,14 @@ export function TopicSelector({
               >
                 <Badge
                   variant="secondary"
-                  className="gap-1.5 py-1 px-3 text-xs lowercase rounded-full bg-indigo-950/40 border border-indigo-400/30 text-indigo-200 shadow-sm hover:border-indigo-400/50 transition-colors touch-manipulation"
+                  className="gap-1.5 py-1 px-3 text-xs lowercase rounded-full bg-[#3b5bfd]/20 border border-[#3b5bfd]/40 text-blue-100 shadow-[0_0_10px_rgba(59,91,253,0.2)] hover:border-[#3b5bfd]/60 transition-colors touch-manipulation"
                 >
                   <span>#{item}</span>
                   <button
                     type="button"
                     onClick={() => handleRemove(item)}
                     aria-label={`Remove ${item}`}
-                    className="rounded-full hover:bg-white/10 p-1 -mr-1 transition-colors cursor-pointer text-zinc-400 hover:text-zinc-100 flex items-center justify-center"
+                    className="rounded-full hover:bg-white/10 p-1 -mr-1 transition-colors cursor-pointer text-indigo-200/70 hover:text-white flex items-center justify-center"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -252,7 +252,13 @@ export function TopicSelector({
           </motion.button>
         </div>
 
-        <motion.div layout className="flex flex-wrap gap-1.5">
+        <motion.div
+          layout
+          className={cn(
+            "flex flex-wrap gap-1.5",
+            expanded && "max-h-40 sm:max-h-52 overflow-y-auto pr-0.5"
+          )}
+        >
           <AnimatePresence>
             {visibleTopics.map((topic) => {
               const isSelected = value.includes(topic);
@@ -266,7 +272,7 @@ export function TopicSelector({
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.9 }}
                   whileHover={{ scale: 1.04 }}
-                  whileTap={{ scale: 0.94 }}
+                  whileTap={{ scale: 0.96 }}
                   transition={springSmooth}
                   type="button"
                   aria-pressed={isSelected}
@@ -274,10 +280,10 @@ export function TopicSelector({
                   className={cn(
                     "rounded-full px-2.5 py-1 text-xs transition-all cursor-pointer touch-manipulation border flex items-center gap-1 select-none",
                     isSelected
-                      ? "bg-[#f4f3ec] text-[#08090d] border-white shadow-[0_0_18px_rgba(244,243,236,0.28),0_2px_8px_rgba(0,0,0,0.4)] font-semibold"
+                      ? "bg-[#3b5bfd] text-white border-blue-400/50 shadow-[0_0_20px_rgba(59,91,253,0.4),0_2px_8px_rgba(0,0,0,0.4)] font-semibold"
                       : count && count > 0
-                        ? "bg-[#0c101a]/90 text-emerald-300 border-emerald-500/30 hover:border-emerald-400/60 hover:bg-[#111726] shadow-[0_0_10px_rgba(16,185,129,0.1)]"
-                        : "bg-[#0c101a]/80 text-zinc-300 border-white/[0.08] hover:border-white/20 hover:text-zinc-100 hover:bg-[#121624]"
+                        ? "bg-[#0d1428]/95 text-cyan-300 border-cyan-400/35 hover:border-cyan-300/60 hover:bg-[#121c38] shadow-[0_0_12px_rgba(6,182,212,0.15)]"
+                        : "bg-[#0b1022]/85 text-zinc-300 border-indigo-400/15 hover:border-indigo-400/40 hover:text-white hover:bg-[#121832] hover:shadow-[0_0_10px_rgba(99,102,241,0.2)]"
                   )}
                 >
                   <span className="font-mono text-[11px]">#{topic}</span>
@@ -286,8 +292,8 @@ export function TopicSelector({
                       className={cn(
                         "px-1.5 py-0.2 rounded-full text-[9px] font-mono tabular-nums leading-none",
                         isSelected
-                          ? "bg-zinc-900/15 text-zinc-950 font-bold"
-                          : "bg-emerald-950/70 border border-emerald-500/25 text-emerald-300"
+                          ? "bg-white/20 text-white font-bold"
+                          : "bg-cyan-950/80 border border-cyan-400/35 text-cyan-300"
                       )}
                     >
                       {count}

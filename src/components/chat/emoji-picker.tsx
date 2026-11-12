@@ -151,7 +151,7 @@ export function EmojiPicker({ onSelectEmoji, onClose }: EmojiPickerProps) {
                 onSelectEmoji(emoji);
               }}
               aria-label={`Insert ${emoji}`}
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-xl hover:bg-zinc-800/80 active:scale-90 transition-transform cursor-pointer touch-manipulation select-none"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-xl hover:bg-zinc-800/80 active:scale-[0.96] transition-transform cursor-pointer touch-manipulation select-none"
             >
               {emoji}
             </button>

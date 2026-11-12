@@ -330,7 +330,7 @@ export function MessageInput({
       ) : (
         <div className="flex items-end gap-2">
           {/* Google Keyboard (Gboard) Emojis Button */}
-          <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }} className="shrink-0">
+          <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.96 }} className="shrink-0">
             <Button
               type="button"
               variant="ghost"
@@ -410,7 +410,7 @@ export function MessageInput({
           {/* Send Button: perfect 40x40 circle on mobile, pill on desktop, with touch prevention */}
           <motion.div
             whileHover={!disabled && value.trim() ? { scale: 1.05 } : {}}
-            whileTap={!disabled && value.trim() ? { scale: 0.94 } : {}}
+            whileTap={!disabled && value.trim() ? { scale: 0.96 } : {}}
             className="shrink-0"
           >
             <Button
