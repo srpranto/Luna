@@ -89,22 +89,22 @@ export function SearchingScreen({
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={springSmooth}
-        className="relative z-10 flex items-center justify-center w-40 h-40 sm:w-60 sm:h-60 my-2 sm:my-4"
+        className="relative z-10 flex items-center justify-center w-44 h-44 sm:w-64 sm:h-64 my-3 sm:my-5"
       >
         <motion.div
-          animate={isTimeout ? { opacity: 0.3 } : { scale: [1, 1.35, 1], opacity: [0.35, 0.08, 0.35] }}
+          animate={isTimeout ? { opacity: 0.25 } : { scale: [1, 1.38, 1], opacity: [0.4, 0.08, 0.4] }}
           transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-          className="absolute inset-0 rounded-full border border-indigo-400/25 bg-indigo-500/[0.02]"
+          className="absolute inset-0 rounded-full border border-[#6382ff]/30 bg-[#6382ff]/[0.02]"
         />
         <motion.div
-          animate={isTimeout ? { opacity: 0.2 } : { scale: [1, 1.55, 1], opacity: [0.25, 0.04, 0.25] }}
-          transition={{ duration: 5, repeat: Infinity, ease: "easeInOut", delay: 1 }}
-          className="absolute inset-0 rounded-full border border-white/10 bg-zinc-900/10"
+          animate={isTimeout ? { opacity: 0.15 } : { scale: [1, 1.6, 1], opacity: [0.25, 0.03, 0.25] }}
+          transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut", delay: 1 }}
+          className="absolute inset-0 rounded-full border border-white/[0.08] bg-white/[0.01]"
         />
         <motion.div
-          animate={isTimeout ? {} : { scale: [1, 1.04, 1] }}
+          animate={isTimeout ? {} : { scale: [1, 1.05, 1] }}
           transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-          className="relative flex h-20 w-20 sm:h-28 sm:w-28 items-center justify-center rounded-full border border-white/[0.18] bg-[#0b0e18]/90 shadow-[0_0_50px_rgba(129,140,248,0.2),inset_0_1px_0_0_rgba(255,255,255,0.15)] backdrop-blur-md overflow-hidden"
+          className="relative flex h-20 w-20 sm:h-28 sm:w-28 items-center justify-center rounded-full border border-white/[0.18] bg-[#0c101a]/95 shadow-[0_0_60px_rgba(99,130,255,0.25),inset_0_1px_0_0_rgba(255,255,255,0.2)] backdrop-blur-xl overflow-hidden"
         >
           <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
           <MoonLogo className={cn("h-8 w-8 sm:h-10 sm:w-10 text-zinc-100 drop-shadow-[0_0_15px_rgba(255,255,255,0.7)]", isTimeout ? "opacity-80" : "animate-pulse")} glow />
@@ -113,10 +113,10 @@ export function SearchingScreen({
 
       <div className="relative z-10 flex flex-col items-center w-full max-w-sm sm:max-w-md px-4 text-center">
         <p className="animate-fade-up stagger-1 text-base sm:text-lg font-medium text-zinc-100 tracking-tight">
-          {isTimeout ? "No strangers online right now" : "Finding someone to chat with..."}
+          {isTimeout ? "No strangers online right now" : "Listening across the midnight void..."}
         </p>
 
-        <div className="animate-fade-up stagger-2 mt-2.5 inline-flex items-center gap-2 rounded-full bg-[#0b0e18]/90 border border-white/[0.12] px-3.5 py-1 text-xs font-mono text-zinc-200 shadow-inner tabular-nums">
+        <div className="animate-fade-up stagger-2 mt-2.5 inline-flex items-center gap-2 rounded-full bg-[#0d101a]/90 border border-white/[0.1] px-3.5 py-1 text-xs font-mono text-zinc-300 shadow-inner tabular-nums backdrop-blur-md">
           <span className={cn("h-1.5 w-1.5 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)]", isTimeout ? "opacity-60" : "animate-ping")} />
           <span>{isTimeout ? "02:00 • 2 min reached" : formatElapsed(waitMs)}</span>
         </div>
@@ -233,7 +233,7 @@ export function SearchingScreen({
                 }}
                 disabled={busy}
                 aria-label="Leave the queue"
-                className="h-10 px-6 w-full sm:w-auto rounded-full border-white/10 text-zinc-300 hover:text-white bg-zinc-950/80 backdrop-blur-sm text-xs sm:text-sm cursor-pointer touch-manipulation transition-colors"
+                className="h-10 px-7 w-full sm:w-auto rounded-full border-white/[0.12] text-zinc-300 hover:text-white bg-[#0d101a]/90 hover:bg-[#131726] shadow-sm backdrop-blur-md text-xs sm:text-sm cursor-pointer touch-manipulation transition-all"
               >
                 Leave the queue
               </Button>

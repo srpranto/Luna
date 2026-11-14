@@ -103,10 +103,10 @@ export function ChatHistoryDialog({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 20 }}
             transition={springTactile}
-            className="relative w-full max-w-lg max-h-[90vh] sm:max-h-[85vh] flex flex-col rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 bg-zinc-950/95 shadow-2xl overflow-hidden pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-0"
+            className="relative w-full max-w-lg max-h-[90vh] sm:max-h-[85vh] flex flex-col rounded-t-[28px] sm:rounded-[28px] border-t sm:border border-white/[0.08] bg-[#0c101a]/95 shadow-2xl overflow-hidden pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-0 backdrop-blur-2xl"
           >
         <div className="w-10 h-1 bg-zinc-700/60 rounded-full mx-auto my-2.5 sm:hidden" />
-        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 sm:px-6 sm:py-4 bg-zinc-900/40">
+        <div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3 sm:px-6 sm:py-4 bg-[#0d101a]/60">
           <div className="flex items-center gap-2.5 min-w-0">
             {activeSession ? (
               <Button
@@ -191,10 +191,10 @@ export function ChatHistoryDialog({
                     </div>
                     <div
                       className={cn(
-                        "rounded-xl px-3 py-2 max-w-[85%] break-words",
+                        "rounded-xl px-3 py-2 max-w-[85%] break-words shadow-sm",
                         msg.mine
-                          ? "bg-zinc-100 text-zinc-950 font-normal"
-                          : "bg-zinc-900 border border-white/10 text-zinc-100",
+                          ? "bg-[#e8eaef] text-[#0a0c10] font-normal"
+                          : "bg-[#131622] border border-white/[0.07] text-[#f0f2f8]",
                       )}
                     >
                       {msg.body}

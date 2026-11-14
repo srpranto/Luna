@@ -113,7 +113,7 @@ export function ChatHeader({
   return (
     <header
       className={cn(
-        "relative z-40 items-center justify-between border-b border-indigo-500/15 bg-[#070914]/80 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:px-6 backdrop-blur-2xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]",
+        "relative z-40 items-center justify-between border-b border-white/[0.07] bg-[#07080b]/85 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] sm:px-6 backdrop-blur-2xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]",
         activeChat ? "hidden sm:flex" : "flex",
       )}
     >
@@ -140,7 +140,7 @@ export function ChatHeader({
 
       <div className="relative z-10 flex items-center gap-2 sm:gap-3 min-w-0 shrink-0">
         {!activeChat && (
-          <div className="flex h-7.5 w-7.5 sm:h-8 sm:w-8 items-center justify-center rounded-xl border border-indigo-400/25 bg-[#0e1428]/90 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.15),0_0_16px_rgba(99,102,241,0.25)] backdrop-blur-md">
+          <div className="flex h-7.5 w-7.5 sm:h-8 sm:w-8 items-center justify-center rounded-xl border border-white/[0.12] bg-[#0d101a]/90 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.15),0_0_16px_rgba(99,130,255,0.2)] backdrop-blur-md">
             <MoonLogo className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-indigo-100" glow />
           </div>
         )}
@@ -162,7 +162,7 @@ export function ChatHeader({
           {!activeChat && (
             <div className="flex items-center gap-1.5 sm:hidden">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(5,223,114,0.6)]" />
-              <span className="text-[11px] font-mono text-zinc-300 truncate max-w-[110px]">
+              <span className="text-[11px] font-mono text-zinc-300 truncate max-w-[85px] xs:max-w-[110px]">
                 {callsign ?? "connecting..."}
               </span>
             </div>

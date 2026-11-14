@@ -144,10 +144,10 @@ export function AnonymousNotesDialog({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 20 }}
             transition={springTactile}
-            className="relative flex flex-col w-full max-w-xl max-h-[92dvh] sm:max-h-[85vh] rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 bg-zinc-950/95 shadow-2xl overflow-hidden pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-0"
+            className="relative flex flex-col w-full max-w-xl max-h-[92dvh] sm:max-h-[85vh] rounded-t-[28px] sm:rounded-[28px] border-t sm:border border-white/[0.08] bg-[#0c101a]/95 shadow-2xl overflow-hidden pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-0 backdrop-blur-2xl"
           >
         <div className="w-10 h-1 bg-zinc-700/60 rounded-full mx-auto my-2.5 sm:hidden" />
-        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 sm:px-5 sm:py-4 bg-zinc-900/40">
+        <div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3 sm:px-5 sm:py-4 bg-[#0d101a]/60">
           <div className="flex items-center gap-2 sm:gap-2.5">
             <div className="flex h-7.5 w-7.5 sm:h-8 sm:w-8 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 text-zinc-100 shrink-0">
               <BlackHoleIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
@@ -231,7 +231,7 @@ export function AnonymousNotesDialog({
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={springSmooth}
                   whileHover={{ scale: 1.01 }}
-                  className="group relative rounded-xl border border-white/5 bg-zinc-900/40 p-4 transition-colors hover:border-white/10 hover:bg-zinc-900/60"
+                  className="group relative rounded-2xl border border-white/[0.08] bg-[#090c16]/70 p-4 transition-colors hover:border-white/[0.16] hover:bg-[#0e1322]/80 backdrop-blur-sm"
                 >
                   <div className="flex items-center justify-between text-[11px] text-zinc-500 mb-2">
                     <span className="font-mono text-zinc-400">@{letter.callsign}</span>
@@ -252,14 +252,14 @@ export function AnonymousNotesDialog({
                       className={cn(
                         "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs transition-colors touch-manipulation cursor-pointer",
                         letter.hasStarred
-                          ? "bg-white/10 text-white font-medium border border-white/20 shadow-[0_0_8px_rgba(255,255,255,0.2)]"
-                          : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
+                          ? "bg-[#6382ff]/20 text-blue-200 font-medium border border-[#6382ff]/40 shadow-[0_0_12px_rgba(99,130,255,0.3)]"
+                          : "text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06]",
                       )}
                     >
                       <Star
                         className={cn(
                           "h-3 w-3",
-                          letter.hasStarred && "fill-white text-white",
+                          letter.hasStarred ? "fill-[#8aa2ff] text-[#8aa2ff]" : "text-zinc-400",
                         )}
                       />
                       <span className="font-mono text-[11px]">{letter.stars}</span>

@@ -221,7 +221,7 @@ export function MessageInput({
   return (
     <form
       onSubmit={submit}
-      className="relative border-t border-white/[0.08] bg-[#06070a]/80 py-2.5 sm:py-3 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] sm:px-6 backdrop-blur-2xl pb-[max(0.625rem,env(safe-area-inset-bottom))]"
+      className="relative border-t border-white/[0.07] bg-[#07080b]/90 py-2.5 sm:py-3 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] sm:px-6 backdrop-blur-2xl pb-[max(0.625rem,env(safe-area-inset-bottom))]"
     >
       <AnimatePresence>
         {showEmojiPicker && (
@@ -255,10 +255,10 @@ export function MessageInput({
               }
             }}
             aria-label={`Jump to message from ${replyingTo.fromCallsign}`}
-            className="flex items-center justify-between gap-2 px-3 py-1.5 mb-2 rounded-xl bg-zinc-900/90 border border-white/10 text-xs text-zinc-300 cursor-pointer hover:bg-zinc-850/90 transition-colors select-none overflow-hidden"
+            className="flex items-center justify-between gap-2 px-3 py-1.5 mb-2 rounded-xl bg-[#0d101a]/95 border border-white/[0.08] border-l-2 border-l-[#6382ff] text-xs text-zinc-300 cursor-pointer hover:bg-[#131726]/95 transition-colors select-none overflow-hidden"
           >
             <div className="flex items-center gap-2 min-w-0">
-              <Reply className="h-3.5 w-3.5 text-zinc-200 shrink-0" />
+              <Reply className="h-3.5 w-3.5 text-[#8aa2ff] shrink-0" />
               <div className="truncate">
                 <span className="font-semibold text-zinc-100">{replyingTo.fromCallsign}</span>
                 <span className="text-zinc-500 mx-1.5">•</span>
@@ -350,8 +350,8 @@ export function MessageInput({
               aria-label="Google Keyboard emojis"
               title="Google Keyboard emojis"
               className={cn(
-                "h-10 w-10 min-h-[40px] min-w-[40px] p-0 rounded-full border border-white/[0.08] bg-[#0c101a]/70 text-zinc-400 hover:text-zinc-100 hover:bg-[#141a28] hover:border-white/20 shrink-0 cursor-pointer touch-manipulation flex items-center justify-center shadow-sm",
-                showEmojiPicker && "text-zinc-100 bg-[#141a28] border-white/30 ring-1 ring-indigo-400/30",
+                "h-10 w-10 min-h-[40px] min-w-[40px] p-0 rounded-full border border-white/[0.08] bg-[#0d101a]/80 text-zinc-400 hover:text-zinc-100 hover:bg-[#131726] hover:border-white/20 shrink-0 cursor-pointer touch-manipulation flex items-center justify-center shadow-sm",
+                showEmojiPicker && "text-zinc-100 bg-[#131726] border-[#6382ff]/40 ring-1 ring-[#6382ff]/30",
               )}
             >
               <Smile className="h-4 w-4" />
@@ -389,7 +389,7 @@ export function MessageInput({
                 clearTypingTimer();
                 onTyping?.(false);
               }}
-              className="min-h-[40px] max-h-[200px] h-10 w-full resize-none rounded-full border border-white/[0.08] bg-[#0c101a]/75 pl-4 pr-12 py-[9px] text-[16px] sm:text-sm text-zinc-100 placeholder:text-zinc-500 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] transition-all focus:border-indigo-400/30 focus:ring-1 focus:ring-indigo-400/20 focus:outline-none disabled:opacity-40 leading-5 overflow-y-auto box-border [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+              className="min-h-[40px] max-h-[160px] h-10 w-full resize-none rounded-full border border-white/[0.08] bg-[#0d101a]/85 pl-4 pr-12 py-[9px] text-[16px] sm:text-sm text-zinc-100 placeholder:text-zinc-500 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.03)] transition-all focus:border-[#6382ff]/40 focus:ring-1 focus:ring-[#6382ff]/25 focus:outline-none disabled:opacity-40 leading-5 overflow-y-auto box-border [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             />
             {value.length > 0 && (
               <span
@@ -426,7 +426,12 @@ export function MessageInput({
               size="sm"
               aria-label="Send message"
               title="Send message (Enter, Shift+Enter for new line)"
-              className="h-10 min-h-[40px] p-0 sm:px-4 w-10 sm:w-auto min-w-[40px] shrink-0 bg-[#f4f3ec] text-[#08090d] hover:bg-white disabled:bg-[#121622] disabled:text-zinc-600 disabled:border-white/5 border border-transparent shadow-[0_0_20px_rgba(244,243,236,0.18)] rounded-full font-semibold cursor-pointer touch-manipulation flex items-center justify-center gap-1.5"
+              className={cn(
+                "h-10 min-h-[40px] p-0 sm:px-4 w-10 sm:w-auto min-w-[40px] shrink-0 rounded-full font-semibold cursor-pointer touch-manipulation flex items-center justify-center gap-1.5 transition-all duration-150",
+                !disabled && value.trim()
+                  ? "bg-[#6382ff] text-white hover:bg-[#7490ff] shadow-[0_0_18px_rgba(99,130,255,0.4)] border border-blue-400/30"
+                  : "bg-[#111420] text-zinc-600 border border-white/[0.04] cursor-not-allowed shadow-none",
+              )}
             >
               <ArrowUp className="h-4 w-4 stroke-[2.5]" />
               <span className="hidden sm:inline text-xs font-semibold">Send</span>

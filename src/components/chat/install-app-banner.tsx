@@ -8,10 +8,16 @@ import { Download, X } from "lucide-react";
 import { triggerHaptic } from "@/lib/sound-effects";
 import { springTactile } from "@/lib/motion";
 
-export function InstallAppBanner() {
+export function InstallAppBanner({
+  hidden = false,
+  variant = "floating",
+}: {
+  hidden?: boolean;
+  variant?: "floating" | "inline";
+}) {
   const { showInstallButton, installApp, dismissBanner } = usePwa();
 
-  if (!showInstallButton) {
+  if (!showInstallButton || hidden) {
     return null;
   }
 
@@ -28,12 +34,16 @@ export function InstallAppBanner() {
   return (
     <AnimatePresence>
       <motion.aside
-        initial={{ opacity: 0, y: 20, scale: 0.95 }}
+        initial={{ opacity: 0, y: 10, scale: 0.95 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 20, scale: 0.95 }}
+        exit={{ opacity: 0, y: 10, scale: 0.95 }}
         transition={springTactile}
         aria-label="Install Luna App"
-        className="fixed bottom-3 sm:bottom-5 left-1/2 sm:left-auto -translate-x-1/2 sm:translate-x-0 sm:right-6 z-50 w-[calc(100%-1.5rem)] sm:w-auto sm:max-w-sm"
+        className={
+          variant === "inline"
+            ? "w-full max-w-md mx-auto z-10"
+            : "hidden sm:block fixed sm:bottom-5 sm:right-6 z-50 w-auto max-w-sm"
+        }
       >
         <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/15 bg-zinc-950/95 p-3 sm:px-4 sm:py-3 shadow-[0_16px_48px_rgba(0,0,0,0.9),inset_0_1px_0_0_rgba(255,255,255,0.12)] backdrop-blur-2xl">
           <div className="flex items-center gap-3 min-w-0">

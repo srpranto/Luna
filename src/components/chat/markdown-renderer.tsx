@@ -105,12 +105,12 @@ export function CodeBlock({
   return (
     <div
       className={cn(
-        "my-2 rounded-xl overflow-hidden border font-mono text-xs select-text shadow-sm text-left bg-zinc-950 text-zinc-100 max-w-full min-w-0",
-        isMine ? "border-zinc-800" : "border-white/10",
+        "my-2 rounded-xl overflow-hidden border font-mono text-xs select-text shadow-sm text-left bg-[#090b12] text-zinc-100 max-w-full min-w-0",
+        isMine ? "border-zinc-300/40" : "border-white/[0.08]",
       )}
     >
-      <div className="flex items-center justify-between px-3 py-1.5 bg-zinc-900/80 border-b border-white/10 text-[10px] text-zinc-400">
-        <span className="font-semibold uppercase tracking-wider">{language || "code"}</span>
+      <div className="flex items-center justify-between px-3 py-1.5 bg-[#0d101a] border-b border-white/[0.06] text-[10px] text-zinc-400">
+        <span className="font-semibold uppercase tracking-wider font-mono text-zinc-400">{language || "code"}</span>
         <button
           type="button"
           onClick={handleCopy}
@@ -119,18 +119,18 @@ export function CodeBlock({
         >
           {copied ? (
             <>
-              <Check className="h-3 w-3 text-zinc-100" />
-              <span className="text-zinc-100 font-medium">Copied!</span>
+              <Check className="h-3 w-3 text-emerald-400" />
+              <span className="text-emerald-300 font-medium font-sans text-[10px]">Copied</span>
             </>
           ) : (
             <>
               <Copy className="h-3 w-3" />
-              <span>Copy</span>
+              <span className="font-sans text-[10px]">Copy</span>
             </>
           )}
         </button>
       </div>
-      <pre className="p-3 overflow-x-auto text-[11px] sm:text-xs leading-relaxed font-mono">
+      <pre className="p-3 overflow-x-auto text-[11px] sm:text-xs leading-relaxed font-mono text-zinc-200">
         <code>{code.replace(/\r?\n$/, "")}</code>
       </pre>
     </div>
@@ -213,19 +213,19 @@ export function renderFormattedBody(body: string, isMine: boolean) {
             <div
               key={`${blockIdx}-${lineIdx}`}
               className={cn(
-                "rounded-lg border px-2.5 py-1.5 mb-2 text-xs select-none",
+                "rounded-lg border-l-2 px-2.5 py-1.5 mb-2 text-xs select-none transition-colors",
                 isMine
-                  ? "border-zinc-300/80 bg-zinc-200/90 text-zinc-800"
-                  : "border-white/10 bg-white/[0.04] text-zinc-300",
+                  ? "border-l-[#6382ff] border-y border-r border-zinc-300/80 bg-zinc-200/80 text-zinc-800"
+                  : "border-l-[#6382ff] border-y border-r border-white/[0.08] bg-[#0c0f18]/80 text-zinc-300",
               )}
             >
               <div
                 className={cn(
-                  "text-[10px] font-semibold tracking-wide uppercase font-mono",
-                  isMine ? "text-zinc-700" : "text-sky-400",
+                  "text-[10px] font-semibold tracking-wide uppercase font-mono flex items-center gap-1",
+                  isMine ? "text-indigo-900" : "text-[#8aa2ff]",
                 )}
               >
-                {quoteAuthor}
+                <span>{quoteAuthor}</span>
               </div>
               <div className="line-clamp-2 italic text-[11px] opacity-90 mt-0.5">{quoteSnippet}</div>
             </div>
@@ -236,8 +236,8 @@ export function renderFormattedBody(body: string, isMine: boolean) {
           <blockquote
             key={`${blockIdx}-${lineIdx}`}
             className={cn(
-              "border-l-2 pl-2 my-1 italic text-xs",
-              isMine ? "border-zinc-400 text-zinc-700" : "border-zinc-600 text-zinc-400",
+              "border-l-2 pl-2.5 my-1.5 italic text-xs",
+              isMine ? "border-indigo-400/80 text-zinc-700" : "border-[#6382ff]/80 text-zinc-300",
             )}
           >
             {parts}

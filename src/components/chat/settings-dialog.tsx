@@ -187,7 +187,7 @@ export function SettingsDialog({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 20 }}
             transition={springTactile}
-            className="relative flex flex-col w-full max-w-lg max-h-[90vh] sm:max-h-[85vh] rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 bg-zinc-950/95 shadow-2xl overflow-hidden pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-0"
+            className="relative flex flex-col w-full max-w-lg max-h-[90vh] sm:max-h-[85vh] rounded-t-[28px] sm:rounded-[28px] border-t sm:border border-white/[0.08] bg-[#0c101a]/95 shadow-2xl overflow-hidden backdrop-blur-2xl pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-0"
           >
         <div className="w-10 h-1 bg-zinc-700/60 rounded-full mx-auto my-2.5 sm:hidden" />
         <div className="flex flex-col gap-6 p-4 sm:p-6 overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))]">
@@ -261,7 +261,7 @@ export function SettingsDialog({
         <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400 font-mono">
           Luna Web App
         </span>
-        <div className="rounded-xl border border-white/10 bg-zinc-900/40 p-4 flex flex-col gap-3">
+        <div className="rounded-2xl border border-white/[0.08] bg-[#080b14]/70 p-4 flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Smartphone className="h-4 w-4 text-zinc-200" />
@@ -304,7 +304,7 @@ export function SettingsDialog({
         <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400 font-mono">
           Privacy & Security
         </span>
-        <div className="rounded-xl border border-white/10 bg-zinc-900/40 p-4 flex flex-col gap-3">
+        <div className="rounded-2xl border border-white/[0.08] bg-[#080b14]/70 p-4 flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3">
             <div className="flex flex-col gap-0.5">
               <span className="text-xs font-semibold text-zinc-200">
@@ -321,14 +321,14 @@ export function SettingsDialog({
               aria-label="Toggle rich link previews"
               onClick={toggleLinkPreviews}
               className={cn(
-                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400",
-                linkPreviews ? "bg-zinc-100" : "bg-zinc-800",
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/50",
+                linkPreviews ? "bg-[#6382ff] shadow-[0_0_12px_rgba(99,130,255,0.4)]" : "bg-[#181d2a]",
               )}
             >
               <span
                 className={cn(
                   "pointer-events-none inline-block h-5 w-5 transform rounded-full shadow-lg ring-0 transition duration-200 ease-in-out",
-                  linkPreviews ? "translate-x-5 bg-zinc-950" : "translate-x-0 bg-zinc-400",
+                  linkPreviews ? "translate-x-5 bg-white" : "translate-x-0 bg-zinc-400",
                 )}
               />
             </button>
@@ -350,14 +350,14 @@ export function SettingsDialog({
               aria-label="Toggle stealth blur shield"
               onClick={togglePrivacyShield}
               className={cn(
-                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400",
-                privacyShield ? "bg-zinc-100" : "bg-zinc-800",
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/50",
+                privacyShield ? "bg-[#6382ff] shadow-[0_0_12px_rgba(99,130,255,0.4)]" : "bg-[#181d2a]",
               )}
             >
               <span
                 className={cn(
                   "pointer-events-none inline-block h-5 w-5 transform rounded-full shadow-lg ring-0 transition duration-200 ease-in-out",
-                  privacyShield ? "translate-x-5 bg-zinc-950" : "translate-x-0 bg-zinc-400",
+                  privacyShield ? "translate-x-5 bg-white" : "translate-x-0 bg-zinc-400",
                 )}
               />
             </button>
@@ -372,7 +372,7 @@ export function SettingsDialog({
         <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400 font-mono">
           Sensory & Feedback
         </span>
-        <div className="rounded-xl border border-white/10 bg-zinc-900/40 p-4 flex flex-col gap-3">
+        <div className="rounded-2xl border border-white/[0.08] bg-[#080b14]/70 p-4 flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3">
             <div className="flex flex-col gap-0.5">
               <span className="text-xs font-semibold text-zinc-200">
@@ -389,14 +389,14 @@ export function SettingsDialog({
               aria-label="Toggle tactile haptics"
               onClick={toggleHaptics}
               className={cn(
-                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400",
-                haptics ? "bg-zinc-100" : "bg-zinc-800",
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/50",
+                haptics ? "bg-[#6382ff] shadow-[0_0_12px_rgba(99,130,255,0.4)]" : "bg-[#181d2a]",
               )}
             >
               <span
                 className={cn(
                   "pointer-events-none inline-block h-5 w-5 transform rounded-full shadow-lg ring-0 transition duration-200 ease-in-out",
-                  haptics ? "translate-x-5 bg-zinc-950" : "translate-x-0 bg-zinc-400",
+                  haptics ? "translate-x-5 bg-white" : "translate-x-0 bg-zinc-400",
                 )}
               />
             </button>

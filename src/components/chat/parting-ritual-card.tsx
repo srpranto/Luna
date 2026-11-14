@@ -46,27 +46,27 @@ export function PartingRitualCard({
       initial={{ opacity: 0, y: 16, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={springSmooth}
-      className="mx-auto my-3 w-full max-w-sm sm:max-w-md rounded-2xl border border-indigo-500/20 bg-gradient-to-b from-[#0e1428]/90 via-[#0a0f20]/95 to-[#070b18]/98 p-4 sm:p-5 text-center shadow-[0_20px_50px_rgba(0,0,0,0.8),inset_0_1px_0_0_rgba(255,255,255,0.08)] backdrop-blur-2xl select-none"
+      className="mx-auto my-3.5 w-full max-w-sm sm:max-w-md rounded-[28px] border border-white/[0.08] bg-gradient-to-b from-[#0d101a]/95 via-[#0a0d16]/98 to-[#070910] p-5 sm:p-6 text-center shadow-[0_24px_60px_rgba(0,0,0,0.85),inset_0_1px_0_0_rgba(255,255,255,0.08)] backdrop-blur-2xl select-none"
     >
       <div className="flex items-center justify-center gap-2 mb-2">
-        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-950/70 border border-indigo-400/25 shadow-sm">
-          <MoonLogo className="h-3.5 w-3.5 text-indigo-200" glow />
+        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#0d101a] border border-white/[0.1] shadow-sm">
+          <MoonLogo className="h-3.5 w-3.5 text-zinc-200" glow />
         </div>
-        <span className="text-xs font-mono uppercase tracking-wider text-indigo-300/80 font-semibold">
+        <span className="text-xs font-mono uppercase tracking-wider text-zinc-400 font-semibold">
           Parting Under The Stars
         </span>
       </div>
 
-      <h3 className="text-sm sm:text-base font-semibold text-zinc-100 tracking-tight">
-        Your conversation with <span className="font-mono text-indigo-200">{peerCallsign}</span> has ended.
+      <h3 className="text-base sm:text-lg font-semibold text-zinc-100 tracking-tight">
+        Your conversation with <span className="font-mono text-[#8aa2ff]">{peerCallsign}</span> has ended.
       </h3>
 
       <div className="mt-2.5 flex items-center justify-center gap-2 text-[11px] font-mono text-zinc-400">
-        <span className="px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/10 tabular-nums">
+        <span className="px-2.5 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.08] tabular-nums text-zinc-300">
           {formatElapsed(elapsedMs)} together
         </span>
         <span>•</span>
-        <span className="px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/10 tabular-nums">
+        <span className="px-2.5 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.08] tabular-nums text-zinc-300">
           {messageCount} {messageCount === 1 ? "thought" : "thoughts"} shared
         </span>
       </div>
@@ -119,7 +119,7 @@ export function PartingRitualCard({
               onNext();
             }}
             disabled={busy}
-            className="h-9 w-full sm:w-auto px-5 rounded-full text-xs font-semibold bg-[#3b5bfd] hover:bg-[#4967ff] text-white border border-blue-400/30 shadow-[0_0_20px_rgba(59,91,253,0.35)] cursor-pointer touch-manipulation flex items-center justify-center gap-1.5 active:scale-[0.97]"
+            className="h-9 w-full sm:w-auto px-5 rounded-full text-xs font-semibold bg-[#6382ff] hover:bg-[#7490ff] text-white border border-blue-400/30 shadow-[0_0_20px_rgba(99,130,255,0.35)] cursor-pointer touch-manipulation flex items-center justify-center gap-1.5 active:scale-[0.97]"
           >
             <span>Find Next Stranger</span>
             <ArrowRight className="h-3.5 w-3.5" />

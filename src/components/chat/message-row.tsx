@@ -15,6 +15,7 @@ import { MessageBody, extractFirstUrl } from "@/components/chat/markdown-rendere
 export interface MessageRowProps {
   msg: ChatMessage;
   isConsecutive: boolean;
+  isLastInCluster?: boolean;
   showPeerHeader: boolean;
   peerCallsign?: string;
   isMine: boolean;
@@ -44,9 +45,24 @@ export interface MessageRowProps {
   onRetryMessage?: (id: string) => void;
 }
 
+function getBubbleRadii(isMine: boolean, isConsecutive: boolean, isLastInCluster?: boolean): string {
+  const isLast = isLastInCluster !== false;
+  if (isMine) {
+    if (isConsecutive) {
+      return isLast ? "rounded-2xl rounded-tr-md rounded-br-xs" : "rounded-2xl rounded-tr-md rounded-br-md";
+    }
+    return isLast ? "rounded-2xl rounded-tr-xs" : "rounded-2xl rounded-tr-xs rounded-br-md";
+  }
+  if (isConsecutive) {
+    return isLast ? "rounded-2xl rounded-tl-md rounded-bl-xs" : "rounded-2xl rounded-tl-md rounded-bl-md";
+  }
+  return isLast ? "rounded-2xl rounded-tl-xs" : "rounded-2xl rounded-tl-xs rounded-bl-md";
+}
+
 export const MessageRow = memo(function MessageRow({
   msg,
   isConsecutive,
+  isLastInCluster,
   showPeerHeader,
   peerCallsign,
   isMine,
@@ -82,9 +98,9 @@ export const MessageRow = memo(function MessageRow({
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.2 }}
-        className="flex justify-center my-2"
+        className="flex justify-center my-2.5"
       >
-        <span className="rounded-full bg-zinc-900/60 border border-white/10 px-2.5 py-0.5 text-[11px] sm:text-xs text-zinc-400 shadow-sm">
+        <span className="rounded-full bg-[#131622]/80 border border-white/[0.07] px-3 py-0.5 text-[11px] font-mono text-zinc-400 shadow-sm backdrop-blur-sm select-none">
           {msg.body}
         </span>
       </motion.div>
@@ -92,6 +108,8 @@ export const MessageRow = memo(function MessageRow({
   }
 
   const currentOffset = isSwiping ? swipeOffset : 0;
+  const showTimestamp = isLastInCluster !== false;
+  const bubbleRadii = getBubbleRadii(isMine, isConsecutive, isLastInCluster);
 
   return (
     <motion.div
@@ -102,7 +120,7 @@ export const MessageRow = memo(function MessageRow({
       className={cn(
         "flex flex-col group transition-opacity duration-150 contain-bubble",
         isMine ? "items-end" : "items-start",
-        isConsecutive ? "mt-0.5 sm:mt-1" : "mt-2.5 sm:mt-3",
+        isConsecutive ? "mt-1" : "mt-3.5 sm:mt-4",
       )}
     >
       {showPeerHeader && (
@@ -255,16 +273,11 @@ export const MessageRow = memo(function MessageRow({
                 transition: isSwiping ? "none" : "transform 0.2s cubic-bezier(0.2, 0, 0, 1)",
               }}
               className={cn(
-                "relative z-10 flex flex-col w-fit rounded-2xl px-3.5 py-2.5 sm:px-4 sm:py-3 text-[15px] sm:text-sm leading-relaxed break-words [overflow-wrap:anywhere] [word-break:break-word] shadow-sm touch-pan-y min-w-[72px] select-text transition-all duration-150 cursor-pointer",
+                "relative z-10 flex flex-col w-fit px-3.5 py-2.5 sm:px-4 sm:py-3 text-[15px] sm:text-sm leading-relaxed break-words [overflow-wrap:anywhere] [word-break:break-word] shadow-sm touch-pan-y min-w-[72px] select-text transition-all duration-150 cursor-pointer",
+                bubbleRadii,
                 isMine
-                  ? cn(
-                      "bg-[#f4f3ec] text-[#090b10] font-normal shadow-[0_2px_12px_-2px_rgba(0,0,0,0.25),inset_0_1px_0_0_rgba(255,255,255,0.7)]",
-                      isConsecutive ? "rounded-tr-md rounded-br-sm" : "rounded-tr-xs",
-                    )
-                  : cn(
-                      "bg-[#0e121d]/90 border border-white/[0.09] text-[#f2f4f8] shadow-[0_2px_14px_-3px_rgba(0,0,0,0.45),inset_0_1px_0_0_rgba(255,255,255,0.04)] backdrop-blur-sm",
-                      isConsecutive ? "rounded-tl-md rounded-bl-sm" : "rounded-tl-xs",
-                    ),
+                  ? "bg-[#e8eaef] text-[#0a0c10] font-normal shadow-[0_2px_10px_-2px_rgba(0,0,0,0.3),inset_0_1px_0_0_rgba(255,255,255,0.7)]"
+                  : "bg-[#131622]/95 border border-white/[0.07] text-[#f0f2f8] shadow-[0_3px_14px_-2px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.04)] backdrop-blur-md",
               )}
               title={formatClock(new Date(msg.createdAt))}
             >
@@ -294,8 +307,11 @@ export const MessageRow = memo(function MessageRow({
               )}
               <div
                 className={cn(
-                  "flex items-center gap-1.5 mt-1 pt-0.5 select-none text-[10px] font-mono leading-none",
-                  isMine ? "justify-end text-zinc-500" : "justify-start text-zinc-500",
+                  "flex items-center gap-1.5 select-none text-[10px] font-mono leading-none transition-all duration-150",
+                  isMine ? "justify-end text-zinc-600" : "justify-start text-zinc-400/80",
+                  showTimestamp
+                    ? "mt-1 pt-0.5 opacity-100"
+                    : "h-0 overflow-hidden opacity-0 group-hover:h-auto group-hover:mt-1 group-hover:pt-0.5 group-hover:opacity-100 group-focus-within:h-auto group-focus-within:mt-1 group-focus-within:pt-0.5 group-focus-within:opacity-100",
                 )}
               >
                 <span className="tabular-nums font-mono opacity-80 text-[10px]">

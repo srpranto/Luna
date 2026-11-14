@@ -1348,7 +1348,7 @@ export default function Home() {
 
   return (
     <div className="flex h-[var(--visual-viewport-height,100dvh)] max-h-[var(--visual-viewport-height,100dvh)] w-full flex-col bg-[#06070a] text-zinc-100 antialiased selection:bg-indigo-500/25 select-none overflow-hidden overscroll-none">
-      <ChatContainer>
+      <ChatContainer inSession={Boolean(currentSession)}>
         <ChatHeader
           callsign={desk?.station.callsign}
           meta={

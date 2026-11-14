@@ -334,11 +334,17 @@ export function MessageList({
             const isMine = Boolean(msg.mine);
             const isSystem = Boolean(msg.system);
             const prevMsg = idx > 0 ? messages[idx - 1] : null;
+            const nextMsg = idx < messages.length - 1 ? messages[idx + 1] : null;
             const isSameSender = Boolean(prevMsg && prevMsg.mine === isMine && !prevMsg.system);
+            const isNextSameSender = Boolean(nextMsg && nextMsg.mine === isMine && !nextMsg.system);
             const timeDiff = prevMsg
               ? Math.abs(new Date(msg.createdAt).getTime() - new Date(prevMsg.createdAt).getTime())
               : 0;
+            const nextTimeDiff = nextMsg
+              ? Math.abs(new Date(nextMsg.createdAt).getTime() - new Date(msg.createdAt).getTime())
+              : 0;
             const isConsecutive = isSameSender && timeDiff < 120000;
+            const isLastInCluster = !isNextSameSender || nextTimeDiff >= 120000;
             const remaining = stamp > 0 ? formatRemaining(msg.expiresAt, stamp) : null;
             const showPeerHeader =
               !isMine &&
@@ -350,6 +356,7 @@ export function MessageList({
                 key={msg.id}
                 msg={msg}
                 isConsecutive={isConsecutive}
+                isLastInCluster={isLastInCluster}
                 showPeerHeader={showPeerHeader}
                 peerCallsign={peerCallsign}
                 isMine={isMine}

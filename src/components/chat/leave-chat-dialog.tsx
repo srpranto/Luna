@@ -77,7 +77,7 @@ export function LeaveChatDialog({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 16 }}
             transition={springTactile}
-            className="w-full max-w-sm rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/15 bg-zinc-950 p-5 sm:p-6 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.95),inset_0_1px_0_0_rgba(255,255,255,0.1)] text-left backdrop-blur-2xl pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:pb-6"
+            className="w-full max-w-sm rounded-t-[28px] sm:rounded-[28px] border-t sm:border border-white/[0.08] bg-[#0c101a]/95 p-5 sm:p-6 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.95),inset_0_1px_0_0_rgba(255,255,255,0.08)] text-left backdrop-blur-2xl pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:pb-6"
           >
             <div className="w-10 h-1 bg-zinc-700/60 rounded-full mx-auto mb-4 sm:hidden" />
 
